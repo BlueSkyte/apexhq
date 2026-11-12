@@ -1,0 +1,3 @@
+ApexHQ — app autonome
+
+Héberge ce dossier en HTTPS (GitHub Pages, Netlify, Cloudflare Pages), puis ouvre le lien sur le téléphone et installe l’app. Pas de compte ni de serveur applicatif : les données restent sur le téléphone (localStorage, et IndexedDB pour les photos). Exporte régulièrement depuis Réglages.
