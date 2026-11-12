@@ -39,7 +39,7 @@ const Apex = (() => {
     aliments: {},
     exos: {},
     programme: null,
-    repasModeles: null,
+    repasModeles: null, repasMode: null, repasProg: null, repasSemaine: null, repasPesee: null,
     focus: null,
     supps: null,
     seanceTypes: null,
@@ -938,6 +938,114 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   Object.assign(A, { EQUIP, EQMODES, eqOk, dureeSeance, zonesSensibles, adapterSeance, validerSeanceIA });
 })();
 
+/* ---- 13-meals-logic.js ---- */
+/* ApexHQ — programmes de repas sur une semaine : menus conseillés, semaine personnalisée, mode libre.
+   Fonctions pures (testées par test-meals.js). Étend le moteur Apex ; remplace planDuJour pour accepter une date. */
+(function () {
+  'use strict';
+  const A = Apex;
+
+  /* Un repas = [nom, heure, variantes] ; une variante = liste de [aliment, quantité, ajustable]. La variante du jour tourne dans la semaine.
+     Les quantités ajustables sont recalées sur les cibles du jour (jour de salle ou de repos). */
+  const R = (nom, h, variantes) => ({ nom, h, variantes });
+  const PROGRAMMES = {
+    equilibre: {
+      n: 'Équilibré', tag: 'Polyvalent', ic: 'utensils', d: '4 repas simples, protéines et féculents différents chaque jour.',
+      repas: [
+        R('Petit-déj', '08:00', [[['avoine', 60, 1], ['skyr', 200], ['banane', 1], ['amandes', 15, 1]], [['oeuf', 3], ['pain', 2, 1], ['fb0', 150], ['fruitsrouges', 100]], [['avoine', 60, 1], ['fb0', 250], ['pomme', 1], ['noix', 15, 1]]]),
+        R('Déjeuner', '12:30', [[['poulet', 180, 1], ['riz', 80, 1], ['brocoli', 200], ['huile', 8, 1]], [['dinde', 180, 1], ['pates', 80, 1], ['courgette', 200], ['huile', 8, 1]], [['bh5', 150, 1], ['pdt', 300, 1], ['haricots', 200], ['huile', 8, 1]], [['boeuf', 150, 1], ['riz', 80, 1], ['poelee', 250], ['huile', 8, 1]]]),
+        R('Collation', '16:30', [[['skyr', 200], ['galette', 3], ['miel', 10]], [['fb0', 250], ['noix', 20, 1], ['pomme', 1]], [['jambon', 2], ['pain', 2, 1], ['banane', 1]]]),
+        R('Dîner', '20:00', [[['saumon', 130, 1], ['gnocchi', 180, 1], ['courgette', 200]], [['cabillaud', 200, 1], ['pdt', 300, 1], ['epinards', 200], ['huile', 8, 1]], [['poulet', 180, 1], ['pates', 80, 1], ['poivron', 200], ['huile', 8, 1]], [['crevettes', 150, 1], ['riz', 80, 1], ['haricots', 200], ['huile', 8, 1]]]),
+      ],
+    },
+    prot: {
+      n: 'Protéines max', tag: 'Idéal en sèche', ic: 'bolt', d: 'Beaucoup de protéines pour peu de calories : skyr, poisson, volaille, blanc d’œuf.',
+      repas: [
+        R('Petit-déj', '08:00', [[['blanc', 150, 1], ['oeuf', 2], ['avoine', 50, 1], ['fruitsrouges', 100]], [['skyr', 250], ['avoine', 50, 1], ['banane', 1]], [['fb0', 250], ['galette', 3], ['fruitsrouges', 100]]]),
+        R('Déjeuner', '12:30', [[['poulet', 200, 1], ['riz', 70, 1], ['haricots', 250], ['huile', 6, 1]], [['thon', 2], ['pates', 70, 1], ['tomate', 200], ['huile', 8, 1]], [['dinde', 200, 1], ['pdt', 300, 1], ['brocoli', 250], ['huile', 6, 1]]]),
+        R('Collation', '16:30', [[['skyr', 250], ['amandes', 15, 1]], [['fb0', 250], ['pomme', 1]], [['jambon', 3], ['pain', 2, 1]]]),
+        R('Dîner', '20:00', [[['cabillaud', 220, 1], ['gnocchi', 150, 1], ['courgette', 250], ['huile', 8, 1]], [['crevettes', 180, 1], ['riz', 70, 1], ['poelee', 250], ['huile', 6, 1]], [['poulet', 200, 1], ['patate', 250, 1], ['brocoli', 200], ['huile', 6, 1]]]),
+      ],
+    },
+    budget: {
+      n: 'Étudiant malin', tag: 'Petit budget', ic: 'target', d: 'Œufs, thon, pâtes, riz, lentilles : peu cher, rapide, facile à préparer en avance.',
+      repas: [
+        R('Petit-déj', '08:00', [[['avoine', 70, 1], ['lait', 250], ['banane', 1], ['beurrecac', 15, 1]], [['oeuf', 3], ['pain', 3, 1], ['fb0', 200]], [['avoine', 60, 1], ['fb0', 250], ['pomme', 1]]]),
+        R('Déjeuner', '12:30', [[['thon', 2], ['pates', 90, 1], ['tomate', 200], ['huile', 8, 1]], [['oeuf', 4], ['riz', 90, 1], ['haricots', 200], ['huile', 8, 1]], [['poulet', 180, 1], ['lentilles', 200, 1], ['carotte', 150], ['huile', 6, 1]], [['bh5', 150, 1], ['pdt', 350, 1], ['salade', 80], ['huile', 6, 1]]]),
+        R('Collation', '16:30', [[['fb0', 250], ['avoine', 30, 1]], [['pain', 2, 1], ['beurrecac', 15, 1], ['banane', 1]], [['oeuf', 2], ['pomme', 1]]]),
+        R('Dîner', '20:00', [[['oeuf', 3], ['lentilles', 200, 1], ['epinards', 200], ['huile', 8, 1]], [['dinde', 180, 1], ['pates', 80, 1], ['poelee', 250], ['huile', 8, 1]], [['thon', 2], ['riz', 80, 1], ['courgette', 200], ['huile', 8, 1]]]),
+      ],
+    },
+    veggie: {
+      n: 'Végétarien', tag: 'Sans viande ni poisson', ic: 'sparkles', d: 'Œufs, laitages, tofu, légumineuses : les protéines sans viande.',
+      repas: [
+        R('Petit-déj', '08:00', [[['avoine', 60, 1], ['skyr', 200], ['banane', 1], ['amandes', 15, 1]], [['oeuf', 3], ['pain', 2, 1], ['fb0', 150], ['fruitsrouges', 100]]]),
+        R('Déjeuner', '12:30', [[['tofu', 180, 1], ['riz', 80, 1], ['brocoli', 200], ['huile', 8, 1]], [['lentilles', 220, 1], ['oeuf', 3], ['epinards', 200], ['huile', 6, 1]], [['seitan', 150, 1], ['pates', 80, 1], ['courgette', 200], ['huile', 8, 1]]]),
+        R('Collation', '16:30', [[['fb0', 250], ['noix', 20, 1], ['pomme', 1]], [['skyr', 200], ['galette', 3], ['miel', 10]]]),
+        R('Dîner', '20:00', [[['oeuf', 4], ['pdt', 300, 1], ['haricots', 200], ['huile', 8, 1]], [['tofu', 180, 1], ['patate', 250, 1], ['poelee', 250], ['huile', 8, 1]], [['lentilles', 220, 1], ['emmental', 30], ['riz', 70, 1], ['poivron', 200]]]),
+      ],
+    },
+  };
+  const ORDRE = ['equilibre', 'prot', 'budget', 'veggie'];
+  const JOURS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'], SEMAINE = [1, 2, 3, 4, 5, 6, 0];
+
+  /* Programme conseillé selon le questionnaire : régime d’abord, puis objectif. */
+  function programmeConseille(cfg) {
+    const q = (cfg && cfg.q) || {};
+    if (q.regime === 'vegetarien' || q.regime === 'vegan') return 'veggie';
+    return q.objectif === 'seche' ? 'prot' : 'equilibre';
+  }
+
+  const SUBST = { P: ['poulet', 'dinde', 'saumon', 'cabillaud', 'thon', 'oeuf', 'skyr', 'fb0', 'tofu', 'seitan'], G: ['riz', 'pdt', 'pates', 'gnocchi', 'patate', 'avoine', 'lentilles'], L: ['huile', 'amandes', 'noix', 'avocat', 'beurrecac', 'cajou'] };
+  /* Menu d'un jour (dow 0 = dimanche) d'un programme : tableau de repas {id, nom, h, items:[{a,q,adj}]}, régime et exclusions appliqués. */
+  function programmeJour(cfg, progId, dow) {
+    const p = PROGRAMMES[progId]; if (!p) return null;
+    const foods = A.allFoods(cfg), q = (cfg && cfg.q) || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {}, idx = SEMAINE.indexOf(dow);
+    return p.repas.map((r, mi) => {
+      const v = r.variantes[(idx + mi) % r.variantes.length], its = [];
+      v.forEach(x => {
+        const id = x[0], f = foods[id]; if (!f) return;
+        if (!ex[id]) { its.push({ a: id, q: x[1], adj: x[2] ? 1 : 0 }); return; }
+        const role = f.r; if (!role || !SUBST[role]) return;
+        const nid = SUBST[role].find(i => !ex[i] && foods[i] && !its.some(y => y.a === i) && !v.some(y => y[0] === i));
+        if (nid) { const nf = foods[nid]; its.push({ a: nid, q: nf.d || (nf.u ? 1 : 100), adj: 1 }); }
+      });
+      return { id: 'm' + (mi + 1), nom: r.nom, h: r.h, items: its };
+    });
+  }
+  /* Aperçu de la semaine pour l'écran : lundi → dimanche, noms d'aliments par repas. */
+  function semaineApercu(cfg, progId) {
+    const foods = A.allFoods(cfg);
+    return SEMAINE.map(d => ({ d, jour: JOURS[d], repas: (programmeJour(cfg, progId, d) || []).map(m => ({ nom: m.nom, h: m.h, noms: m.items.map(i => (foods[i.a] ? foods[i.a].n : i.a)) })) }));
+  }
+  /* Quel menu pour ce jour ? Semaine perso > programme choisi > plan type enregistré > plan par défaut. */
+  function modeleDuJour(cfg, statut, date) {
+    const dw = date ? A.dow(date) : null, mode = (cfg && cfg.repasMode) || 'programme';
+    if (mode === 'perso' && dw != null && cfg.repasSemaine && cfg.repasSemaine[dw]) return cfg.repasSemaine[dw];
+    if (mode === 'programme' && cfg.repasProg && dw != null && PROGRAMMES[cfg.repasProg]) return programmeJour(cfg, cfg.repasProg, dw);
+    return (cfg.repasModeles && cfg.repasModeles[statut]) || A.MODELES[statut];
+  }
+  const tup = x => (Array.isArray(x) ? x : [x.a, x.q, x.adj]);
+  function planDuJour(cfg, statut, cible, date) {
+    const foods = A.allFoods(cfg), tpl = modeleDuJour(cfg, statut, date);
+    const meals = tpl.map(m => ({
+      id: m.id, nom: m.nom, h: m.h, ok: false,
+      items: m.items.map(tup).filter(x => foods[x[0]]).map(x => { const o = { id: A.uid(), a: x[0], q: x[1] }; if (x[2]) o.adj = 1; return o; }),
+    }));
+    return A.ajuster(meals, cible, foods, { tous: true });
+  }
+  /* Copie un programme dans « ma semaine » (7 menus modifiables jour par jour). */
+  function semaineDepuis(cfg, progId) {
+    const out = {}; SEMAINE.forEach(d => { const m = programmeJour(cfg, progId, d); if (m) out[d] = m; }); return out;
+  }
+  /* Repas du jour -> modèle réutilisable (aliments de la base uniquement). */
+  function repasEnModele(meals, foods) {
+    return meals.map((m, i) => ({ id: 'm' + (i + 1), nom: m.nom, h: m.h || '', items: m.items.filter(it => !it.x && foods[it.a]).map(it => ({ a: it.a, q: it.q, adj: foods[it.a].r ? 1 : 0 })) }));
+  }
+
+  Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele });
+})();
+
 /* ---- 15-store.js ---- */
 /* ApexHQ — état : cache localStorage + base privée du compte (capacité db, sous-arbre data/users/<id>/apex).
    Local d'abord : chaque modification est écrite sur l'appareil, puis poussée document par document.
@@ -1779,17 +1887,18 @@ const aiErr = e => aiMsg(e);
 const nomRepas = () => { const h = new Date().getHours(); return h < 10 ? 'Petit-déj' : h < 15 ? 'Déjeuner' : h < 18 ? 'Collation' : 'Dîner'; };
 const heure = () => { const d = new Date(); return Apex.pad(d.getHours()) + ':' + Apex.pad(d.getMinutes()); };
 
-function Qty({ it, f, onChange }) {
-  const stp = Apex.pas(f, it.q), r = v => Math.round(v * 100) / 100;
+function Qty({ it, f, onChange, pesee }) {
+  const por = pesee === false && !f.u, base = f.d || 100, r = v => Math.round(v * 100) / 100;
+  const stp = por ? 0.5 : Apex.pas(f, it.q), shown = por ? r(it.q / base) : it.q, set = v => onChange(por ? r(v * base) : v);
   return html`<div className="qty">
-    <button type="button" aria-label=${'Moins de ' + f.n} onClick=${() => onChange(Math.max(0, r(it.q - stp)))}><${Icon} n="minus" s=${16} /></button>
-    <${Num} small id=${'q-' + it.id} hint=${'Quantité ' + f.n} value=${it.q} onChange=${v => onChange(v == null ? 0 : v)} dec=${f.u ? 1 : 0} min=${0} max=${5000} />
-    <button type="button" aria-label=${'Plus de ' + f.n} onClick=${() => onChange(r(it.q + stp))}><${Icon} n="plus" s=${16} /></button>
-    <span className="qty-u">${unitOf(f)}</span>
+    <button type="button" aria-label=${'Moins de ' + f.n} onClick=${() => set(Math.max(0, r(shown - stp)))}><${Icon} n="minus" s=${16} /></button>
+    <${Num} small id=${'q-' + it.id} hint=${'Quantité ' + f.n} value=${shown} onChange=${v => set(v == null ? 0 : v)} dec=${f.u || por ? 1 : 0} min=${0} max=${por ? 50 : 5000} />
+    <button type="button" aria-label=${'Plus de ' + f.n} onClick=${() => set(r(shown + stp))}><${Icon} n="plus" s=${16} /></button>
+    <span className="qty-u">${por ? 'portion' : unitOf(f)}</span>
   </div>`;
 }
 
-function MealCard({ m, foods, onToggle, onQty, onSwap, onAdd, onDel }) {
+function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel }) {
   const t = Apex.totMeal(m, foods);
   return html`<article className=${cx('meal', m.ok && 'ok')}>
     <div className="meal-h">
@@ -1800,8 +1909,8 @@ function MealCard({ m, foods, onToggle, onQty, onSwap, onAdd, onDel }) {
     ${m.items.length > 0 && html`<div className="its">${m.items.map(it => {
       const f = Apex.foodOf(it, foods); if (!f) return null; const x = Apex.mac(it, foods);
       return html`<div key=${it.id} className=${cx('it', !(it.q > 0) && 'zero')}>
-        <button type="button" className="it-n" onClick=${() => onSwap(it)} aria-label=${'Remplacer ou retirer ' + f.n}><b>${f.n}</b><span>${f0(x.k)} kcal · ${macTxt(x)}</span></button>
-        <${Qty} it=${it} f=${f} onChange=${q => onQty(it, q)} />
+        <button type="button" className="it-n" onClick=${() => onSwap(it)} aria-label=${'Remplacer ou retirer ' + f.n}><b>${f.n}</b><span>${pesee === false && !f.u ? '≈ ' + f0(it.q) + ' g · ' : ''}${f0(x.k)} kcal · ${macTxt(x)}</span></button>
+        <${Qty} it=${it} f=${f} pesee=${pesee} onChange=${q => onQty(it, q)} />
       </div>`;
     })}</div>`}
     <div className="meal-f">
@@ -1913,10 +2022,61 @@ function Boucler({ reste, foods, meals, onAdd }) {
   </div>`;
 }
 
+function WeekSheet({ cfg, progId, onClose }) {
+  const p = Apex.PROGRAMMES[progId], sem = Apex.semaineApercu(cfg, progId);
+  return html`<${Sheet} title=${'Semaine · ' + p.n} onClose=${onClose}>
+    <p className="sec" style=${{ fontSize: 13 }}>${p.d} Les quantités se recalent chaque jour sur tes calories et tes protéines (jour de salle ou de repos).</p>
+    <div className="wk">${sem.map(d => html`<div key=${d.d} className="wk-d"><h3>${d.jour}</h3>${d.repas.map(r => html`<p key=${r.nom}><b>${r.nom}</b><span>${r.noms.join(' · ')}</span></p>`)}</div>`)}</div>
+  <//>`;
+}
+
+function PlanCard({ cfg, onWeek }) {
+  const mode = cfg.repasMode || 'programme', prog = cfg.repasProg || '', conseille = Apex.programmeConseille(cfg), pesee = cfg.repasPesee !== false, setCfg = p => Store.patch('cfg', null, p);
+  const nSem = cfg.repasSemaine ? Object.keys(cfg.repasSemaine).length : 0, base = prog || conseille;
+  const MODES = [['programme', 'Programme conseillé', 'Un menu par jour, prêt à suivre', 'sparkles'], ['perso', 'Ma semaine', 'Tes menus, jour par jour', 'utensils'], ['libre', 'Libre', 'Tu ajoutes tes aliments', 'plus']];
+  return html`<${Card} title="Ton plan repas" sub="Choisis comment tu veux manger">
+    <div className="modes" role="group" aria-label="Mode de plan repas">${MODES.map(m => html`<button key=${m[0]} type="button" className="mode" aria-pressed=${mode === m[0]} onClick=${() => setCfg({ repasMode: m[0] })}><i><${Icon} n=${m[3]} s=${20} /></i><b>${m[1]}</b><span>${m[2]}</span></button>`)}</div>
+    ${mode === 'programme' && html`<div className="stack">
+      <div className="progs">${Apex.PROGRAMMES_ORDRE.map(id => { const p = Apex.PROGRAMMES[id]; return html`<button key=${id} type="button" className="prog" aria-pressed=${prog === id} onClick=${() => { setCfg({ repasProg: id }); toast('Programme « ' + p.n + ' » choisi'); }}>
+        <span className="prog-h"><i><${Icon} n=${p.ic} s=${18} /></i><b>${p.n}</b>${conseille === id && html`<em>Conseillé pour toi</em>`}</span><span className="prog-d">${p.d}</span><small>${p.tag}</small></button>`; })}</div>
+      <div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${prog ? 'Programme actif : ' + Apex.PROGRAMMES[prog].n : 'Aucun choisi : plan par défaut'}</span><button type="button" className="btn sm" onClick=${() => onWeek(base)}><${Icon} n="clock" s=${16} />Voir la semaine</button></div></div>`}
+    ${mode === 'perso' && html`<div className="stack">
+      <p className="sec" style=${{ fontSize: 13 }}>Charge un menu, modifie-le à ta façon, puis enregistre-le pour ce jour de la semaine. Il reviendra chaque semaine. <b>${nSem} / 7 jours enregistrés.</b></p>
+      <div className="row"><${Confirm} label=${'Partir du programme ' + Apex.PROGRAMMES[base].n} sure="Remplacer ma semaine ?" onYes=${() => { setCfg({ repasSemaine: Apex.semaineDepuis(cfg, base) }); toast('Ta semaine est prête : modifie chaque jour'); }} />
+        ${nSem > 0 && html`<${Confirm} label="Vider ma semaine" sure="Tout effacer ?" cls="ghost" onYes=${() => setCfg({ repasSemaine: null })} />`}</div></div>`}
+    ${mode === 'libre' && html`<div className="note"><${Icon} n="info" /><div><span>Aucun menu proposé : tu ajoutes ce que tu manges et l’app compte les calories et les macros. Tu peux changer d’avis à tout moment.</span></div></div>`}
+    <div className="row sb"><span className="fld-l" style=${{ margin: 0 }}>Quantités</span><${Seg} neutral label="Pesée des aliments" value=${pesee} onChange=${v => setCfg({ repasPesee: v })} options=${[[true, 'Je pèse'], [false, 'Sans pesée']]} /></div>
+    ${!pesee && html`<p className="mut" style=${{ fontSize: 12 }}>Sans pesée, tu comptes en portions (une portion = une assiette moyenne de l’aliment). Le poids estimé reste affiché.</p>`}
+  <//>`;
+}
+
+const CONFETTI = ['var(--acc-hi)', 'var(--good)', 'var(--p)', 'var(--warn)', 'var(--s1)'];
+function SuppCard({ supL, supp, date }) {
+  const all = supL.length > 0 && supL.every(x => supp[x.id]), prev = useRef(all), [fx, setFx] = useState(0), n = supL.filter(x => supp[x.id]).length;
+  useEffect(() => {
+    if (all && !prev.current) { setFx(1); try { if (navigator.vibrate) navigator.vibrate([25, 40, 25]); } catch (e) { /* vibration indisponible */ } prev.current = all; const t = setTimeout(() => setFx(0), 2300); return () => clearTimeout(t); }
+    prev.current = all;
+  }, [all]);
+  const toggle = id => { const o = Object.assign({}, supp); if (o[id]) delete o[id]; else o[id] = 1; Store.patch('journal', date, { date, supp: Object.keys(o).length ? o : null }); };
+  return html`<section className=${cx('card', 'supc', all && 'done')}>
+    <div className="card-h"><div><h2>Compléments</h2><div className="sub">Coche à la prise</div></div>
+      ${supL.length > 0 && (all ? html`<span className="pill good pop"><i></i>Tout est pris</span>` : html`<span className="supc-n">${n}<small>/${supL.length}</small></span>`)}</div>
+    ${supL.length > 0 && html`<div className="supc-bar" role="img" aria-label=${n + ' compléments pris sur ' + supL.length}><i style=${{ width: Math.round(n / supL.length * 100) + '%' }}></i></div>`}
+    ${supL.length ? html`<div className="supp">${supL.map(x => html`<button key=${x.id} type="button" aria-pressed=${!!supp[x.id]} onClick=${() => toggle(x.id)}>
+      <span className="chk" aria-pressed=${!!supp[x.id]}><${Icon} n="check" s=${16} w=${2.5} /></span><span><b>${x.n}</b><span>${x.note || ''}</span></span></button>`)}</div>`
+    : html`<div className="empty"><span>Aucun complément. Ajoute les tiens dans Réglages, onglet Repas.</span></div>`}
+    <p className="mut" style=${{ fontSize: 12 }}>Les protéines en poudre ajoutées au plan repas comptent dans le total, pas besoin de les cocher ici.</p>
+    ${fx > 0 && html`<div className="fx" aria-hidden="true">
+      <svg className="fx-ring" viewBox="0 0 80 80"><circle cx="40" cy="40" r="34" /><path d="M24 41l11 11 21-23" /></svg>
+      ${Array.from({ length: 22 }, (_, i) => html`<i key=${i} style=${{ '--a': (i * 360 / 22) + 'deg', '--d': (70 + (i % 3) * 26) + 'px', '--c': CONFETTI[i % CONFETTI.length], '--t': (i % 4) * 40 + 'ms' }}></i>`)}
+      <span className="fx-t">Tous tes compléments sont pris</span></div>`}
+  </section>`;
+}
+
 function Repas({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
   const j = S.journal[date] || {}, meals = j.repas || [], c = Apex.cibleDuJour(cfg, j, date), t = Apex.totJour(j, foods);
-  const [sheet, setSheet] = useState(null);
+  const [sheet, setSheet] = useState(null), [wk, setWk] = useState('');
   const put = ms => Store.patch('journal', date, { date, repas: ms });
   const mapMeal = (mid, fn) => put(meals.map(m => (m.id === mid ? fn(m) : m)));
   const mapItem = (mid, iid, fn) => mapMeal(mid, m => Object.assign({}, m, { items: m.items.map(i => (i.id === iid ? fn(i) : i)).filter(Boolean) }));
@@ -1927,7 +2087,10 @@ function Repas({ date }) {
   const canFit = !man && meals.length > 0 && Math.abs(fitK - plan.k) > 15, exc = fitK - c.kcal;
   const lis = exc > 60 && !j.lisse ? Apex.lissage(exc, cfg, S.journal, date) : null;
   const reste = { k: c.kcal - plan.k, p: c.p - plan.p, g: c.g - plan.g, l: c.l - plan.l };
-  const gen = () => { put(Apex.planDuJour(cfg, c.statut, c)); toast('Plan ' + c.statut + ' chargé, calé sur ' + f0(c.kcal) + ' kcal'); };
+  const mode = cfg.repasMode || 'programme', pesee = cfg.repasPesee !== false, jourNom = Apex.JOURS[Apex.dow(date)].toLowerCase();
+  const semOk = !!(cfg.repasSemaine && cfg.repasSemaine[Apex.dow(date)]);
+  const gen = () => { put(Apex.planDuJour(cfg, c.statut, c, date)); toast('Menu du ' + jourNom + ' chargé, calé sur ' + f0(c.kcal) + ' kcal'); };
+  const saveJour = () => { Store.patch('cfg', null, { repasMode: 'perso', repasSemaine: Object.assign({}, cfg.repasSemaine || {}, { [Apex.dow(date)]: Apex.repasEnModele(meals, foods) }) }); toast('Enregistré pour tous les ' + jourNom + 's'); };
   const tplOk = !!(cfg.repasModeles && cfg.repasModeles[c.statut]);
   const saveTpl = () => {
     const tpl = meals.map((m, i) => ({ id: 'm' + (i + 1), nom: m.nom, h: m.h || '', items: m.items.filter(it => !it.x && foods[it.a]).map(it => ({ a: it.a, q: it.q, adj: foods[it.a].r ? 1 : 0 })) })), libres = meals.reduce((s, m) => s + m.items.filter(it => it.x).length, 0);
@@ -1969,16 +2132,20 @@ function Repas({ date }) {
           ${man && html`<div className="note"><${Icon} n="info" /><div><span>Ce bilan vient du check-in. Les repas cochés ne comptent pas tant qu’il est actif.</span>
             <${Confirm} label="Revenir au planner" sure="Effacer le bilan saisi ?" onYes=${() => Store.patch('journal', date, { date, man: null })} /></div></div>`}
         <//>
+        <${PlanCard} cfg=${cfg} onWeek=${setWk} />
         <${Card} title="Repas" sub="Touche un aliment pour le remplacer" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
-          ${meals.length ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods}
+          ${meals.length ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods} pesee=${pesee}
             onToggle=${() => mapMeal(m.id, x => Object.assign({}, x, { ok: !x.ok }))}
             onQty=${(it, q) => mapItem(m.id, it.id, i => { const o = Object.assign({}, i, { q }); delete o.adj; return o; })}
             onSwap=${it => setSheet({ t: 'swap', mid: m.id, iid: it.id })}
             onAdd=${() => setSheet({ t: 'add', mid: m.id })}
             onDel=${() => put(meals.filter(x => x.id !== m.id))} />`)}</div>`
-          : html`<div className="empty"><span><b>Aucun repas planifié.</b> Charge le plan ${c.statut} : repas autour de la séance, quantités calées sur ${f0(c.kcal)} kcal et ${c.p} g de protéines. Tu remplaces ensuite ce que tu veux.</span>
-            <button type="button" className="btn pri" onClick=${gen}><${Icon} n="utensils" s=${18} />Charger le plan du jour</button></div>`}
-          ${meals.length > 0 && html`<div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>Plan type ${c.statut} : ${tplOk ? 'le tien' : 'par défaut'}</span>
+          : mode === 'libre' ? html`<div className="empty"><span><b>Journée libre.</b> Ajoute un repas puis tes aliments ${pesee ? 'avec leur poids' : 'en portions'} : les calories et les macros se calculent tout seuls.</span>
+            <div className="row"><button type="button" className="btn pri" onClick=${addMeal}><${Icon} n="plus" s=${18} />Ajouter un repas</button><button type="button" className="btn ghost" onClick=${gen}>Ou charger un menu</button></div></div>`
+          : html`<div className="empty"><span><b>Aucun repas planifié.</b> ${mode === 'perso' && !semOk ? 'Pas encore de menu enregistré pour ce ' + jourNom + '. Charge le menu de base, modifie-le, puis enregistre-le pour ce jour.' : 'Charge le menu du ' + jourNom + ' : quantités calées sur ' + f0(c.kcal) + ' kcal et ' + c.p + ' g de protéines. Tu remplaces ensuite ce que tu veux.'}</span>
+            <button type="button" className="btn pri" onClick=${gen}><${Icon} n="utensils" s=${18} />${mode === 'perso' && semOk ? 'Charger mon menu du ' + jourNom : 'Charger le menu du ' + jourNom}</button></div>`}
+          ${meals.length > 0 && mode === 'perso' && html`<div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${semOk ? 'Menu du ' + jourNom + ' enregistré' : 'Pas enregistré pour le ' + jourNom}</span><button type="button" className="btn sm ghost" onClick=${saveJour}>Enregistrer pour tous les ${jourNom}s</button></div>`}
+          ${meals.length > 0 && mode !== 'perso' && html`<div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>Plan type ${c.statut} : ${tplOk ? 'le tien' : 'par défaut'}</span>
             <div className="row"><button type="button" className="btn sm ghost" onClick=${saveTpl}>Enregistrer comme plan type</button>${tplOk && html`<${Confirm} label="Rétablir" sure="Rétablir le défaut ?" cls="ghost" onYes=${resetTpl} />`}</div></div>`}
         <//>
         ${j.repasTxt && html`<${Card} title="Journal du jour" sub="Texte repris du QG Sèche"><div className="pre">${j.repasTxt}</div><//>`}
@@ -2003,14 +2170,10 @@ function Repas({ date }) {
             ${canFit && html`<button type="button" className="btn wide" onClick=${refit}><${Icon} n="refresh" s=${18} />Ou recaler les quantités existantes</button>`}
           </div>`}
         <//>
-        <${Card} title="Compléments" sub="Coche à la prise">
-          ${supL.length ? html`<div className="supp">${supL.map(x => html`<button key=${x.id} type="button" aria-pressed=${!!supp[x.id]} onClick=${() => { const o = Object.assign({}, supp); if (o[x.id]) delete o[x.id]; else o[x.id] = 1; Store.patch('journal', date, { date, supp: Object.keys(o).length ? o : null }); }}>
-            <span className="chk" aria-pressed=${!!supp[x.id]}><${Icon} n="check" s=${16} w=${2.5} /></span><span><b>${x.n}</b><span>${x.note || ''}</span></span></button>`)}</div>`
-          : html`<div className="empty"><span>Aucun complément. Ajoute les tiens dans Réglages, onglet Repas.</span></div>`}
-          <p className="mut" style=${{ fontSize: 12 }}>Les protéines en poudre ajoutées au plan repas comptent dans le total, pas besoin de les cocher ici.</p>
-        <//>
+        <${SuppCard} key=${date} supL=${supL} supp=${supp} date=${date} />
       </div>
     </div>
+    ${wk && html`<${WeekSheet} cfg=${cfg} progId=${wk} onClose=${() => setWk('')} />`}
     ${sheet && sheet.t === 'add' && sh && html`<${AddSheet} foods=${foods} title=${'Ajouter · ' + sh.nom} onClose=${() => setSheet(null)} onAdd=${it => addItems(sh.id, [it])} />`}
     ${shIt && html`<${SwapSheet} it=${shIt} foods=${foods} onClose=${() => setSheet(null)}
       onPick=${(a, q) => mapItem(sh.id, shIt.id, i => { const o = { id: i.id, a, q }; if (i.adj) o.adj = 1; return o; })}
@@ -2142,25 +2305,38 @@ function FocusCard({ date }) {
   <//>`;
 }
 
+function Gauge({ ic, label, v, max, unit, hint, good, inv }) {
+  const has = v != null, pc = has ? Math.max(0, Math.min(100, v / max * 100)) : 0, tone = !has ? '' : (inv ? (v >= 8.5 ? 'crit' : v >= 7 ? 'warn' : 'good') : (v >= good ? 'good' : v >= good * 0.8 ? 'warn' : 'crit'));
+  return html`<div className=${cx('gg', tone, !has && 'empty')}>
+    <div className="gg-h"><i><${Icon} n=${ic} s=${17} /></i><span>${label}</span></div>
+    <b className="gg-v">${has ? f1(v) : '–'}<small>${has ? unit : ''}</small></b>
+    <div className="gg-b" aria-hidden="true"><i style=${{ width: pc + '%' }}></i></div>
+    <span className="gg-s">${has ? hint : 'À noter au check-in'}</span>
+  </div>`;
+}
+
 function FatigueCard({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), f = Apex.fatigue(S.journal, S.seances, cfg, date), j = S.journal[date] || {};
   const m = Apex.mm7(S.journal, date), poids = m ? m.v : cfg.profil.poidsDepart, ca = j.cardio || {};
   const setC = k => v => { const o = Object.assign({}, ca); if (v == null) delete o[k]; else o[k] = v; Store.patch('journal', date, { date, cardio: Object.keys(o).length ? o : null }); };
-  const kc = Apex.cardioKcal(ca.min, ca.vit, ca.incl, poids);
-  return html`<${Card} title="Fatigue et cardio" sub="7 derniers jours" right=${html`<${Pill} st=${f.st}>Fatigue ${f.niveau}<//>`}>
-    <div className="tiles">
-      <div className="tile"><span>Sommeil moyen</span><b>${f.som == null ? '–' : f1(f.som)}<small>h</small></b></div>
-      <div className="tile"><span>Énergie</span><b>${f.en == null ? '–' : f1(f.en)}<small>/10</small></b></div>
-      <div className="tile"><span>Force perçue</span><b>${f.fo == null ? '–' : f1(f.fo)}<small>/10</small></b></div>
-      <div className="tile"><span>RPE moyen</span><b>${f.rpe == null ? '–' : f1(f.rpe)}</b></div>
+  const kc = Apex.cardioKcal(ca.min, ca.vit, ca.incl, poids), cible = cfg.cibles.sommeil || 7;
+  return html`<${Card} cls="fat" title="Fatigue et cardio" sub="7 derniers jours" right=${html`<${Pill} st=${f.st}>Fatigue ${f.niveau}<//>`}>
+    <div className=${cx('fat-b', f.st)}><i><${Icon} n=${f.st === 'crit' ? 'alert' : f.st === 'warn' ? 'clock' : 'check'} s=${22} /></i>
+      <div><b>${f.st === 'crit' ? 'Fatigue élevée, à surveiller' : f.st === 'warn' ? 'Fatigue modérée' : 'Tout est au vert'}</b><span>${f.why.length ? f.why.join(' · ') + '. ' : ''}${f.txt}</span></div></div>
+    <div className="ggs">
+      <${Gauge} ic="moon" label="Sommeil moyen" v=${f.som} max=${10} unit="h" good=${cible} hint=${'objectif ' + cible + ' h'} />
+      <${Gauge} ic="bolt" label="Énergie" v=${f.en} max=${10} unit="/10" good=${6.5} hint="ressenti sur 10" />
+      <${Gauge} ic="dumbbell" label="Force perçue" v=${f.fo} max=${10} unit="/10" good=${6.5} hint="ressenti sur 10" />
+      <${Gauge} ic="flame" label="RPE moyen" v=${f.rpe} max=${10} unit="" inv hint="effort des séries" />
     </div>
-    <p className="sec" style=${{ fontSize: 13 }}>${f.why.length ? f.why.join(' · ') + '. ' : ''}${f.txt}</p>
-    <hr className="hr" />
-    <span className="fld-l">Cardio post-séance · tapis incliné<b>${kc > 0 ? '≈ ' + f0(kc) + ' kcal' : 'si pas sous 10k'}</b></span>
-    <div className="form" style=${{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-      <${Num} id="ca-min" label="Durée" unit="min" value=${ca.min == null ? null : ca.min} onChange=${setC('min')} dec=${0} min=${0} max=${180} placeholder="15" />
-      <${Num} id="ca-incl" label="Pente" unit="%" value=${ca.incl == null ? null : ca.incl} onChange=${setC('incl')} dec=${1} min=${0} max=${20} placeholder="10" />
-      <${Num} id="ca-vit" label="Vitesse" unit="km/h" value=${ca.vit == null ? null : ca.vit} onChange=${setC('vit')} dec=${1} min=${0} max=${12} placeholder="5,5" />
+    <div className="cardio">
+      <div className="cardio-h"><i><${Icon} n="steps" s=${18} /></i><div><b>Cardio post-séance</b><span>Tapis incliné</span></div>
+        <div className=${cx('cardio-k', kc > 0 && 'on')}>${kc > 0 ? html`≈ ${f0(kc)}<small>kcal</small>` : html`<small>si pas sous 10k</small>`}</div></div>
+      <div className="form" style=${{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+        <${Num} id="ca-min" label="Durée" unit="min" value=${ca.min == null ? null : ca.min} onChange=${setC('min')} dec=${0} min=${0} max=${180} placeholder="15" />
+        <${Num} id="ca-incl" label="Pente" unit="%" value=${ca.incl == null ? null : ca.incl} onChange=${setC('incl')} dec=${1} min=${0} max=${20} placeholder="10" />
+        <${Num} id="ca-vit" label="Vitesse" unit="km/h" value=${ca.vit == null ? null : ca.vit} onChange=${setC('vit')} dec=${1} min=${0} max=${12} placeholder="5,5" />
+      </div>
     </div>
   <//>`;
 }
@@ -2179,8 +2355,9 @@ function HistoCard() {
 }
 
 function Training({ date, setDate }) {
+  const cfg = useStore().cfg(), nS = Object.keys(cfg.planning || {}).filter(k => cfg.planning[k]).length, G = Apex.groupes(cfg), foc = Object.keys(G).map(k => G[k].n);
   return html`<div>
-    <div className="view-h"><h1>Training · ${dMid(date)}</h1><p>PPL + Upper/Lower, 5 séances. Priorité pecs, biceps, deltoïdes latéraux.</p></div>
+    <div className="view-h"><h1>Training · ${dMid(date)}</h1><p>${nS} séance${nS > 1 ? 's' : ''} par semaine · ${Apex.types(cfg).join(', ')}.${foc.length ? ' Priorité : ' + foc.join(', ').toLowerCase() + '.' : ''}</p></div>
     <div className="grid">
       <div className="c12"><${WeekBar} date=${date} setDate=${setDate} /></div>
       <${SeanceCard} date=${date} />
@@ -2197,19 +2374,44 @@ function Training({ date, setDate }) {
 /* ApexHQ — onglet 4 : sèche (poids, projection, bilan métabolique), adhérence, force, volume, physique. */
 const POSES = [['face', 'Face'], ['profil', 'Profil'], ['dos', 'Dos']];
 
+function KPI({ ic, label, value, unit, hint, tone, empty }) {
+  return html`<div className=${cx('kp', tone, empty && 'empty')}><i className="kp-i"><${Icon} n=${ic} s=${18} /></i>
+    <span className="kp-l">${label}</span>
+    <b className="kp-v">${empty ? html`<em>En attente</em>` : html`${value}${unit && html`<small>${unit}</small>`}`}</b>
+    <span className="kp-h">${hint}</span></div>`;
+}
+
 function SecheCard({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg();
   const raw = Apex.serie(S.journal, 'poids'), last = raw.length ? raw[raw.length - 1].d : date;
   const m = Apex.mm7(S.journal, last), t = Apex.tendance(S.journal, last), v = Apex.verdictRythme(t), e = Apex.eta(S.journal, cfg, last), td = Apex.tdee(S.journal, cfg, last);
-  const th = Apex.bilanTheorique(cfg, m ? m.v : cfg.profil.poidsDepart);
-  return html`<${Card} cls="c12" title="Sèche" sub=${'Départ ' + f1(cfg.profil.poidsDepart) + ' kg le ' + dTiny(cfg.profil.dateDepart) + ' · cible ' + f1(cfg.profil.poidsCible) + ' kg'} right=${v && html`<${Pill} st=${v.st}>${v.lab}<//>`}>
-    <div className="tiles">
-      <div className="tile"><span>Moyenne 7 j</span><b>${m ? f1(m.v) : '–'}<small>kg</small></b><em>${m ? sgn(m.v - cfg.profil.poidsDepart) + ' kg depuis le départ' : 'aucune pesée'}</em></div>
-      <div className="tile"><span>Rythme</span><b>${t ? sgn(t.pct) : '–'}<small>%/sem</small></b><em>${t ? sgn(t.dk, f2) + ' kg/sem · cible −0,5 à −1 %' : 'après 2 semaines de pesées'}</em></div>
-      <div className="tile"><span>Arrivée à ${f0(cfg.profil.poidsCible)} kg</span><b>${e ? dTiny(e.date) : '–'}</b><em>${e ? 'dans ' + e.jours + ' j au rythme actuel' : 'projection indisponible'}</em></div>
-      <div className="tile"><span>Dépense réelle</span><b>${td ? f0(td.tdee) : '–'}<small>kcal</small></b><em>${td ? 'apport ' + f0(td.intake) + ' · déficit ' + f0(td.deficit) : 'après 14 j de données'}</em></div>
-      <div className="tile"><span>Dépense théorique</span><b>${f0(th.dej)}<small>kcal</small></b><em>Mifflin ${f0(th.mb)} × NAP ${fq(cfg.profil.nap)}</em></div>
-      <div className="tile"><span>Déficit planifié</span><b>−${f0(th.def)}<small>kcal/j</small></b><em>${f0(th.pct)} % · ${f2(th.kgSem)} kg/sem · moy. ${f0(th.moy)} kcal</em></div>
+  const dep = cfg.profil.poidsDepart, cib = cfg.profil.poidsCible, cur = m ? m.v : dep, th = Apex.bilanTheorique(cfg, cur);
+  const obj = (cfg.q && cfg.q.objectif) || (cib < dep ? 'seche' : cib > dep ? 'masse' : 'neutre');
+  const titre = { seche: 'Sèche', masse: 'Prise de masse', neutre: 'Maintien' }[obj] || 'Objectif';
+  const tot = cib - dep, prog = tot ? Math.max(0, Math.min(1, (cur - dep) / tot)) : 1, reste = cib - cur, pctTxt = Math.round(prog * 100);
+  const pos = tot ? Math.max(0, Math.min(100, (cur - dep) / tot * 100)) : 100;
+  const rythmeCible = obj === 'seche' ? 'cible −0,5 à −1 %/sem' : obj === 'masse' ? 'cible +0,25 à +0,5 %/sem' : 'cible stable';
+  const surplus = th.def < 0;
+  return html`<${Card} cls="c12 obj" title=${titre} sub=${'Départ ' + f1(dep) + ' kg le ' + dTiny(cfg.profil.dateDepart) + ' · cible ' + f1(cib) + ' kg'} right=${v && html`<${Pill} st=${v.st}>${v.lab}<//>`}>
+    <div className="obj-hero">
+      <${Ring} v=${prog * 100} max=${100} size=${118} sw=11><b>${pctTxt}<small>%</small></b><span>du chemin</span><//>
+      <div className="obj-r">
+        <span className="obj-k">${m ? 'Poids actuel · moyenne 7 j' : 'Poids de départ'}</span>
+        <div className="obj-n num">${f1(cur)}<small>kg</small></div>
+        <span className="obj-s">${Math.abs(reste) < 0.05 ? 'Objectif atteint' : (reste < 0 ? f1(Math.abs(reste)) + ' kg à perdre' : f1(reste) + ' kg à prendre') + ' pour atteindre ' + f1(cib) + ' kg'}</span>
+      </div>
+    </div>
+    <div className="jr" role="img" aria-label=${'Départ ' + f1(dep) + ' kg, actuel ' + f1(cur) + ' kg, cible ' + f1(cib) + ' kg'}>
+      <div className="jr-t"><i style=${{ width: pos + '%' }}></i><u style=${{ left: pos + '%' }}></u></div>
+      <div className="jr-l"><span>Départ<b>${f1(dep)}</b></span><span className="jr-c">Actuel<b>${f1(cur)}</b></span><span>Cible<b>${f1(cib)}</b></span></div>
+    </div>
+    <div className="kps">
+      <${KPI} ic="scale" label="Moyenne 7 j" value=${m && f1(m.v)} unit="kg" empty=${!m} hint=${m ? sgn(m.v - dep) + ' kg depuis le départ' : 'Aucune pesée : note ton poids au check-in'} />
+      <${KPI} ic="trend" label="Rythme" value=${t && sgn(t.pct)} unit="%/sem" empty=${!t} tone=${v && v.st} hint=${t ? sgn(t.dk, f2) + ' kg/sem · ' + rythmeCible : 'Apparaît après 2 semaines de pesées'} />
+      <${KPI} ic="target" label=${'Arrivée à ' + f0(cib) + ' kg'} value=${e && dTiny(e.date)} empty=${!e} hint=${e ? 'dans ' + e.jours + ' j au rythme actuel' : 'Projection : besoin de plus de pesées'} />
+      <${KPI} ic="flame" label="Dépense réelle" value=${td && f0(td.tdee)} unit="kcal" empty=${!td} hint=${td ? 'apport ' + f0(td.intake) + ' · déficit ' + f0(td.deficit) : 'Calculée après 14 j de données'} />
+      <${KPI} ic="bolt" label="Dépense théorique" value=${f0(th.dej)} unit="kcal" hint=${'Mifflin ' + f0(th.mb) + ' × NAP ' + fq(cfg.profil.nap)} />
+      <${KPI} ic="chart" label=${surplus ? 'Surplus planifié' : 'Déficit planifié'} value=${(surplus ? '+' : '−') + f0(Math.abs(th.def))} unit="kcal/j" hint=${f0(Math.abs(th.pct)) + ' % · ' + f2(Math.abs(th.kgSem)) + ' kg/sem · moy. ' + f0(th.moy) + ' kcal'} />
     </div>
     ${v && html`<p className="sec" style=${{ fontSize: 13 }}>${v.txt}</p>`}
   <//>`;
