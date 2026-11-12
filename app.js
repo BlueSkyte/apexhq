@@ -732,7 +732,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   function genProgramme(q, groupes, cfg) {
     const ex = A.allExos(cfg), n = clamp(Math.round(q.seances || 0), 0, 7), base = (SPLITS[q.split] || SPLITS.ppl_ul)[1];
     const planning = { 0: '', 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' };
-    const days = n ? JOURS_ENT[n] : [], seq = days.map((d, i) => base[i % base.length]);
+    const ORD = [1, 2, 3, 4, 5, 6, 0], days = Array.isArray(q.jours) && q.jours.length ? q.jours.filter(d => d >= 0 && d <= 6).sort((a, b) => ORD.indexOf(a) - ORD.indexOf(b)) : (n ? JOURS_ENT[n] : []), seq = days.map((d, i) => base[i % base.length]);
     days.forEach((d, i) => { planning[d] = seq[i]; });
     const used = []; seq.forEach(t => { if (used.indexOf(t) < 0) used.push(t); });
     if (!used.length) base.forEach(t => used.push(t));
@@ -769,7 +769,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return Object.keys(res.programme).reduce((s, t) => s + (occ[t] || 0) * res.programme[t].filter(x => ex[x.e] && g.m.indexOf(ex[x.e].m) >= 0).reduce((a, x) => a + x.n, 0), 0);
   }
   /* Valide la réponse de l'IA : renvoie un programme propre ou null. */
-  function validerProgrammeIA(r, n, cfg) {
+  function validerProgrammeIA(r, n, cfg, jours) {
     try {
       const ex = A.allExos(cfg); if (!r || !Array.isArray(r.seances) || r.seances.length < 1 || r.seances.length > 7 || !r.planning) return null;
       const names = [], prog = {};
@@ -781,6 +781,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       const planning = { 0: '', 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' }; let days = 0;
       for (const d of Object.keys(r.planning)) { const k = Number(d); if (!(k >= 0 && k <= 6)) return null; const v = String(r.planning[d] || '').trim(); if (v) { const m = names.find(x => x.toLowerCase() === v.toLowerCase()); if (!m) return null; planning[k] = m; days++; } }
       if (days !== n) return null;
+      if (Array.isArray(jours) && jours.length && Object.keys(planning).some(k => planning[k] && jours.indexOf(+k) < 0)) return null;
       return { seanceTypes: names, programme: prog, planning };
     } catch (e) { return null; }
   }
@@ -835,6 +836,98 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   };
 
   Object.assign(A, { OBJECTIFS, INTENSITES, intensites, calcPlan, planToCfg, FOCUS_CHOIX, focusGroupes, SPLITS, splitSuggere, genProgramme, volumeGroupe, validerProgrammeIA, exclusIds, modelesPour, wheyAliments, SUPP_CHOIX, suppsListe });
+})();
+
+/* ---- 12-adapt-logic.js ---- */
+/* ApexHQ — adaptation d'une séance : temps disponible, matériel, zones sensibles, forme du jour, points faibles.
+   Fonctions pures (testées par test-adapt.js). Étend le moteur Apex. */
+(function () {
+  'use strict';
+  const A = Apex, clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  /* ---------- exercices au poids du corps (séances sans matériel) ---------- */
+  const X = (id, n, m, s, lo, hi, inc) => { A.EXOS[id] = { id, n, m, s: s || [], lo, hi, inc }; };
+  X('pompes', 'Pompes', 'pec', ['dAnt', 'tri'], 8, 20, 2.5);
+  X('pompes_pieds', 'Pompes pieds surélevés', 'pecH', ['dAnt', 'tri'], 8, 15, 2.5);
+  X('pompes_pike', 'Pompes en V (épaules)', 'dAnt', ['tri'], 6, 15, 2.5);
+  X('pompes_diamant', 'Pompes diamant', 'tri', ['pec'], 8, 15, 2.5);
+  X('rowing_inv', 'Rowing inversé (table ou barre basse)', 'dos', ['bic'], 8, 15, 2.5);
+  X('squat_pdc', 'Squat poids du corps', 'quad', ['fess'], 15, 30, 2.5);
+  X('fentes_pdc', 'Fentes marchées', 'quad', ['fess'], 12, 24, 2.5);
+  X('pont_fessier', 'Pont fessier', 'fess', ['isch'], 12, 25, 2.5);
+  X('gainage', 'Gainage (planche)', 'abd', [], 8, 20, 2.5);
+
+  /* ---------- matériel ---------- */
+  const EQ = {
+    barre: ['dc', 'row_barre', 'squat', 'rdl', 'barre_front', 'curl_ez', 'curl_pup'],
+    halteres: ['di_halt', 'el_halt', 'dm_halt', 'curl_inc', 'row_uni', 'curl_mart', 'fentes'],
+    poulie: ['ec_bh', 'tri_corde', 'tri_oh', 'tir_horiz', 'el_poulie', 'face_pull', 'crunch', 'tir_neutre', 'curl_bay'],
+    machine: ['presse', 'leg_curl', 'leg_ext', 'mollets', 'di_smith', 'pec_deck', 'el_mach', 'hack', 'leg_curl_assis', 'mollets_assis'],
+    barrefixe: ['tractions'],
+    corps: ['pompes', 'pompes_pieds', 'pompes_pike', 'pompes_diamant', 'rowing_inv', 'squat_pdc', 'fentes_pdc', 'pont_fessier', 'gainage'],
+  };
+  Object.keys(EQ).forEach(k => EQ[k].forEach(id => { if (A.EXOS[id]) A.EXOS[id].eq = k; }));
+  const EQUIP = [['salle', 'Salle complète', 'Barres, machines, poulies, haltères.'], ['limite', 'Salle limitée', 'Haltères, poulie, barre de traction.'], ['maison', 'Maison avec haltères', 'Haltères et ton poids du corps.'], ['zero', 'Sans matériel', 'Poids du corps seulement.']];
+  const EQMODES = { salle: ['barre', 'halteres', 'poulie', 'machine', 'barrefixe', 'corps'], limite: ['halteres', 'poulie', 'corps', 'barrefixe'], maison: ['halteres', 'corps'], zero: ['corps'] };
+  const eqOk = (mode, exo) => !exo || !exo.eq || (EQMODES[mode] || EQMODES.salle).indexOf(exo.eq) >= 0;
+
+  /* ---------- durée estimée : 6 min d'échauffement + 2,2 min par série (3 pour les gros mouvements) ---------- */
+  const LOURDS = ['squat', 'dc', 'rdl', 'presse', 'row_barre', 'dm_halt', 'tractions', 'hack', 'di_halt', 'di_smith', 'tir_neutre', 'fentes', 'squat_pdc', 'pompes'];
+  const dureeSeance = (plan, exos) => Math.round(6 + (plan || []).reduce((s, x) => s + x.n * (LOURDS.indexOf(x.e) >= 0 ? 3 : 2.2), 0));
+
+  /* ---------- zones sensibles ---------- */
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const ZONES = [['epaule', ['dAnt', 'dLat', 'dPost']], ['coude', ['tri', 'bic']], ['poignet', ['tri', 'bic']], ['genou', ['quad']], ['hanche', ['fess']], ['dos', ['dos']], ['lombaire', ['isch']], ['pec', ['pec', 'pecH']]];
+  const zonesSensibles = txt => { const t = norm(txt), m = []; ZONES.forEach(z => { if (t.indexOf(z[0]) >= 0) z[1].forEach(x => { if (m.indexOf(x) < 0) m.push(x); }); }); return m; };
+
+  /* Adapte un plan [{e, n}] aux contraintes. Renvoie { plan, duree, notes }. */
+  function adapterSeance(o) {
+    const cfg = o.cfg, ex = A.allExos(cfg), GR = A.groupes(cfg), notes = [], focusMus = [];
+    (o.focus || []).forEach(id => { if (GR[id]) GR[id].m.forEach(m => { if (focusMus.indexOf(m) < 0) focusMus.push(m); }); });
+    const ok = e => eqOk(o.equip, ex[e]), evite = zonesSensibles(o.douleurs);
+    const used = () => plan.map(p => p.e);
+    let plan = [];
+    (o.plan || []).filter(x => ex[x.e]).forEach(x => {
+      const nx = { e: x.e, n: x.n }, e0 = ex[x.e];
+      if (evite.indexOf(e0.m) >= 0) { notes.push(e0.n + ' retiré : zone sensible.'); return; }
+      if (ok(x.e)) { plan.push(nx); return; }
+      const alt = Object.keys(ex).find(id => ex[id].m === e0.m && ok(id) && evite.indexOf(ex[id].m) < 0 && !used().includes(id) && !(o.plan || []).some(p => p.e === id));
+      if (alt) { plan.push({ e: alt, n: x.n }); notes.push(e0.n + ' remplacé par ' + ex[alt].n + ' (matériel).'); } else notes.push(e0.n + ' retiré : pas de matériel adapté.');
+    });
+    const muscles = ['pec', 'dos', 'quad', 'isch', 'dAnt', 'bic', 'tri', 'abd', 'fess'];
+    const ajouter = (mus, n) => { const id = Object.keys(ex).find(i => mus.indexOf(ex[i].m) >= 0 && ok(i) && evite.indexOf(ex[i].m) < 0 && !used().includes(i)); if (id) { plan.push({ e: id, n }); return id; } return null; };
+    if (focusMus.length) { const manque = focusMus.filter(m => !plan.some(p => ex[p.e].m === m)); if (manque.length) { const id = ajouter(manque, 3); if (id) notes.push(ex[id].n + ' ajouté pour ta priorité du jour.'); } }
+    for (let i = 0; plan.length < 4 && i < muscles.length; i++) ajouter([muscles[i]], 3);
+    if (o.forme != null && o.forme <= 4) { plan.forEach(x => { x.n = Math.max(2, x.n - 1); }); notes.push('Forme basse : une série en moins par exercice. Garde les charges, arrête-toi à 2 répétitions de la limite.'); }
+    const foc = x => focusMus.indexOf(ex[x.e].m) >= 0, cible = clamp(Math.round(o.minutes || 60), 20, 150);
+    const avant = dureeSeance(plan, ex);
+    for (let g = 0; g < 100 && dureeSeance(plan, ex) > cible; g++) {
+      const c = plan.map((x, i) => [x, i]).filter(p => !foc(p[0]) && p[0].n > 2).sort((a, b) => b[0].n - a[0].n || b[1] - a[1])[0];
+      if (c) { c[0].n--; continue; }
+      const r = plan.map((x, i) => [x, i]).filter(p => !foc(p[0])).pop(); if (r && plan.length > 3) { plan.splice(r[1], 1); continue; }
+      const f = plan.filter(x => x.n > 2).sort((a, b) => b.n - a.n)[0]; if (f) { f.n--; continue; }
+      if (plan.length > 2) plan.pop(); else break;
+    }
+    for (let g = 0; g < 30 && focusMus.length && dureeSeance(plan, ex) + 3 <= cible; g++) { const f = plan.filter(x => foc(x) && x.n < 5).sort((a, b) => a.n - b.n)[0]; if (!f) break; f.n++; }
+    const apres = dureeSeance(plan, ex);
+    if (apres < avant) notes.push('Séance ramenée à environ ' + apres + ' min (série et exercices secondaires réduits, points faibles gardés).');
+    return { plan, duree: apres, notes };
+  }
+
+  /* Valide la séance proposée par l'IA : { exercices:[{id, series}], conseils:[...] } → { plan, notes, duree } ou null. */
+  function validerSeanceIA(r, o) {
+    try {
+      const ex = A.allExos(o.cfg); if (!r || !Array.isArray(r.exercices)) return null;
+      const evite = zonesSensibles(o.douleurs), seen = {};
+      const plan = r.exercices.map(x => ({ e: String(x && x.id), n: Math.round(Number(x && x.series)) })).filter(x => ex[x.e] && eqOk(o.equip, ex[x.e]) && evite.indexOf(ex[x.e].m) < 0 && x.n >= 1 && x.n <= 8 && !seen[x.e] && (seen[x.e] = 1));
+      if (plan.length < 3 || plan.length > 12) return null;
+      const duree = dureeSeance(plan, ex); if (duree > (o.minutes || 60) * 1.2 + 3) return null;
+      const notes = (Array.isArray(r.conseils) ? r.conseils : []).map(s => String(s).trim().slice(0, 180)).filter(Boolean).slice(0, 5);
+      return { plan, notes, duree };
+    } catch (e) { return null; }
+  }
+
+  Object.assign(A, { EQUIP, EQMODES, eqOk, dureeSeance, zonesSensibles, adapterSeance, validerSeanceIA });
 })();
 
 /* ---- 15-store.js ---- */
@@ -1000,7 +1093,10 @@ const AI = (() => {
   'use strict';
   const K_ANTH = 'apexhq:key', K_GEM = 'apexhq:gkey', K_GMODEL = 'apexhq:gmodel';
   const ls = { get: k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set: (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) { /* stockage indisponible */ } } };
-  const getKey = () => ls.get(K_ANTH), setKey = k => ls.set(K_ANTH, k), getGKey = () => ls.get(K_GEM), setGKey = k => { ls.set(K_GEM, k); ls.set(K_GMODEL, ''); };
+  const K_CONS = 'apexhq:iaok';
+  const embedded = () => !!window.APEX_GKEY, consent = () => ls.get(K_CONS), setConsent = v => ls.set(K_CONS, v);
+  const getKey = () => ls.get(K_ANTH), setKey = k => ls.set(K_ANTH, k), ownG = () => ls.get(K_GEM);
+  const getGKey = () => ls.get(K_GEM) || (embedded() && consent() === '1' ? window.APEX_GKEY : ''), setGKey = k => { ls.set(K_GEM, k); ls.set(K_GMODEL, ''); };
   const fail = (code, message, text) => { const e = new Error(message); e.code = code; e.text = text; return e; };
   const NO_FALLBACK = ['cancelled', 'invalid_json', 'refused', 'empty_completion', 'invalid_request', 'prompt_too_large'];
   let last = '';
@@ -1119,7 +1215,7 @@ const AI = (() => {
     if (!r || r.ok !== true) throw fail('invalid_json', 'Réponse inattendue'); return true;
   }
   const hasAny = () => !!(getGKey() || getKey());
-  return { getKey, setKey, getGKey, setGKey, chain, test, hasAny, last: () => last };
+  return { getKey, setKey, getGKey, setGKey, ownG, embedded, consent, setConsent, chain, test, hasAny, last: () => last };
 })();
 
 /* Messages d'erreur communs (coach, assistant, estimations). */
@@ -1434,65 +1530,6 @@ function Hero({ date, go }) {
   </section>`;
 }
 
-function CheckIn({ date }) {
-  const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
-  const hier = Apex.addDays(date, -1), j = S.journal[date] || {}, jh = S.journal[hier] || {}, th = Apex.totJour(jh, foods);
-  const src = th.man || (th.eat.k > 0 ? th.eat : null);
-  const init = () => ({ poids: j.poids == null ? null : j.poids, sommeil: j.sommeil == null ? null : j.sommeil, sommeilQ: j.sommeilQ == null ? null : j.sommeilQ, reveils: j.reveils == null ? null : j.reveils,
-    energie: j.energie == null ? null : j.energie, force: j.force == null ? null : j.force, pas: jh.pas == null ? null : jh.pas,
-    kcal: src ? Math.round(src.k) : null, p: src ? Math.round(src.p) : null, g: src ? Math.round(src.g) : null, l: src ? Math.round(src.l) : null });
-  const [d, setD] = useState(init); const [edit, setEdit] = useState(!j.ci); const [nut, setNut] = useState(false);
-  useEffect(() => { setD(init()); setEdit(!j.ci); setNut(false); }, [date, j.ci]);
-  const up = (k, nutField) => v => { setD(x => Object.assign({}, x, { [k]: v })); if (nutField) setNut(true); };
-  const filled = ['poids', 'sommeil', 'sommeilQ', 'pas', 'energie', 'force'].filter(k => d[k] != null).length + (d.kcal != null ? 1 : 0);
-  const photoDay = Apex.dow(date) === cfg.photosJour;
-  const save = () => {
-    Store.patch('journal', date, { date, poids: d.poids, sommeil: d.sommeil, sommeilQ: d.sommeilQ, reveils: d.reveils, energie: d.energie, force: d.force, ci: new Date().toISOString() });
-    const ph = {}; if (d.pas !== (jh.pas == null ? null : jh.pas)) ph.pas = d.pas;
-    if (nut && d.kcal != null) { ph.man = { kcal: d.kcal || 0, p: d.p || 0, g: d.g || 0, l: d.l || 0 }; if (jh.man && jh.man.f) ph.man.f = jh.man.f; }
-    if (Object.keys(ph).length) Store.patch('journal', hier, Object.assign({ date: hier }, ph));
-    setEdit(false); toast('Check-in enregistré');
-  };
-  if (!edit) return html`<${Card} cls="c5 r2" title="Check-in matinal" sub=${'À jeun · ' + dMid(date)} right=${html`<button className="btn sm" onClick=${() => setEdit(true)}>Modifier</button>`}>
-    <div className="tiles">
-      <div className="tile"><span>Poids</span><b>${f1(j.poids)}<small>kg</small></b></div>
-      <div className="tile"><span>Sommeil</span><b>${f1(j.sommeil)}<small>h</small></b><em>${j.sommeilQ != null ? 'qualité ' + j.sommeilQ + '/10' : ''}${j.reveils != null ? ' · ' + j.reveils + ' réveil' + (j.reveils > 1 ? 's' : '') : ''}</em></div>
-      <div className="tile"><span>Pas hier</span><b>${f0(jh.pas)}</b></div>
-      <div className="tile"><span>Énergie</span><b>${j.energie == null ? '–' : j.energie}<small>/10</small></b></div>
-      <div className="tile"><span>Force perçue</span><b>${j.force == null ? '–' : j.force}<small>/10</small></b></div>
-      <div className="tile"><span>Hier</span><b>${src ? f0(src.k) : '–'}<small>kcal</small></b><em>${src ? 'P ' + f0(src.p) + ' · G ' + f0(src.g) + ' · L ' + f0(src.l) : 'non saisi'}</em></div>
-    </div>
-    ${photoDay && html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos.</b> Face, profil, dos : même lumière, même distance, à jeun. Onglet Analyse.</span></div></div>`}
-  <//>`;
-  return html`<${Card} cls="c5 r2" title="Check-in matinal" sub=${'À jeun, après les toilettes · ' + dMid(date)} right=${html`<span className="pill"><i></i>${filled}/7</span>`}>
-    <div className="form">
-      <${Num} id="ci-poids" label="Poids" unit="kg" value=${d.poids} onChange=${up('poids')} dec=${1} min=${40} max=${160} placeholder="76,0" />
-      <${Num} id="ci-pas" label=${'Pas hier (' + dTiny(hier) + ')'} value=${d.pas} onChange=${up('pas')} dec=${0} min=${0} max=${80000} placeholder="12000" />
-      <${Num} id="ci-sommeil" label="Sommeil" unit="h" value=${d.sommeil} onChange=${up('sommeil')} dec=${2} min=${0} max=${16} placeholder="7,5" />
-      <${Num} id="ci-reveils" label="Réveils nocturnes" value=${d.reveils} onChange=${up('reveils')} dec=${0} min=${0} max=${20} placeholder="0" />
-      <div className="full"><${Scale} label="Qualité du sommeil" value=${d.sommeilQ} onChange=${up('sommeilQ')} /></div>
-      <div className="full"><${Scale} label="Énergie" value=${d.energie} onChange=${up('energie')} /></div>
-      <div className="full"><${Scale} label="Force perçue" value=${d.force} onChange=${up('force')} /></div>
-    </div>
-    <hr className="hr" />
-    <div className="stack">
-      <span className="fld-l">Bilan réel d’hier<b>${src && !nut ? (th.man ? 'saisi' : 'repris du planner') : nut ? 'modifié' : 'à saisir'}</b></span>
-      <div className="form f4">
-        <${Num} id="ci-kcal" label="kcal" value=${d.kcal} onChange=${up('kcal', 1)} dec=${0} min=${0} max=${9000} />
-        <${Num} id="ci-p" label="Protéines" value=${d.p} onChange=${up('p', 1)} dec=${0} min=${0} max=${500} />
-        <${Num} id="ci-g" label="Glucides" value=${d.g} onChange=${up('g', 1)} dec=${0} min=${0} max=${1200} />
-        <${Num} id="ci-l" label="Lipides" value=${d.l} onChange=${up('l', 1)} dec=${0} min=${0} max=${500} />
-      </div>
-    </div>
-    ${photoDay && html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos.</b> Face, profil, dos avant de manger. Ajout dans l’onglet Analyse.</span></div></div>`}
-    <div className="row">
-      <button className="btn pri grow" disabled=${d.poids == null} onClick=${save}><${Icon} n="check" s=${18} />Valider le check-in</button>
-      ${j.ci && html`<button className="btn" onClick=${() => { setD(init()); setEdit(false); }}>Annuler</button>`}
-    </div>
-    ${d.poids == null && html`<p className="mut" style=${{ fontSize: 12 }}>Le poids à jeun est requis. Le reste alimente la lecture du jour.</p>`}
-  <//>`;
-}
-
 function Lecture({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), j = S.journal[date] || {};
   const rows = Apex.lecture(S.journal, cfg, date), co = j.coach;
@@ -1508,7 +1545,7 @@ function Lecture({ date }) {
       <div><div className="rw-l">${r.lab}</div><div className="rw-v">${r.val}</div></div>
       <${Pill} st=${r.st === 'info' ? '' : r.st}>${r.tag}<//>
       <div className="rw-t">${r.txt}</div>
-    </div>`)}</div>` : !co && html`<div className="empty"><span><b>Rien à lire pour l’instant.</b> Valide le check-in : poids, sommeil, pas et bilan d’hier sont comparés à tes cibles, avec l’action à faire.</span></div>`}
+    </div>`)}</div>` : !co && html`<div className="empty"><span><b>Rien à lire pour l’instant.</b> Valide le debrief matinal : poids, sommeil, pas et bilan d’hier sont comparés à tes cibles, avec l’action à faire.</span></div>`}
   <//>`;
 }
 
@@ -1577,7 +1614,7 @@ function Dashboard({ date, go, setDate }) {
     <div className="grid">
       <div className="c12"><${WeekStrip} date=${date} setDate=${setDate} /></div>
       <${Hero} date=${date} go=${go} />
-      <${CheckIn} date=${date} />
+      <${CheckIn} date=${date} go=${go} />
       <${Lecture} date=${date} />
       <div className="c12 row sb" style=${{ marginTop: 6 }}>
         <span className="eyebrow">Tendance</span>
@@ -1590,6 +1627,125 @@ function Dashboard({ date, go, setDate }) {
       </div>
     </div>
   </div>`;
+}
+
+/* ---- 31-ui-debrief.js ---- */
+/* ApexHQ — debrief matinal : une question par écran (guidé) ou tout sur une page (rapide), puis bilan du jour. */
+const LVL = [[2, 'À plat'], [4, 'Bof'], [6, 'Correct'], [8, 'Bien'], [10, 'Au top']];
+const nearLvl = v => (v == null ? null : LVL.reduce((b, x) => (Math.abs(x[0] - v) < Math.abs(b - v) ? x[0] : b), 2));
+const DSTEPS = [['poids', 'Poids'], ['sommeil', 'Sommeil'], ['forme', 'Forme'], ['hier', 'Hier'], ['recap', 'Bilan']];
+
+/* Grand champ numérique avec − et +. */
+function BigNum({ id, label, unit, value, onChange, step, min, max, dec, ph, hint }) {
+  const k = Math.pow(10, dec);
+  const bump = d => { const b = value == null ? (ph == null ? 0 : ph) : value; onChange(Math.max(min, Math.min(max, Math.round((b + d) * k) / k))); };
+  return html`<div className="bignum"><span className="fld-l">${label}</span>
+    <div className="bn-row">
+      <button type="button" className="bn-b" aria-label=${'Moins : ' + label} onClick=${() => bump(-step)}><${Icon} n="minus" s=${24} /></button>
+      <div className="bn-c"><${Num} id=${id} small hint=${label} value=${value} onChange=${onChange} dec=${dec} min=${min} max=${max} placeholder=${ph == null ? '' : String(ph).replace('.', ',')} /><span>${unit}</span></div>
+      <button type="button" className="bn-b" aria-label=${'Plus : ' + label} onClick=${() => bump(step)}><${Icon} n="plus" s=${24} /></button>
+    </div>${hint && html`<span className="bn-h">${hint}</span>`}</div>`;
+}
+/* Cinq niveaux, enregistrés sur 10. */
+function Lvl({ label, value, onChange }) {
+  const cur = nearLvl(value);
+  return html`<div className="stack"><span className="fld-l">${label}</span><div className="lvl" role="radiogroup" aria-label=${label}>${LVL.map(x => html`<button key=${x[0]} type="button" role="radio" aria-checked=${cur === x[0]} onClick=${() => onChange(cur === x[0] ? null : x[0])}><b>${x[0] / 2}</b><span>${x[1]}</span></button>`)}</div></div>`;
+}
+
+function DebriefCard({ date, go, onEdit }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), j = S.journal[date] || {}, sample = st.caps().sample;
+  const [ia, setIa] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const rows = Apex.lecture(S.journal, cfg, date), crit = rows.filter(r => r.st === 'crit'), warn = rows.filter(r => r.st === 'warn'), todo = crit.concat(warn);
+  const v = crit.length ? ['crit', 'À corriger aujourd’hui', 'alert'] : warn.length ? ['warn', 'À surveiller aujourd’hui', 'alert'] : ['good', 'Tout est dans le vert', 'check'];
+  const c = Apex.cibleDuJour(cfg, j, date), type = Apex.seanceDuJour(cfg, j, date), m = Apex.mm7(S.journal, date), t = Apex.tendance(S.journal, date);
+  const run = async () => {
+    if (!sample || busy) return; setBusy(true); setErr(''); setIa('');
+    try {
+      const prompt = COACH_REGLES + '\n\nDONNÉES ACTUELLES DE L’APP\n' + coachContexte(date) + '\n\nFais le debrief matinal de cette personne : une phrase de verdict, trois constats chiffrés, puis deux actions concrètes pour aujourd’hui (repas, et séance selon ses points faibles). 8 lignes maximum, texte brut.';
+      const r = await sample(prompt, { cache: false, onText: u => setIa(u.text) }); setIa(r.text);
+    } catch (e) { const m2 = aiMsg(e); if (m2) setErr(m2); if (e && e.text) setIa(e.text); }
+    setBusy(false);
+  };
+  return html`<${Card} cls="c5 r2" title="Debrief matinal" sub=${dMid(date)} right=${html`<button type="button" className="btn sm" onClick=${onEdit}>Modifier</button>`}>
+    <div className=${cx('verdict', v[0])}><i><${Icon} n=${v[2]} s=${22} w=${2.2} /></i><div><b>${v[1]}</b><span>${todo.length ? todo[0].txt : 'Sommeil, pas et calories sont dans la cible. Garde le plan du jour.'}</span></div></div>
+    <div className="tiles">
+      <div className="tile"><span>Poids</span><b>${f1(j.poids)}<small>kg</small></b><em>moy. 7 j ${m ? f1(m.v) : '–'}</em></div>
+      <div className="tile"><span>Rythme</span><b>${t ? sgn(t.pct) : '–'}<small>%/sem</small></b><em>${t ? sgn(t.dk, f2) + ' kg' : 'dès 2 semaines'}</em></div>
+      <div className="tile"><span>Sommeil</span><b>${f1(j.sommeil)}<small>h</small></b><em>${j.sommeilQ != null ? 'qualité ' + j.sommeilQ + '/10' : ''}</em></div>
+      <div className="tile"><span>Forme</span><b>${j.energie == null ? '–' : j.energie}<small>/10</small></b><em>force ${j.force == null ? '–' : j.force}/10</em></div>
+    </div>
+    ${todo.length > 1 && html`<div className="stack">${todo.slice(1, 3).map(r => html`<div key=${r.k} className="note"><${Icon} n=${r.ic} /><div><span><b>${r.lab} :</b> ${r.txt}</span></div></div>`)}</div>`}
+    <div className="plan-j">
+      <div><span className="fld-l">Aujourd’hui</span><b>${c.statut === 'salle' ? 'Salle' + (type ? ' · ' + type : '') : 'Repos'}</b><span className="mut">${f0(c.kcal)} kcal · P ${c.p} g</span></div>
+      <div className="row" style=${{ gap: 8 }}><button type="button" className="btn sm" onClick=${() => go('repas')}><${Icon} n="utensils" s=${16} />Repas</button>${c.statut === 'salle' && html`<button type="button" className="btn sm" onClick=${() => go('training')}><${Icon} n="dumbbell" s=${16} />Séance</button>`}</div>
+    </div>
+    ${sample && html`<button type="button" className="btn wide" disabled=${busy} onClick=${run}><${Icon} n="sparkles" s=${18} />${busy ? 'L’IA analyse…' : ia ? 'Refaire le debrief IA' : 'Debrief personnalisé par l’IA'}</button>`}
+    ${ia && html`<div className="note acc"><${Icon} n="sparkles" /><div><span className="pre" style=${{ color: 'var(--ink)' }}>${ia}</span></div></div>`}
+    ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
+  <//>`;
+}
+
+function CheckIn({ date, go }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
+  const hier = Apex.addDays(date, -1), j = S.journal[date] || {}, jh = S.journal[hier] || {}, th = Apex.totJour(jh, foods);
+  const src = th.man || (th.eat.k > 0 ? th.eat : null), pw = Apex.serie(S.journal, 'poids').filter(p => p.d < date), lastW = pw.length ? pw[pw.length - 1].v : cfg.profil.poidsDepart;
+  const init = () => ({ poids: j.poids == null ? null : j.poids, sommeil: j.sommeil == null ? null : j.sommeil, sommeilQ: j.sommeilQ == null ? null : j.sommeilQ, reveils: j.reveils == null ? null : j.reveils,
+    energie: j.energie == null ? null : j.energie, force: j.force == null ? null : j.force, pas: jh.pas == null ? null : jh.pas,
+    kcal: src ? Math.round(src.k) : null, p: src ? Math.round(src.p) : null, g: src ? Math.round(src.g) : null, l: src ? Math.round(src.l) : null });
+  const [d, setD] = useState(init); const [edit, setEdit] = useState(!j.ci); const [nut, setNut] = useState(false); const [step, setStep] = useState(0);
+  const [mode, setMode] = useState(() => lsGet('ci:mode', 'guide'));
+  useEffect(() => { setD(init()); setEdit(!j.ci); setNut(false); setStep(0); }, [date, j.ci]);
+  const up = (k, nutField) => v => { setD(x => Object.assign({}, x, { [k]: v })); if (nutField) setNut(true); };
+  const photoDay = Apex.dow(date) === cfg.photosJour;
+  const pickMode = m => { setMode(m); lsSet('ci:mode', m); setStep(0); };
+  const save = () => {
+    Store.patch('journal', date, { date, poids: d.poids, sommeil: d.sommeil, sommeilQ: d.sommeilQ, reveils: d.reveils, energie: d.energie, force: d.force, ci: new Date().toISOString() });
+    const ph = {}; if (d.pas !== (jh.pas == null ? null : jh.pas)) ph.pas = d.pas;
+    if (nut && d.kcal != null) { ph.man = { kcal: d.kcal || 0, p: d.p || 0, g: d.g || 0, l: d.l || 0 }; if (jh.man && jh.man.f) ph.man.f = jh.man.f; }
+    if (Object.keys(ph).length) Store.patch('journal', hier, Object.assign({ date: hier }, ph));
+    setEdit(false); toast('Debrief enregistré');
+  };
+  if (!edit) return html`<${DebriefCard} date=${date} go=${go} onEdit=${() => { setMode(lsGet('ci:mode', 'guide')); setStep(0); setEdit(true); }} />`;
+  const photoNote = photoDay && html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos.</b> Face, profil, dos avant de manger. Ajout dans l’onglet Analyse.</span></div></div>`;
+  const head = html`<div className="row sb"><div className="seg neu" role="group" aria-label="Mode"><button type="button" aria-pressed=${mode === 'guide'} onClick=${() => pickMode('guide')}>Guidé</button><button type="button" aria-pressed=${mode === 'rapide'} onClick=${() => pickMode('rapide')}>Rapide</button></div>
+    ${j.ci && html`<button type="button" className="btn sm ghost" onClick=${() => { setD(init()); setEdit(false); }}>Annuler</button>`}</div>`;
+  const nutrition = html`<div className="stack"><span className="fld-l">Bilan réel d’hier<b>${src && !nut ? (th.man ? 'saisi' : 'repris du planner') : nut ? 'modifié' : 'à saisir'}</b></span>
+    <div className="form f4"><${Num} id="ci-kcal" label="kcal" value=${d.kcal} onChange=${up('kcal', 1)} dec=${0} min=${0} max=${9000} />
+      <${Num} id="ci-p" label="Prot." value=${d.p} onChange=${up('p', 1)} dec=${0} min=${0} max=${500} /><${Num} id="ci-g" label="Gluc." value=${d.g} onChange=${up('g', 1)} dec=${0} min=${0} max=${1200} /><${Num} id="ci-l" label="Lip." value=${d.l} onChange=${up('l', 1)} dec=${0} min=${0} max=${500} /></div></div>`;
+  if (mode === 'rapide') return html`<${Card} cls="c5 r2" title="Debrief matinal" sub=${'À jeun · ' + dMid(date)}>
+    ${head}
+    <div className="form">
+      <${Num} id="ci-poids" label="Poids" unit="kg" value=${d.poids} onChange=${up('poids')} dec=${1} min=${40} max=${160} placeholder=${f1(lastW)} />
+      <${Num} id="ci-pas" label=${'Pas hier (' + dTiny(hier) + ')'} value=${d.pas} onChange=${up('pas')} dec=${0} min=${0} max=${80000} placeholder="10000" />
+      <${Num} id="ci-sommeil" label="Sommeil" unit="h" value=${d.sommeil} onChange=${up('sommeil')} dec=${2} min=${0} max=${16} placeholder="7,5" />
+      <${Num} id="ci-reveils" label="Réveils" value=${d.reveils} onChange=${up('reveils')} dec=${0} min=${0} max=${20} placeholder="0" />
+    </div>
+    <${Lvl} label="Qualité du sommeil" value=${d.sommeilQ} onChange=${up('sommeilQ')} /><${Lvl} label="Énergie" value=${d.energie} onChange=${up('energie')} /><${Lvl} label="Force perçue" value=${d.force} onChange=${up('force')} />
+    ${nutrition}${photoNote}
+    <button type="button" className="btn pri wide" disabled=${d.poids == null} onClick=${save}><${Icon} n="check" s=${18} />Valider le debrief</button>
+  <//>`;
+  const dots = html`<div className="dots" role="tablist" aria-label="Étapes">${DSTEPS.map((x, i) => html`<button key=${x[0]} type="button" role="tab" aria-selected=${step === i} aria-label=${x[1]} className=${cx(i < step && 'on', i === step && 'cur')} onClick=${() => setStep(i)}><i></i><span>${x[1]}</span></button>`)}</div>`;
+  const dw = d.poids != null ? d.poids - lastW : null;
+  const bodies = [
+    () => html`<${BigNum} id="ci-poids" label="Ton poids ce matin" unit="kg" value=${d.poids} onChange=${up('poids')} step=${0.1} min=${40} max=${160} dec=${1} ph=${Math.round(lastW * 10) / 10} hint=${d.poids == null ? 'À jeun, après les toilettes. Dernière pesée : ' + f1(lastW) + ' kg.' : (dw === 0 ? 'Identique à ta dernière pesée.' : sgn(dw) + ' kg vs ta dernière pesée (' + f1(lastW) + ' kg). Seule la moyenne 7 jours compte.')} />`,
+    () => html`<${React.Fragment}><${BigNum} id="ci-sommeil" label="Heures dormies" unit="h" value=${d.sommeil} onChange=${up('sommeil')} step=${0.25} min=${0} max=${16} dec=${2} ph=${7.5} hint=${d.sommeil != null && d.sommeil < 7 ? 'Sous 7 h : la récupération et la faim en pâtissent.' : 'Objectif : 7 h ou plus.'} />
+      <${Lvl} label="Qualité du sommeil" value=${d.sommeilQ} onChange=${up('sommeilQ')} />
+      <div className="stack"><span className="fld-l">Réveils dans la nuit</span><div className="chips">${[0, 1, 2, 3].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${d.reveils === n} onClick=${() => up('reveils')(n)}>${n === 3 ? '3 ou +' : n}</button>`)}</div></div><//>`,
+    () => html`<${React.Fragment}><${Lvl} label="Énergie" value=${d.energie} onChange=${up('energie')} /><${Lvl} label="Force perçue à l’entraînement" value=${d.force} onChange=${up('force')} /><//>`,
+    () => html`<${React.Fragment}><${BigNum} id="ci-pas" label=${'Pas hier (' + dTiny(hier) + ')'} unit="pas" value=${d.pas} onChange=${up('pas')} step=${500} min=${0} max=${80000} dec=${0} ph=${10000} hint=${'Baseline : ' + f0(cfg.cibles.pasMin) + ' à ' + f0(cfg.cibles.pasMax) + ' pas.'} />
+      <div className="chips">${[6000, 8000, 10000, 12000, 14000].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${d.pas === n} onClick=${() => up('pas')(n)}>${f0(n)}</button>`)}</div>${nutrition}<//>`,
+    () => html`<${React.Fragment}><div className="tiles">
+      <div className="tile"><span>Poids</span><b>${f1(d.poids)}<small>kg</small></b></div><div className="tile"><span>Sommeil</span><b>${f1(d.sommeil)}<small>h</small></b><em>${d.sommeilQ != null ? 'qualité ' + d.sommeilQ + '/10' : ''}</em></div>
+      <div className="tile"><span>Énergie · force</span><b>${d.energie == null ? '–' : d.energie} · ${d.force == null ? '–' : d.force}</b></div><div className="tile"><span>Hier</span><b>${f0(d.pas)}<small>pas</small></b><em>${d.kcal != null ? f0(d.kcal) + ' kcal' : 'bilan non saisi'}</em></div></div>${photoNote}<//>`,
+  ];
+  const last = step === DSTEPS.length - 1;
+  return html`<${Card} cls="c5 r2" title="Debrief matinal" sub=${'À jeun · ' + dMid(date)}>
+    ${head}${dots}
+    <div className="ds">${bodies[step]()}</div>
+    <div className="row"><button type="button" className="btn" disabled=${step === 0} onClick=${() => setStep(step - 1)}>Retour</button>
+      ${last ? html`<button type="button" className="btn pri grow" disabled=${d.poids == null} onClick=${save}><${Icon} n="check" s=${18} />Valider le debrief</button>` : html`<button type="button" className="btn pri grow" onClick=${() => setStep(step + 1)}>${step === 0 && d.poids == null ? 'Passer' : 'Suivant'}</button>`}</div>
+    ${last && d.poids == null && html`<p className="mut" style=${{ fontSize: 12 }}>Le poids à jeun est requis : reviens à la première étape.</p>`}
+  <//>`;
 }
 
 /* ---- 40-ui-repas.js ---- */
@@ -1923,11 +2079,7 @@ function SeanceCard({ date }) {
     <div className="empty"><span><b>Pas de séance prévue.</b> Objectif du jour : ${f0(cfg.cibles.pasMin)}–${f0(cfg.cibles.pasMax)} pas, ${f0(cfg.cibles.repos.kcal)} kcal, sommeil ≥ ${cfg.cibles.sommeil} h.</span>
       <button type="button" className="btn" onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: Apex.prochaineSeance(S.seances, cfg, date) })}><${Icon} n="dumbbell" s=${18} />Passer en jour de salle</button></div>
   <//>`;
-  if (!se) return html`<${Card} cls="c7" title=${'Séance ' + type} sub=${dMid(date) + ' · double progression, RPE 8–9'}>
-    <div className="rows">${(prog[type] || []).map(x => { const e = exos[x[0]]; if (!e) return null; const h = Apex.histoExo(S.seances, x[0]).filter(q => q.date < date), o = Apex.objectif(e, h.length ? h[h.length - 1] : null);
-      return html`<div key=${x[0]} className="mini"><span><b style=${{ color: 'var(--ink)', fontWeight: 500 }}>${e.n}</b>${fl(e) && html`<span className="badge">${fl(e)}</span>`}<br />${o.txt}</span><span></span><b>${x[1]}<small>séries</small></b></div>`; })}</div>
-    <button type="button" className="btn pri wide" onClick=${start}><${Icon} n="dumbbell" s=${18} />Démarrer la séance</button>
-  <//>`;
+  if (!se) return html`<${DayPlan} date=${date} />`;
   const r = Apex.resumeSeance(se), swEx = sheet && sheet.t === 'swap' ? se.exos[sheet.i] : null;
   return html`<${Card} cls="c7" title=${'Séance ' + (se.type || '')} sub=${dMid(date) + (se.fin ? ' · terminée' : ' · en cours')} right=${html`<${Pill} st=${se.fin ? 'good' : 'warn'}>${se.fin ? 'Terminée' : 'En cours'}<//>`}>
     ${se.note && html`<div className="note"><${Icon} n="info" /><div><span>${se.note}</span></div></div>`}
@@ -2008,7 +2160,7 @@ function Training({ date, setDate }) {
   return html`<div>
     <div className="view-h"><h1>Training · ${dMid(date)}</h1><p>PPL + Upper/Lower, 5 séances. Priorité pecs, biceps, deltoïdes latéraux.</p></div>
     <div className="grid">
-      <div className="c12"><${WeekStrip} date=${date} setDate=${setDate} /></div>
+      <div className="c12"><${WeekBar} date=${date} setDate=${setDate} /></div>
       <${SeanceCard} date=${date} />
       <div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}>
         <${FocusCard} date=${date} />
@@ -2273,6 +2425,155 @@ function ScanSheet({ title, onProduct, onClose }) {
   <//>`;
 }
 
+/* ---- 64-ui-adapt.js ---- */
+/* ApexHQ — séance du jour modifiable, adaptation en un geste (temps, matériel, priorité, forme), semaine selon les dispos.
+   Avec une IA connectée : séance optimisée + conseils. Sans IA : même adaptation par l'algorithme de l'app. */
+const lsGet = (k, d) => { try { return localStorage.getItem('apexhq:' + k) || d; } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem('apexhq:' + k, String(v)); } catch (e) { /* préférence non mémorisée */ } };
+const JOURS_C = [[1, 'Lun'], [2, 'Mar'], [3, 'Mer'], [4, 'Jeu'], [5, 'Ven'], [6, 'Sam'], [0, 'Dim']];
+const MINS = [30, 45, 60, 75, 90];
+
+function Dispos({ min, setMin, eq, setEq, foc, setFoc, groupes }) {
+  return html`<div className="stack" style=${{ gap: 14 }}>
+    <div className="stack"><span className="fld-l">Temps disponible</span><div className="chips">${MINS.map(m => html`<button key=${m} type="button" className="chip" aria-pressed=${min === m} onClick=${() => setMin(m)}>${m} min</button>`)}</div></div>
+    <div className="stack"><span className="fld-l">Matériel</span><div className="chips">${Apex.EQUIP.map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${eq === x[0]} onClick=${() => setEq(x[0])}>${x[1]}</button>`)}</div></div>
+    ${setFoc && html`<div className="stack"><span className="fld-l">Priorité du jour</span><div className="chips">
+      <button type="button" className="chip" aria-pressed=${foc.length === 0} onClick=${() => setFoc([])}>Équilibrée</button>
+      ${groupes.map(g => html`<button key=${g.id} type="button" className="chip" aria-pressed=${foc.indexOf(g.id) >= 0} onClick=${() => setFoc(foc.indexOf(g.id) >= 0 ? foc.filter(x => x !== g.id) : foc.concat(g.id))}>${g.n}</button>`)}</div></div>`}
+  </div>`;
+}
+
+function AdaptSheet({ date, plan, type, onApply, onClose }) {
+  const st = useStore(), cfg = st.cfg(), S = st.get(), j = S.journal[date] || {}, sample = st.caps().sample, exos = Apex.allExos(cfg), GR = Object.values(Apex.groupes(cfg));
+  const [min, setMin] = useState(() => +lsGet('ad:min', (cfg.q && cfg.q.duree) || 60)); const [eq, setEq] = useState(() => lsGet('ad:eq', 'salle')); const [foc, setFoc] = useState([]);
+  const [more, setMore] = useState(false); const [dou, setDou] = useState(''); const [note, setNote] = useState(''); const [busy, setBusy] = useState(false); const [res, setRes] = useState(null);
+  const forme = Apex.num(j.energie) ? j.energie : null;
+  const run = async () => {
+    lsSet('ad:min', min); lsSet('ad:eq', eq); setBusy(true); setRes(null);
+    const app = Apex.adapterSeance({ plan, minutes: min, equip: eq, focus: foc, cfg, forme, douleurs: dou });
+    if (!sample) { setRes(Object.assign({ src: 'app' }, app)); setBusy(false); return; }
+    try {
+      const fs = Apex.focusSemaine(S.seances, S.journal, cfg, date), fa = Apex.fatigue(S.journal, S.seances, cfg, date), q = cfg.q || {};
+      const cat = Object.keys(exos).filter(id => Apex.eqOk(eq, exos[id])).map(id => id + '=' + exos[id].n + ' (' + (Apex.MUSCLES[exos[id].m] || exos[id].m) + ')').join('; ');
+      const prompt = ['Tu es préparateur physique. Conçois la séance de musculation d’aujourd’hui pour cette personne.',
+        'Profil : ' + (cfg.profil.sexe === 'F' ? 'femme' : 'homme') + ', ' + cfg.profil.age + ' ans, niveau ' + (q.niveau || 'intermédiaire') + ', objectif ' + (q.objectif || 'sèche') + '.',
+        'Séance prévue (' + type + ') : ' + plan.map(x => (exos[x.e] ? exos[x.e].n : x.e) + ' ' + x.n + '×').join(', ') + '.',
+        'Temps disponible : ' + min + ' minutes, échauffement inclus (compte 2,2 à 3 minutes par série). Matériel : ' + (Apex.EQUIP.find(x => x[0] === eq) || [])[1] + '.',
+        'Forme du jour : énergie ' + (forme == null ? 'inconnue' : forme + '/10') + (j.force != null ? ', force perçue ' + j.force + '/10' : '') + '. Fatigue de la semaine : ' + fa.niveau + '.',
+        dou ? 'Zones sensibles à ménager : ' + dou + '.' : '', note ? 'Remarque : ' + note + '.' : '',
+        foc.length ? 'Priorité du jour : ' + GR.filter(g => foc.indexOf(g.id) >= 0).map(g => g.n).join(', ') + '.' : '',
+        'Points faibles, séries déjà faites cette semaine sur la cible : ' + (Object.keys(fs).map(k => fs[k].n + ' ' + Math.round(fs[k].fait) + '/' + fs[k].min).join(' ; ') || 'aucun') + '.',
+        'Exercices autorisés (id=nom) : ' + cat + '.',
+        'Règles : 4 à 8 exercices, mouvements lourds d’abord, 2 à 5 séries chacun, le total tient dans le temps, priorité aux points faibles en retard, ne sollicite pas les zones sensibles.',
+        'Réponds uniquement par un objet JSON : {"exercices":[{"id":"di_halt","series":4}],"conseils":["trois conseils courts et concrets : échauffement, charge ou tempo, progression"],"duree_min":55}.'].filter(Boolean).join('\n');
+      const r = await Promise.race([sample.json(prompt, { modelTier: 'default', cache: false }), new Promise((_, ko) => setTimeout(() => ko({ code: 'upstream_error' }), 90000))]);
+      const v = Apex.validerSeanceIA(r, { cfg, equip: eq, minutes: min, douleurs: dou });
+      if (v) setRes({ src: 'ia', plan: v.plan, duree: v.duree, notes: v.notes.concat(app.notes.filter(n => n.indexOf('zone sensible') >= 0)) });
+      else setRes(Object.assign({ src: 'app', warn: 'La proposition de l’IA ne respectait pas le temps ou le matériel : séance adaptée par l’app.' }, app));
+    } catch (e) { setRes(Object.assign({ src: 'app', warn: aiMsg(e) || 'IA indisponible : séance adaptée par l’app.' }, app)); }
+    setBusy(false);
+  };
+  return html`<${Sheet} title="Adapter ma séance" onClose=${onClose}>
+    ${!res ? html`<${React.Fragment}>
+      <p className="sec" style=${{ fontSize: 13 }}>Dis ce que tu as aujourd’hui, l’app réorganise la séance ${sample ? 'avec l’IA' : ''} en gardant tes points faibles.</p>
+      <${Dispos} min=${min} setMin=${setMin} eq=${eq} setEq=${setEq} foc=${foc} setFoc=${setFoc} groupes=${GR} />
+      <button type="button" className="chip" style=${{ justifySelf: 'start' }} aria-pressed=${more} onClick=${() => setMore(!more)}>${more ? 'Moins d’options' : 'Une gêne ou une remarque ?'}</button>
+      ${more && html`<div className="stack">
+        <label className="fld" htmlFor="ad-dou"><span className="fld-l">Zone sensible</span><input id="ad-dou" className="inp" type="text" maxLength="80" placeholder="ex. épaule droite, genou" value=${dou} onChange=${e => setDou(e.target.value)} /></label>
+        ${sample && html`<label className="fld" htmlFor="ad-note"><span className="fld-l">Remarque pour l’IA</span><input id="ad-note" className="inp" type="text" maxLength="120" placeholder="ex. je veux finir par des bras" value=${note} onChange=${e => setNote(e.target.value)} /></label>`}</div>`}
+      <button type="button" className="btn pri wide" disabled=${busy} onClick=${run}><${Icon} n="sparkles" s=${18} />${busy ? (sample ? 'L’IA optimise ta séance…' : 'Adaptation…') : (sample ? 'Optimiser avec l’IA' : 'Adapter la séance')}</button>
+      ${!sample && html`<p className="mut" style=${{ fontSize: 12 }}>Sans IA connectée, l’adaptation suit les règles de l’app (temps, matériel, priorité). Connecte une IA dans Réglages pour des conseils personnalisés.</p>`}
+    <//>` : html`<${React.Fragment}>
+      <div className="row sb"><${Pill} st=${res.src === 'ia' ? 'good' : ''}>${res.src === 'ia' ? 'Optimisée par l’IA' : 'Adaptée par l’app'}<//><span className="mut">≈ ${res.duree} min · ${res.plan.reduce((s, x) => s + x.n, 0)} séries</span></div>
+      <div className="rows">${res.plan.map(x => html`<div key=${x.e} className="mini"><span>${exos[x.e] ? exos[x.e].n : x.e}</span><span className="mut">${exos[x.e] ? Apex.MUSCLES[exos[x.e].m] : ''}</span><b>${x.n}<small>séries</small></b></div>`)}</div>
+      ${res.warn && html`<div className="note"><${Icon} n="alert" /><div><span>${res.warn}</span></div></div>`}
+      ${res.notes.length > 0 && html`<div className="note acc"><${Icon} n="sparkles" /><div>${res.notes.map((n, i) => html`<span key=${i}>${n}</span>`)}</div></div>`}
+      <div className="row"><button type="button" className="btn pri grow" onClick=${() => { onApply({ plan: res.plan, src: res.src, notes: res.notes, duree: res.duree }); onClose(); }}><${Icon} n="check" s=${18} />Appliquer</button>
+        <button type="button" className="btn" onClick=${() => setRes(null)}>Modifier</button></div>
+    <//>`}
+  <//>`;
+}
+
+function DayPlan({ date }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), j = S.journal[date] || {};
+  const type = Apex.seanceDuJour(cfg, j, date), types = Apex.types(cfg), libre = types.indexOf(type) < 0;
+  const base = (Apex.progOf(cfg)[type] || []).map(x => ({ e: x[0], n: x[1] })), custom = Array.isArray(j.plan), plan = custom ? j.plan : base, nb = j.planNote;
+  const [sheet, setSheet] = useState(null);
+  const put = arr => Store.patch('journal', date, { date, plan: arr });
+  const setType = t => Store.patch('journal', date, { date, statut: 'salle', seance: t, plan: null, planNote: null });
+  const upd = (i, f) => put(plan.map((x, k) => (k === i ? Object.assign({}, x, f) : x)));
+  const start = () => {
+    const f = { date, type, debut: new Date().toISOString(), exos: plan.map(x => ({ e: x.e, sets: Array.from({ length: x.n }, () => ({})) })) };
+    if (nb && nb.notes && nb.notes.length) f.note = nb.notes.join(' ');
+    Store.patch('seances', date, f); toast('Séance ' + (libre ? 'libre' : type) + ' ouverte');
+  };
+  const dur = Apex.dureeSeance(plan, exos), sets = plan.reduce((s, x) => s + x.n, 0), swapEx = sheet && sheet.t === 'swap' ? plan[sheet.i] : null;
+  return html`<${Card} cls="c7" title=${'Séance ' + (libre ? 'libre' : type)} sub=${dMid(date) + ' · double progression, RPE 8–9'}>
+    <div className="chips" role="group" aria-label="Type de séance">${types.map(t => html`<button key=${t} type="button" className="chip" aria-pressed=${type === t} onClick=${() => setType(t)}>${t}</button>`)}
+      <button type="button" className="chip" aria-pressed=${libre} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: 'Libre', plan: [], planNote: null })}>Libre</button></div>
+    ${nb && html`<div className="note acc"><${Icon} n="sparkles" /><div>
+      <div className="row sb"><b>${nb.src === 'ia' ? 'Conseils de l’IA' : 'Séance adaptée'}</b><${Confirm} label="Programme d’origine" sure="Revenir ?" cls="ghost sm" onYes=${() => Store.patch('journal', date, { date, plan: null, planNote: null })} /></div>
+      ${(nb.notes || []).map((n, i) => html`<span key=${i}>${n}</span>`)}</div></div>`}
+    ${plan.length ? html`<div className="dp">${plan.map((x, i) => { const e = exos[x.e] || { n: x.e, m: '', lo: 8, hi: 12, inc: 2.5 }, h = Apex.histoExo(S.seances, x.e).filter(q => q.date < date), o = Apex.objectif(e, h.length ? h[h.length - 1] : null);
+      return html`<div key=${x.e + '-' + i} className="dp-row">
+        <div className="dp-n"><b>${e.n}${fl(e) && html`<span className="badge">${fl(e)}</span>`}</b><span>${o.txt}</span></div>
+        <div className="dp-c">
+          <button type="button" className="ib sm" aria-label=${'Moins de séries : ' + e.n} onClick=${() => upd(i, { n: Math.max(1, x.n - 1) })}><${Icon} n="minus" s=${16} /></button>
+          <b className="num">${x.n}</b>
+          <button type="button" className="ib sm" aria-label=${'Plus de séries : ' + e.n} onClick=${() => upd(i, { n: Math.min(10, x.n + 1) })}><${Icon} n="plus" s=${16} /></button>
+          <button type="button" className="ib sm" aria-label=${'Remplacer : ' + e.n} onClick=${() => setSheet({ t: 'swap', i })}><${Icon} n="swap" s=${16} /></button>
+          <button type="button" className="ib sm" aria-label=${'Retirer : ' + e.n} onClick=${() => put(plan.filter((_, k) => k !== i))}><${Icon} n="x" s=${16} /></button>
+        </div></div>`; })}</div>` : html`<div className="empty"><span><b>Séance vide.</b> Ajoute des exercices, ou laisse l’IA te proposer une séance.</span></div>`}
+    <div className="tiles"><div className="tile"><span>Durée estimée</span><b>${dur}<small>min</small></b></div><div className="tile"><span>Séries</span><b>${sets}</b></div><div className="tile"><span>Exercices</span><b>${plan.length}</b></div></div>
+    <div className="row"><button type="button" className="btn grow" onClick=${() => setSheet({ t: 'add' })}><${Icon} n="plus" s=${18} />Exercice</button>
+      <button type="button" className="btn grow" onClick=${() => setSheet({ t: 'adapt' })}><${Icon} n="sparkles" s=${18} />${st.caps().sample ? 'Optimiser avec l’IA' : 'Adapter'}</button></div>
+    <button type="button" className="btn pri wide" disabled=${!plan.length} onClick=${start}><${Icon} n="dumbbell" s=${18} />Démarrer la séance</button>
+    ${sheet && sheet.t === 'add' && html`<${ExoSheet} exos=${exos} title="Ajouter un exercice" onClose=${() => setSheet(null)} onPick=${id => put(plan.concat({ e: id, n: 3 }))} />`}
+    ${swapEx && html`<${ExoSheet} exos=${exos} title=${'Remplacer · ' + ((exos[swapEx.e] || {}).n || '')} muscle=${(exos[swapEx.e] || {}).m} onClose=${() => setSheet(null)} onPick=${id => upd(sheet.i, { e: id })} />`}
+    ${sheet && sheet.t === 'adapt' && html`<${AdaptSheet} date=${date} plan=${plan} type=${libre ? 'libre' : type} onClose=${() => setSheet(null)} onApply=${r => Store.patch('journal', date, { date, plan: r.plan, planNote: { src: r.src, notes: r.notes, duree: r.duree } })} />`}
+  <//>`;
+}
+
+/* Semaine selon les disponibilités : jours, temps, matériel → programme et planning. */
+function WeekSheet({ onClose }) {
+  const st = useStore(), cfg = st.cfg(), sample = st.caps().sample, GR = Object.values(Apex.groupes(cfg));
+  const cur = JOURS_C.map(d => d[0]).filter(d => cfg.planning[d] && Apex.types(cfg).indexOf(cfg.planning[d]) >= 0);
+  const [jours, setJours] = useState(() => (cur.length ? cur : [1, 3, 5])); const [min, setMin] = useState(() => +lsGet('wk:min', (cfg.q && cfg.q.duree) || 60)); const [eq, setEq] = useState(() => lsGet('wk:eq', 'salle'));
+  const [busy, setBusy] = useState(false); const [res, setRes] = useState(null);
+  const tog = d => setJours(j => (j.indexOf(d) >= 0 ? j.filter(x => x !== d) : j.concat(d)));
+  const run = async () => {
+    if (!jours.length) return; lsSet('wk:min', min); lsSet('wk:eq', eq); setBusy(true); setRes(null);
+    const q = Object.assign({ objectif: 'seche', niveau: 'intermediaire', age: cfg.profil.age, poids: cfg.profil.poidsDepart, sexe: cfg.profil.sexe }, cfg.q, { seances: jours.length, jours, split: Apex.splitSuggere(jours.length), duree: min, equip: eq });
+    const base = Apex.genProgramme(q, GR, cfg), prog = {};
+    Object.keys(base.programme).forEach(t => { prog[t] = Apex.adapterSeance({ plan: base.programme[t], minutes: min, equip: eq, focus: GR.map(g => g.id), cfg }).plan; });
+    let out = { seanceTypes: base.seanceTypes, programme: prog, planning: base.planning, src: 'app' };
+    if (sample) {
+      try { const r = await optimiserProgramme(sample, Object.assign({}, q, { jours }), GR, cfg); if (r) out = Object.assign(r, { src: 'ia' }); } catch (e) { /* repli sur le calcul de l'app */ }
+    }
+    setRes(out); setBusy(false);
+  };
+  const apply = () => { Store.patch('cfg', null, { seanceTypes: res.seanceTypes, programme: res.programme, planning: res.planning }); toast('Semaine reconstruite'); onClose(); };
+  return html`<${Sheet} title="Ma semaine selon mes dispos" onClose=${onClose}>
+    ${!res ? html`<${React.Fragment}>
+      <div className="stack"><span className="fld-l">Jours où tu peux t’entraîner<b>${jours.length}</b></span><div className="chips">${JOURS_C.map(d => html`<button key=${d[0]} type="button" className="chip" aria-pressed=${jours.indexOf(d[0]) >= 0} onClick=${() => tog(d[0])}>${d[1]}</button>`)}</div></div>
+      <${Dispos} min=${min} setMin=${setMin} eq=${eq} setEq=${setEq} />
+      <button type="button" className="btn pri wide" disabled=${busy || !jours.length} onClick=${run}><${Icon} n="sparkles" s=${18} />${busy ? (sample ? 'L’IA construit ta semaine…' : 'Calcul…') : (sample ? 'Construire avec l’IA' : 'Construire ma semaine')}</button>
+      <p className="mut" style=${{ fontSize: 12 }}>Tes points faibles et ton matériel sont pris en compte. Ça remplace ton programme actuel ; tes séances déjà faites sont conservées.</p>
+    <//>` : html`<${React.Fragment}>
+      <div className="row sb"><${Pill} st=${res.src === 'ia' ? 'good' : ''}>${res.src === 'ia' ? 'Optimisée par l’IA' : 'Calculée par l’app'}<//></div>
+      <div className="rows">${JOURS_C.map(d => { const t = res.planning[d[0]]; return html`<div key=${d[0]} className="mini"><span><b style=${{ color: 'var(--ink)', fontWeight: 500 }}>${d[1]}</b></span><span className="mut">${t ? (res.programme[t] || []).length + ' exercices' : ''}</span><b>${t || 'Repos'}</b></div>`; })}</div>
+      <div className="row"><button type="button" className="btn pri grow" onClick=${apply}><${Icon} n="check" s=${18} />Appliquer</button><button type="button" className="btn" onClick=${() => setRes(null)}>Modifier</button></div>
+    <//>`}
+  <//>`;
+}
+
+function WeekBar({ date, setDate }) {
+  const [open, setOpen] = useState(false);
+  return html`<div className="stack" style=${{ gap: 10 }}><${WeekStrip} date=${date} setDate=${setDate} />
+    <div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>Change de séance ou adapte-la au jour.</span><button type="button" className="btn sm" onClick=${() => setOpen(true)}><${Icon} n="sparkles" s=${16} />Ma semaine selon mes dispos</button></div>
+    ${open && html`<${WeekSheet} onClose=${() => setOpen(false)} />`}</div>`;
+}
+
 /* ---- 65-ui-coach.js ---- */
 /* ApexHQ — onglet 5 : coach IA intégré (Claude, via la capacité sample).
    Il lit l'état du jour (envoyé dans chaque demande) et enregistre repas, check-in, séries, pas et
@@ -2501,17 +2802,19 @@ function MultiChips({ items, value, onToggle }) {
 }
 
 async function optimiserProgramme(sample, a, groupes, cfg) {
-  const ex = Apex.allExos(cfg), cat = Object.keys(ex).map(k => k + '=' + ex[k].n + ' (' + (Apex.MUSCLES[ex[k].m] || ex[k].m) + ')').join('; '), n = a.seances;
+  const ex = Apex.allExos(cfg), cat = Object.keys(ex).filter(k => Apex.eqOk(a.equip || 'salle', ex[k])).map(k => k + '=' + ex[k].n + ' (' + (Apex.MUSCLES[ex[k].m] || ex[k].m) + ')').join('; '), n = a.seances;
   const obj = { seche: 'sèche (déficit calorique : garder les charges lourdes, volume modéré)', neutre: 'maintien et recomposition', masse: 'prise de masse' }[a.objectif];
-  const prompt = ['Tu es préparateur physique. Conçois le programme hebdomadaire de musculation de cette personne.',
+  let prompt = ['Tu es préparateur physique. Conçois le programme hebdomadaire de musculation de cette personne.',
     'Profil : ' + (a.sexe === 'F' ? 'femme' : 'homme') + ', ' + a.age + ' ans, ' + a.poids + ' kg, niveau ' + a.niveau + ', objectif ' + obj + '.',
     'Séances par semaine : ' + n + ' de ' + a.duree + ' minutes. Découpage souhaité : ' + (Apex.SPLITS[a.split] || Apex.SPLITS.ppl_ul)[0] + '.',
     'Points faibles à prioriser, avec leur cible de séries directes par semaine et leur fréquence : ' + (groupes.length ? groupes.map(g => g.n + ' ' + g.min + ' à ' + g.max + ' séries, ' + g.freq + ' fois par semaine') .join(' ; ') : 'aucun') + '.',
     'Exercices autorisés (id=nom) : ' + cat + '.',
     'Règles : 5 à 9 exercices par séance, 2 à 5 séries par exercice, exercices lourds en premier, chaque point faible travaillé au moins aussi souvent que sa fréquence, jours de repos répartis. Utilise uniquement les id autorisés.',
     'Réponds uniquement par un objet JSON : {"seances":[{"nom":"Haut","exercices":[{"id":"di_halt","series":4}]}],"planning":{"0":"","1":"Haut","2":"","3":"","4":"","5":"","6":""}}. Le planning associe chaque jour (0 = dimanche … 6 = samedi) au nom d’une séance, ou "" pour un repos. Exactement ' + n + ' jours d’entraînement.'].join('\n');
+  if (a.jours) prompt += '\nJours disponibles (0 = dimanche … 6 = samedi) : ' + a.jours.join(', ') + '. Ne place des séances que sur ces jours.';
+  if (a.equip && a.equip !== 'salle') prompt += '\nMatériel disponible : ' + (Apex.EQUIP.find(x => x[0] === a.equip) || [])[1] + '. N’utilise que les exercices autorisés.';
   const r = await Promise.race([sample.json(prompt, { modelTier: 'default', cache: false }), new Promise((_, ko) => setTimeout(() => ko({ code: 'upstream_error' }), 120000))]);
-  const res = Apex.validerProgrammeIA(r, n, cfg); if (!res) return null;
+  const res = Apex.validerProgrammeIA(r, n, cfg, a.jours); if (!res) return null;
   return groupes.every(g => Apex.volumeGroupe(res, g, cfg) >= g.min * 0.8) ? res : null;
 }
 
@@ -2525,6 +2828,7 @@ function Wizard({ redo, onClose }) {
   const valid = cur === 'profil' ? num(a.age) && a.age >= 14 && a.age <= 90 && num(a.taille) && a.taille >= 120 && a.taille <= 230 && num(a.poids) && a.poids >= 35 && a.poids <= 250
     : cur === 'activite' ? num(a.pas) && num(a.seances) && (a.seances === 0 || (num(a.duree) && a.duree >= 15)) : true;
   const plan = (cur === 'resultat' || cur === 'claude') && valid ? Apex.calcPlan(a) : null;
+  const parts = plan ? [['Base', plan.parts.base, 'var(--s1)'], ['Pas', Math.max(0, plan.parts.steps), 'var(--s3)'], ['Séances', plan.parts.train, 'var(--s2)'], ['Cardio', plan.parts.cardio, 'var(--s4)']].filter(x => x[1] > 0.5) : [];
   const sample = st.caps().sample;
   const go = d => {
     if (d > 0 && cur === 'profil' && !num(a.poidsCible)) set({ poidsCible: Math.round(a.poids * (a.objectif === 'seche' ? 0.93 : a.objectif === 'masse' ? 1.05 : 1) * 2) / 2 });
@@ -2622,18 +2926,19 @@ function Wizard({ redo, onClose }) {
           <span className="mut">Valeurs par défaut d’une whey isolate. Corrige-les avec l’étiquette pour plus de précision.</span>
         </div></div>`}</div>`,
     resultat: () => !plan ? html`<p className="sec">Complète les étapes précédentes.</p>` : html`<h1>Ton plan calorique</h1>
-      <div className="tiles">
-        <div className="tile"><span>Métabolisme de base</span><b>${f0(plan.bmr)}<small>kcal</small></b><em>${plan.mg != null ? 'Katch-McArdle' : 'Mifflin-St Jeor'}</em></div>
-        <div className="tile"><span>Dépense totale</span><b>${f0(plan.tdee)}<small>kcal/j</small></b><em>NAP ${f2(plan.nap)}</em></div>
-        <div className="tile"><span>Cible moyenne</span><b>${f0(plan.avg)}<small>kcal/j</small></b><em>${a.objectif === 'neutre' ? 'maintien' : sgn(plan.delta, f0) + ' kcal/j'}</em></div>
-        <div className="tile"><span>Rythme estimé</span><b>${a.objectif === 'neutre' ? '0' : sgn(plan.kgSem, f2)}<small>kg/sem</small></b><em>${a.objectif === 'neutre' ? 'poids stable' : sgn(plan.pctSem, f1) + ' % du poids'}</em></div>
+      <div className="plan-hero">
+        <div className="ph-l"><span className="ph-k">Cible moyenne par jour</span><div className="ph-n">${f0(plan.avg)}<small>kcal</small></div>
+          <${Pill} st=${a.objectif === 'seche' ? 'good' : ''}>${a.objectif === 'neutre' ? 'Poids stable' : sgn(plan.kgSem, f2) + ' kg par semaine · ' + sgn(plan.pctSem, f1) + ' %'}<//></div>
+        <${Ring} v=${plan.avg} max=${Math.max(plan.tdee, plan.avg)} size=108 sw=10><b style=${{ fontSize: 22 }}>${a.objectif === 'neutre' ? '0' : sgn(plan.delta, f0)}</b><span>kcal / jour</span><//>
       </div>
-      <div className="tw"><table className="dt"><thead><tr><th scope="col">Jour</th><th scope="col">kcal</th><th scope="col">Prot.</th><th scope="col">Gluc.</th><th scope="col">Lip.</th></tr></thead>
-        <tbody><tr><td>Salle${plan.n ? ' (' + plan.n + '/sem)' : ''}</td><td>${f0(plan.salle.kcal)}</td><td>${plan.salle.p} g</td><td>${plan.salle.g} g</td><td>${plan.salle.l} g</td></tr>
-        <tr><td>Repos</td><td>${f0(plan.repos.kcal)}</td><td>${plan.repos.p} g</td><td>${plan.repos.g} g</td><td>${plan.repos.l} g</td></tr></tbody></table></div>
+      <div className="day2">${[['Jour de salle', plan.salle, plan.n ? plan.n + ' par semaine' : 'aucun prévu'], ['Jour de repos', plan.repos, (7 - plan.n) + ' par semaine']].map(x => html`<div key=${x[0]} className="day-c"><span className="fld-l">${x[0]}</span><b className="num">${f0(x[1].kcal)}<small>kcal</small></b><em>${x[2]}</em>
+        ${[['Prot.', x[1].p, x[1].p * 4, 'var(--p)'], ['Gluc.', x[1].g, x[1].g * 4, 'var(--g)'], ['Lip.', x[1].l, x[1].l * 9, 'var(--l)']].map(m => html`<div key=${m[0]} className="mc"><span><i style=${{ background: m[3] }}></i>${m[0]}</span><div className="mc-b"><u style=${{ width: Math.round(m[2] / x[1].kcal * 100) + '%', background: m[3] }}></u></div><b>${m[1]} g</b></div>`)}</div>`)}</div>
+      <div className="card-lite"><div className="row sb"><span className="fld-l">Ta dépense · ${f0(plan.tdee)} kcal par jour</span><span className="mut" style=${{ fontSize: 12 }}>${plan.mg != null ? 'Katch-McArdle' : 'Mifflin-St Jeor'}</span></div>
+        <div className="sbar" role="img" aria-label="Répartition de ta dépense">${parts.map(x => html`<u key=${x[0]} style=${{ flexGrow: x[1], background: x[2] }}></u>`)}</div>
+        <div className="legend">${parts.map(x => html`<span key=${x[0]}><i className="box" style=${{ '--c': x[2] }}></i>${x[0]} ${f0(x[1])}</span>`)}</div></div>
       ${a.objectif !== 'neutre' && html`<div className="fld"><span className="fld-l">Ajuster l’intensité</span><${Seg} neutral label="Intensité" value=${a.intensite} onChange=${v => set({ intensite: v })} options=${Apex.intensites(a.objectif).map(x => [x[0], x[1]])} /></div>`}
       ${plan.warn.map((w, i) => html`<div key=${i} className="note"><${Icon} n="alert" /><div><span>${w}</span></div></div>`)}
-      <div className="note"><${Icon} n="info" /><div><span><b>Comment c’est calculé.</b> Base ${f0(plan.parts.base)} kcal (métabolisme × activité quotidienne), ${sgn(plan.parts.steps, f0)} pour tes pas, +${f0(plan.parts.train)} pour tes séances, +${f0(plan.parts.cardio)} pour le cardio. Protéines ${f1(plan.salle.p / a.poids)} g/kg, lipides ${f1(plan.salle.l / a.poids)} g/kg, glucides pour le reste. Plancher de sécurité ${f0(plan.planchers.kcal)} kcal. Les jours de salle sont un peu plus riches, les jours de repos plus légers, pour la même moyenne.</span></div></div>`,
+      <p className="mut" style=${{ fontSize: 12 }}>Protéines ${f1(plan.salle.p / a.poids)} g/kg, lipides ${f1(plan.salle.l / a.poids)} g/kg, glucides pour le reste. Plancher de sécurité ${f0(plan.planchers.kcal)} kcal. Jours de salle un peu plus riches, jours de repos plus légers, pour la même moyenne.</p>`,
     claude: () => html`<h1>${STANDALONE ? 'Connecte une IA gratuite' : 'Lie Claude à ton compte'}</h1>
       <p className="sec">Avec une IA connectée, ton coach enregistre tes repas et tes séances quand tu lui parles, recale ta journée après un écart, et optimise ton programme selon tes points faibles. Sans IA, l’app fonctionne avec ses calculs.</p>
       <${ClaudeLink} onChange=${setLinked} />
@@ -2642,7 +2947,7 @@ function Wizard({ redo, onClose }) {
   return ReactDOM.createPortal(html`<div className="wiz" role="dialog" aria-modal="true" aria-label="Configuration">
     <div className="wiz-top"><div className="wiz-bar" role="progressbar" aria-valuenow=${pct} aria-valuemin="0" aria-valuemax="100"><i style=${{ width: pct + '%' }}></i></div><span className="mut" style=${{ fontSize: 12 }}>${step + 1}/${steps.length}</span>
       ${(redo || cfg.q || step > 0) && html`<button type="button" className="ib sm" aria-label="Quitter" onClick=${() => { if (redo || cfg.q) { Store.patch('cfg', null, { onboarded: true }); onClose(); } else skip(); }}><${Icon} n="x" s=${18} /></button>`}</div>
-    <div className="wiz-body"><div className="wiz-in">${(body[cur] || body.intro)()}</div></div>
+    <div className="wiz-body"><div className="wiz-in">${cur !== 'intro' && html`<span className="kicker">Étape ${step + 1} sur ${steps.length}</span>`}${(body[cur] || body.intro)()}</div></div>
     <div className="wiz-foot"><div className="wiz-in" style=${{ gridTemplateColumns: 'auto 1fr', display: 'grid', gap: 10 }}>
       <button type="button" className="btn" disabled=${step === 0 || !!busy} onClick=${() => go(-1)}>Retour</button>
       ${!last ? html`<button type="button" className="btn pri" disabled=${!valid || cur === 'intro' && false} onClick=${() => go(1)}>${cur === 'intro' ? 'Commencer' : 'Suivant'}</button>` : html`<span></span>`}</div></div>
@@ -2651,43 +2956,62 @@ function Wizard({ redo, onClose }) {
 }
 
 /* ---- 67-ui-ailink.js ---- */
-/* ApexHQ — connexion à l'IA (réglages et assistant de démarrage).
-   Version Claude : le compte Claude de la personne. App autonome : clé Gemini gratuite et/ou clé API Anthropic.
+/* ApexHQ — connexion à l'IA : le plus court possible.
+   - Version Claude : le compte Claude de la personne (un seul clic « Autoriser »).
+   - App autonome avec Gemini intégré (clé du propriétaire dans le build) : un seul clic « Activer l'IA gratuite ».
+   - Sinon : clé Gemini perso en deux gestes (ouvrir Google AI Studio, puis « Coller et lier »).
    Plusieurs IA connectées = bascule automatique quand l'une atteint son quota. */
 function ClaudeLink({ onChange }) {
   const st = useStore(), cfg = st.cfg(), caps = st.caps();
   const [gk, setGk] = useState(''); const [ak, setAk] = useState(''); const [busy, setBusy] = useState(''); const [msg, setMsg] = useState('');
-  const gOn = !!AI.getGKey(), aOn = !!AI.getKey();
-  const on = !!caps.sample && (STANDALONE ? (gOn || aOn) : !!(cfg.claude && cfg.claude.on));
+  const own = !!AI.ownG(), aOn = !!AI.getKey(), emb = STANDALONE && AI.embedded(), cons = AI.consent();
+  const on = !!caps.sample && (STANDALONE ? !!(AI.getGKey() || aOn) : !!(cfg.claude && cfg.claude.on));
   const done = (ok, mode) => { if (ok && mode) Store.patch('cfg', null, { claude: { on: true, mode, at: new Date().toISOString() } }); if (!ok && !AI.hasAny() && STANDALONE) Store.patch('cfg', null, { claude: null }); if (onChange) onChange(ok); };
   const testClaude = async () => {
     setBusy('c'); setMsg('');
     try { await AI.test('claude', Store.caps().sample); setMsg('Claude est connecté.'); done(true, 'compte'); } catch (e) { setMsg(aiMsg(e) || 'Échec de la connexion.'); done(false); }
     setBusy('');
   };
-  const link = (kind, key, setter, re, hint, mode) => async () => {
-    const k = key.trim(); if (!re.test(k)) { setMsg(hint); return; }
+  const activerInclus = async () => {
+    setBusy('e'); setMsg(''); AI.setConsent('1'); Store.refreshAI();
+    try { await AI.test('gemini'); setMsg('L’IA est activée.'); done(true, 'gemini'); } catch (e) { setMsg(aiMsg(e) || 'IA indisponible pour le moment.'); done(AI.hasAny(), 'gemini'); }
+    setBusy('');
+  };
+  const link = (kind, key, setter, re, hint, mode) => async explicit => {
+    const k = (typeof explicit === 'string' ? explicit : key).trim(); if (!re.test(k)) { setMsg(hint); return; }
     setBusy(kind); setMsg(''); (kind === 'g' ? AI.setGKey : AI.setKey)(k); Store.refreshAI();
     try { await AI.test(kind === 'g' ? 'gemini' : 'anthropic'); setter(''); setMsg((kind === 'g' ? 'Gemini' : 'Claude') + ' est connecté.'); done(true, mode); }
     catch (e) { (kind === 'g' ? AI.setGKey : AI.setKey)(''); Store.refreshAI(); setMsg(aiMsg(e) || 'Clé refusée.'); done(AI.hasAny()); }
     setBusy('');
   };
-  const linkG = link('g', gk, setGk, /^AIza[0-9A-Za-z_\-]{30,}$/, 'Une clé Gemini commence par « AIza ». Copie-la en entier depuis aistudio.google.com.', 'gemini');
+  const G_RE = /^AIza[0-9A-Za-z_\-]{30,}$/;
+  const linkG = link('g', gk, setGk, G_RE, 'Une clé Gemini commence par « AIza ». Copie-la en entier depuis Google AI Studio.', 'gemini');
   const linkA = link('a', ak, setAk, /^sk-ant-[A-Za-z0-9_\-]{20,}$/, 'Une clé Anthropic commence par « sk-ant- ». Copie-la en entier depuis console.anthropic.com.', 'cle');
+  const coller = async () => {
+    try { const t = ((await navigator.clipboard.readText()) || '').trim(); if (G_RE.test(t)) { setGk(t); await linkG(t); } else setMsg('Copie d’abord ta clé sur Google AI Studio (elle commence par « AIza »), puis reviens ici.'); }
+    catch (e) { setMsg('Ton navigateur bloque le collage automatique : colle la clé dans le champ ci-dessous.'); }
+  };
   const unlink = kind => { (kind === 'g' ? AI.setGKey : AI.setKey)(''); Store.refreshAI(); setMsg('Clé retirée de cet appareil.'); done(AI.hasAny()); };
   const retest = kind => async () => { setBusy(kind); setMsg(''); try { await AI.test(kind === 'g' ? 'gemini' : 'anthropic'); setMsg('Connexion valide.'); } catch (e) { setMsg(aiMsg(e) || 'Échec.'); } setBusy(''); };
   const Key = (id, label, val, set, ph) => html`<label className="fld" htmlFor=${id}><span className="fld-l">${label}</span><input id=${id} className="inp" type="password" autoComplete="off" autoCapitalize="off" spellCheck="false" placeholder=${ph} value=${val} onChange=${e => set(e.target.value)} /></label>`;
+  const privacy = html`<p className="mut" style=${{ fontSize: 12 }}>Gratuit, avec des limites par minute et par jour partagées : si elles sont atteintes, l’IA se met en pause un moment et le reste de l’app continue. Tes messages sont envoyés à Google ; avec le niveau gratuit, Google peut les réutiliser pour améliorer ses produits : n’y mets rien de sensible.</p>`;
+  const gemini = own ? html`<div className="row"><${Pill} st="good">Ma clé Gemini<//><button type="button" className="btn sm" disabled=${!!busy} onClick=${retest('g')}>${busy === 'g' ? 'Test…' : 'Tester'}</button><${Confirm} label="Retirer" sure="Retirer ?" cls="ghost sm" onYes=${() => unlink('g')} /></div>`
+    : html`<div className="stack">
+      <div className="row"><a className="btn" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">1 · Ouvrir Google AI Studio</a><button type="button" className="btn pri" disabled=${!!busy} onClick=${coller}>${busy === 'g' ? 'Connexion…' : '2 · Coller et lier'}</button></div>
+      <p className="mut" style=${{ fontSize: 12 }}>Sur AI Studio : « Create API key », copie la clé, reviens ici et touche « Coller et lier ».</p>
+      ${Key('ai-gkey', 'Ou colle la clé ici', gk, setGk, 'AIza…')}${gk.trim() && html`<button type="button" className="btn wide" disabled=${!!busy} onClick=${linkG}>${busy === 'g' ? 'Connexion…' : 'Lier Gemini'}</button>`}</div>`;
   return html`<div className="stack">
     <div className="row sb"><b>Intelligence artificielle</b><${Pill} st=${on ? 'good' : ''}>${on ? 'Connectée' : 'Non connectée'}<//></div>
     ${STANDALONE ? html`<div className="stack">
-      <div className="ai-card"><div className="row sb"><b>Gemini</b><span className="tag-free">Gratuit</span></div>
-        <p className="sec" style=${{ fontSize: 13 }}>Une clé gratuite Google, sans carte bancaire. 1. Ouvre aistudio.google.com avec ton compte Google. 2. Touche « Get API key » puis « Create API key ». 3. Copie la clé et colle-la ici.</p>
-        ${gOn ? html`<div className="row"><${Pill} st="good">Gemini connecté<//><button type="button" className="btn sm" disabled=${!!busy} onClick=${retest('g')}>${busy === 'g' ? 'Test…' : 'Tester'}</button><${Confirm} label="Retirer" sure="Retirer ?" cls="ghost sm" onYes=${() => unlink('g')} /></div>`
-          : html`${Key('ai-gkey', 'Clé Gemini', gk, setGk, 'AIza…')}<button type="button" className="btn pri wide" disabled=${!!busy || !gk.trim()} onClick=${linkG}>${busy === 'g' ? 'Connexion…' : 'Lier Gemini'}</button>`}
-        <p className="mut" style=${{ fontSize: 12 }}>Le niveau gratuit a des limites par minute et par jour : si tu les atteins, l’IA se met en pause un moment et le reste de l’app continue. Avec le niveau gratuit, Google peut réutiliser tes échanges pour améliorer ses produits : n’y mets rien de sensible. La clé reste sur cet appareil, jamais exportée.</p></div>
+      ${emb ? html`<div className="ai-card"><div className="row sb"><b>IA incluse · Gemini</b><span className="tag-free">Gratuit</span></div>
+        ${cons === '1' ? html`<div className="row"><${Pill} st="good">Activée<//><${Confirm} label="Désactiver" sure="Désactiver ?" cls="ghost sm" onYes=${() => { AI.setConsent('0'); Store.refreshAI(); done(AI.hasAny()); setMsg('IA désactivée.'); }} /></div>`
+          : html`<button type="button" className="btn pri wide" disabled=${!!busy} onClick=${activerInclus}><${Icon} n="sparkles" s=${18} />${busy === 'e' ? 'Activation…' : 'Activer l’IA gratuite'}</button>`}
+        ${privacy}</div>
+        <details className="ai-card"><summary><b>Utiliser ma propre clé Gemini</b> · quota perso</summary><div className="stack" style=${{ marginTop: 10 }}>${gemini}</div></details>`
+      : html`<div className="ai-card"><div className="row sb"><b>Gemini</b><span className="tag-free">Gratuit</span></div>${gemini}${privacy}</div>`}
       <details className="ai-card"><summary><b>Claude (clé API payante)</b> · facultatif</summary>
         <div className="stack" style=${{ marginTop: 10 }}>
-          <p className="sec" style=${{ fontSize: 13 }}>Si tu as une clé Anthropic (console.anthropic.com), elle sert de secours quand Gemini est saturé. Facturation à l’usage, séparée de l’abonnement Claude.</p>
+          <p className="sec" style=${{ fontSize: 13 }}>Une clé Anthropic (console.anthropic.com) sert de secours quand Gemini est saturé. Facturation à l’usage, séparée de l’abonnement Claude.</p>
           ${aOn ? html`<div className="row"><${Pill} st="good">Claude connecté<//><button type="button" className="btn sm" disabled=${!!busy} onClick=${retest('a')}>${busy === 'a' ? 'Test…' : 'Tester'}</button><${Confirm} label="Retirer" sure="Retirer ?" cls="ghost sm" onYes=${() => unlink('a')} /></div>`
             : html`${Key('ai-akey', 'Clé Anthropic', ak, setAk, 'sk-ant-…')}<button type="button" className="btn wide" disabled=${!!busy || !ak.trim()} onClick=${linkA}>${busy === 'a' ? 'Connexion…' : 'Lier Claude'}</button>`}
         </div></details>
@@ -2698,6 +3022,25 @@ function ClaudeLink({ onChange }) {
         ${on && html`<${Confirm} label="Désactiver" sure="Désactiver ?" cls="ghost" onYes=${() => { Store.patch('cfg', null, { claude: null }); setMsg('IA désactivée.'); if (onChange) onChange(false); }} />`}</div>
     </div>`}
     ${msg && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${msg}</p>`}
+  </div>`;
+}
+
+/* Bandeau « Activer l'IA gratuite » : un seul geste quand Gemini est intégré à l'app. */
+function IABanner() {
+  const st = useStore(), [sheet, setSheet] = useState(false); const [busy, setBusy] = useState(false);
+  if (!STANDALONE || !AI.embedded() || AI.consent() || st.caps().sample) return null;
+  const go = async () => { setBusy(true); AI.setConsent('1'); Store.refreshAI(); try { await AI.test('gemini'); Store.patch('cfg', null, { claude: { on: true, mode: 'gemini', at: new Date().toISOString() } }); toast('IA activée'); } catch (e) { toast(aiMsg(e) || 'IA indisponible pour le moment.'); } setBusy(false); setSheet(false); };
+  return html`<div className="install" role="region" aria-label="IA gratuite">
+    <i className="install-ic"><${Icon} n="sparkles" s=${22} /></i>
+    <div className="install-t"><b>IA gratuite incluse</b><span>Coach, séances adaptées, debrief : un seul clic.</span></div>
+    <button type="button" className="btn sm pri" onClick=${() => setSheet(true)}>Activer</button>
+    <button type="button" className="ib sm" aria-label="Plus tard" onClick=${() => { AI.setConsent('0'); Store.refreshAI(); }}><${Icon} n="x" s=${16} /></button>
+    ${sheet && html`<${Sheet} title="Activer l’IA gratuite" onClose=${() => setSheet(false)}>
+      <p className="sec" style=${{ fontSize: 14 }}>ApexHQ utilise Google Gemini. Quand tu parles au coach, adaptes une séance ou lances un debrief, ton message et les données utiles (poids, repas, séances) sont envoyés à Google.</p>
+      <div className="note"><${Icon} n="info" /><div><span>Niveau gratuit : limites partagées par minute et par jour, et Google peut réutiliser les échanges pour améliorer ses produits. N’écris rien de sensible. Tu peux désactiver l’IA à tout moment dans Réglages.</span></div></div>
+      <button type="button" className="btn pri wide" disabled=${busy} onClick=${go}><${Icon} n="check" s=${18} />${busy ? 'Activation…' : 'J’accepte, activer l’IA'}</button>
+      <button type="button" className="btn wide ghost" onClick=${() => { AI.setConsent('0'); Store.refreshAI(); setSheet(false); }}>Non merci, sans IA</button>
+    <//>`}
   </div>`;
 }
 
@@ -2787,10 +3130,11 @@ function SeancesEditor() {
     <div className="row"><input id="nt-name" className="inp grow" type="text" maxLength="24" placeholder="Nouvelle séance (Bras, Haut du corps…)" value=${nn} onChange=${e => { setNn(e.target.value); setMsg(''); }} onKeyDown=${e => { if (e.key === 'Enter') addType(); }} aria-label="Nom de la nouvelle séance" />
       <button type="button" className="btn" disabled=${!nn.trim()} onClick=${addType}><${Icon} n="plus" s=${18} />Ajouter</button></div>
     ${msg && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${msg}</p>`}
-    <div className="row sb"><button type="button" className="btn sm" onClick=${() => setSheet({ admin: true })}>Gérer mes exercices</button>
+    <div className="row sb"><div className="row"><button type="button" className="btn sm" onClick=${() => setSheet({ week: true })}><${Icon} n="sparkles" s=${16} />Ma semaine selon mes dispos</button><button type="button" className="btn sm" onClick=${() => setSheet({ admin: true })}>Mes exercices</button></div>
       <${Confirm} label="Programme par défaut" sure="Tout rétablir ?" cls="ghost" onYes=${reset} /></div>
     ${sheet && sheet.t && html`<${ExoSheet} exos=${exos} title=${'Ajouter à ' + sheet.t} onClose=${() => setSheet(null)} onPick=${id => upd(sheet.t, a => a.concat({ e: id, n: 3 }))} />`}
     ${sheet && sheet.admin && html`<${ExoAdmin} onClose=${() => setSheet(null)} />`}
+    ${sheet && sheet.week && html`<${WeekSheet} onClose=${() => setSheet(null)} />`}
   </div>`;
 }
 
@@ -3072,7 +3416,7 @@ function App() {
         <${Seg} label="Statut du jour" value=${statut} onChange=${setStatut} options=${[['repos', 'Repos'], ['salle', 'Salle']]} />
       </div>
     </div></header>
-    <main className="wrap"><${InstallBanner} /><${Boundary} key=${tab}><${View} date=${date} setDate=${setDate} go=${go} /><//></main>
+    <main className="wrap"><${InstallBanner} /><${IABanner} /><${Boundary} key=${tab}><${View} date=${date} setDate=${setDate} go=${go} /><//></main>
     <nav className="tabs" aria-label="Sections" style=${{ gridTemplateColumns: 'repeat(' + tabs.length + ', 1fr)' }}>${tabs.map(t => html`<button key=${t[0]} type="button" aria-current=${tab === t[0] ? 'page' : undefined} onClick=${() => go(t[0])}><${Icon} n=${t[2]} s=${22} />${t[1]}</button>`)}</nav>
     ${open && html`<${SettingsSheet} onClose=${() => setOpen(false)} />`}
     ${wiz && html`<${Wizard} redo=${cfg.onboarded === false} onClose=${() => {}} />`}
