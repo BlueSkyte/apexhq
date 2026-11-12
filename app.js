@@ -1838,7 +1838,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     <label className="row" htmlFor="fr-keep" style=${{ fontSize: 13, color: 'var(--ink-2)', gap: 8 }}><input id="fr-keep" type="checkbox" checked=${!!fr.keep} onChange=${e => setFr(Object.assign({}, fr, { keep: e.target.checked }))} />Garder dans ma base (valeurs par portion)</label>
     <button type="button" className="btn wide" disabled=${!fr.n.trim() || fr.k == null} onClick=${addFree}>Ajouter la saisie libre</button>
     ${sample && html`<div className="stack">
-      <h3>Estimation par Claude</h3>
+      <h3>Estimation par l’IA</h3>
       <textarea id="ai-txt" className="inp" placeholder="2 parts de pizza 4 fromages, 1 tiramisu, 1 bière 25 cl" value=${ai.txt} maxLength="600" onChange=${e => setAi(Object.assign({}, ai, { txt: e.target.value }))} aria-label="Décris le repas à estimer"></textarea>
       <button type="button" className="btn wide" disabled=${ai.busy || !ai.txt.trim()} onClick=${estimate}><${Icon} n="sparkles" s=${18} />${ai.busy ? 'Estimation…' : 'Estimer les macros'}</button>
       ${ai.err && html`<div className="note"><${Icon} n="alert" /><div><span>${ai.err}</span></div></div>`}
@@ -2336,8 +2336,8 @@ function CoachCard({ date }) {
     catch (e) { if (e && e.code === 'cancelled') { setOut(e.text || ''); } else { setErr(aiErr(e)); if (!e || e.code === 'refused') setOut(''); else if (e.text) setOut(e.text); } }
     setBusy(false);
   };
-  return html`<${Card} cls="c5" title="Bilan coach" sub="Analyse des 14 derniers jours par Claude">
-    ${out ? html`<div className="pre" aria-live="polite">${out}</div>` : html`<div className="empty"><span>Verdict, constats chiffrés et ajustements à partir de tes données. Compte dans ton usage Claude.</span></div>`}
+  return html`<${Card} cls="c5" title="Bilan coach" sub="Analyse des 14 derniers jours par l’IA">
+    ${out ? html`<div className="pre" aria-live="polite">${out}</div>` : html`<div className="empty"><span>Verdict, constats chiffrés et ajustements à partir de tes données. Utilise ton quota d’IA gratuit.</span></div>`}
     ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
     <div className="row">
       <button type="button" className="btn pri grow" disabled=${busy} onClick=${run}><${Icon} n="sparkles" s=${18} />${busy ? 'Analyse…' : out ? 'Relancer le bilan' : 'Générer le bilan'}</button>
@@ -2749,9 +2749,9 @@ function Coach({ date }) {
   const key = e => { if (e.key === 'Enter' && !e.shiftKey && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) { e.preventDefault(); send(); } };
   const SUG = ['Ce midi j’ai mangé ', 'Check-in : poids … kg, sommeil … h, énergie …/10, force …/10', 'Que manger ce soir pour boucler la journée ?', 'Analyse ma semaine et dis-moi quoi ajuster.'];
   if (!sample) return html`<div>
-    <div className="view-h"><h1>Coach</h1><p>Claude intégré à l’app.</p></div>
+    <div className="view-h"><h1>Coach</h1><p>IA intégrée à l’app.</p></div>
     <${Card} title="Coach indisponible dans cette vue">
-      <div className="empty"><span><b>Le coach a besoin de Claude.</b> Ouvre ApexHQ depuis l’app Claude ou claude.ai, connecté à ton compte : le coach lit tes données et enregistre repas, check-in et séries quand tu lui parles.</span></div>
+      <div className="empty"><span><b>Le coach a besoin d’une IA.</b> ${STANDALONE ? 'Active l’IA gratuite dans Réglages, section IA : ' : 'Ouvre ApexHQ depuis l’app Claude ou claude.ai, connecté à ton compte : '}le coach lit tes données et enregistre repas, debrief et séries quand tu lui parles.</span></div>
     <//>
   </div>`;
   return html`<div>
@@ -2764,10 +2764,10 @@ function Coach({ date }) {
       ${!msgs.length && html`<div className="note acc"><${Icon} n="sparkles" /><div>
         <span><b>Dis-lui ce que tu fais, il remplit l’app.</b> Repas, écart, poids, pas, séries : chaque enregistrement s’affiche et s’annule d’un geste. ${lim && !lim.tools ? 'Dans cette vue il conseille mais ne peut pas écrire.' : ''}</span>
         <div className="chips">${SUG.map((s, i) => html`<button key=${i} type="button" className="chip" onClick=${() => { setTxt(s); if (box.current) box.current.focus(); }}>${s.length > 44 ? s.slice(0, 42) + '…' : s}</button>`)}</div>
-        <span className="mut">Compte dans ton usage Claude. « Rapide » répond en quelques secondes, « Précis » réfléchit plus longtemps.</span>
+        <span className="mut">Utilise ton quota d’IA gratuit. « Rapide » répond en quelques secondes, « Précis » réfléchit plus longtemps.</span>
       </div></div>`}
       ${msgs.map((m, mi) => html`<${React.Fragment} key=${mi}>
-        ${(m.t || m.wait) && html`<div className=${cx('msg', m.r, m.wait && 'wait')}>${m.t || 'Claude réfléchit…'}</div>`}
+        ${(m.t || m.wait) && html`<div className=${cx('msg', m.r, m.wait && 'wait')}>${m.t || 'L’IA réfléchit…'}</div>`}
         ${m.a && m.a.length > 0 && html`<div className="acts">${m.a.map((a, ai) => html`<div key=${a.id || ai} className=${cx('act', a.undone && 'off')}>
           <${Icon} n=${a.undone ? 'x' : 'check'} s=${16} w=${2.4} /><span>${a.lab}</span>
           ${a.undo && !a.undone ? html`<button type="button" className="btn sm ghost" onClick=${() => undo(mi, ai)}>Annuler</button>` : html`<span></span>`}
@@ -2841,7 +2841,7 @@ function Wizard({ redo, onClose }) {
     try {
       const r = await s.json('Donne les valeurs nutritionnelles moyennes de cette protéine en poudre : « ' + a.whey.n.slice(0, 80) + ' ». Réponds uniquement par un JSON {"kcal": pour 100 g, "p": protéines g pour 100 g, "g": glucides g pour 100 g, "l": lipides g pour 100 g, "f": fibres g pour 100 g, "dose_g": portion usuelle en grammes}.', { modelTier: 'quick', cache: false });
       const k = Number(r.kcal); if (!(k > 100 && k < 600)) throw { code: 'invalid_json' };
-      set({ whey: Object.assign({}, a.whey, { k: Math.round(k), p: r1(+r.p || 0), g: r1(+r.g || 0), l: r1(+r.l || 0), f: r1(+r.f || 0), dose: Math.round(+r.dose_g) > 0 ? Math.round(+r.dose_g) : a.whey.dose, verified: false }) }); setWmsg('Valeurs estimées par Claude : vérifie-les avec l’étiquette.');
+      set({ whey: Object.assign({}, a.whey, { k: Math.round(k), p: r1(+r.p || 0), g: r1(+r.g || 0), l: r1(+r.l || 0), f: r1(+r.f || 0), dose: Math.round(+r.dose_g) > 0 ? Math.round(+r.dose_g) : a.whey.dose, verified: false }) }); setWmsg('Valeurs estimées par l’IA : vérifie-les avec l’étiquette.');
     } catch (e) { setWmsg(aiMsg(e) || 'Estimation impossible.'); }
     setWbusy(false);
   };
@@ -2852,8 +2852,8 @@ function Wizard({ redo, onClose }) {
       const cfgNow = Store.cfg(), p = Apex.calcPlan(a), base = Apex.planToCfg(a, p), groupes = Apex.focusGroupes(a.focus), foods = Apex.allFoods(Object.assign({}, cfgNow, { aliments: Object.assign({}, cfgNow.aliments, Apex.wheyAliments(a.whey)) }));
       let prog = Apex.genProgramme(a, groupes, cfgNow), ia = '';
       if (sample && linked && a.seances > 0) {
-        setBusy('Claude conçoit ton programme selon tes points faibles (≈ 30 s)…');
-        try { const r = await optimiserProgramme(sample, a, groupes, cfgNow); if (r) { prog = r; ia = ' Programme optimisé par Claude.'; } else ia = ' Programme calculé par l’app (la proposition de Claude n’était pas valide).'; } catch (e) { ia = ' Programme calculé par l’app (Claude indisponible).'; }
+        setBusy('L’IA conçoit ton programme selon tes points faibles (≈ 30 s)…');
+        try { const r = await optimiserProgramme(sample, a, groupes, cfgNow); if (r) { prog = r; ia = ' Programme optimisé par l’IA.'; } else ia = ' Programme calculé par l’app (la proposition de l’IA n’était pas valide).'; } catch (e) { ia = ' Programme calculé par l’app (IA indisponible).'; }
       }
       const q = { objectif: a.objectif, intensite: a.intensite, sexe: a.sexe, age: a.age, taille: a.taille, poids: a.poids, mg: a.mg, poidsCible: a.poidsCible, metier: a.metier, pas: a.pas, seances: a.seances, duree: a.duree, cardio: a.cardio, niveau: a.niveau, split: a.split, regime: a.regime, exclus: a.exclus, focus: a.focus, supps: a.supps, suppsAutre: a.suppsAutre, whey: a.whey, fait: Apex.today() };
       Store.patch('cfg', null, Object.assign({ onboarded: true, q }, base, {
@@ -2914,7 +2914,7 @@ function Wizard({ redo, onClose }) {
           <span><b>Laquelle précisément ?</b> Donne le nom, puis scanne le code-barres${STANDALONE ? '' : ' (dans l’app installée)'} ou fais estimer les valeurs.</span>
           <label className="fld" htmlFor="w-wn"><span className="fld-l">Marque et produit</span><input id="w-wn" className="inp" type="text" maxLength="60" placeholder="ex. Prozis Clear Whey Isolate" value=${a.whey.n} onChange=${e => set({ whey: Object.assign({}, a.whey, { n: e.target.value, verified: false }) })} /></label>
           <div className="row">${CAN_SCAN && html`<button type="button" className="btn sm" onClick=${() => setScan(true)}><${Icon} n="camera" s=${16} />Scanner le code-barres</button>`}
-            ${sample && html`<button type="button" className="btn sm" disabled=${wbusy || !a.whey.n.trim()} onClick=${estimerWhey}><${Icon} n="sparkles" s=${16} />${wbusy ? 'Estimation…' : 'Estimer avec Claude'}</button>`}</div>
+            ${sample && html`<button type="button" className="btn sm" disabled=${wbusy || !a.whey.n.trim()} onClick=${estimerWhey}><${Icon} n="sparkles" s=${16} />${wbusy ? 'Estimation…' : 'Estimer avec l’IA'}</button>`}</div>
           <div className="form f4">
             <${Num} id="w-wk" label="kcal / 100 g" value=${a.whey.k} onChange=${v => set({ whey: Object.assign({}, a.whey, { k: v == null ? 0 : v, verified: true }) })} dec=${0} min=${0} max=${600} />
             <${Num} id="w-wp" label="Prot. / 100 g" value=${a.whey.p} onChange=${v => set({ whey: Object.assign({}, a.whey, { p: v == null ? 0 : v, verified: true }) })} dec=${1} min=${0} max=${100} />
@@ -2942,7 +2942,7 @@ function Wizard({ redo, onClose }) {
     claude: () => html`<h1>${STANDALONE ? 'Connecte une IA gratuite' : 'Lie Claude à ton compte'}</h1>
       <p className="sec">Avec une IA connectée, ton coach enregistre tes repas et tes séances quand tu lui parles, recale ta journée après un écart, et optimise ton programme selon tes points faibles. Sans IA, l’app fonctionne avec ses calculs.</p>
       <${ClaudeLink} onChange=${setLinked} />
-      ${busy ? html`<div className="note acc"><${Icon} n="sparkles" /><div><span>${busy}</span></div></div>` : html`<button type="button" className="btn pri wide" onClick=${finish}><${Icon} n="check" s=${18} />${linked ? 'Créer mon plan avec Claude' : 'Créer mon plan sans Claude'}</button>`}`,
+      ${busy ? html`<div className="note acc"><${Icon} n="sparkles" /><div><span>${busy}</span></div></div>` : html`<button type="button" className="btn pri wide" onClick=${finish}><${Icon} n="check" s=${18} />${linked ? 'Créer mon plan avec l’IA' : 'Créer mon plan sans IA'}</button>`}`,
   };
   return ReactDOM.createPortal(html`<div className="wiz" role="dialog" aria-modal="true" aria-label="Configuration">
     <div className="wiz-top"><div className="wiz-bar" role="progressbar" aria-valuenow=${pct} aria-valuemin="0" aria-valuemax="100"><i style=${{ width: pct + '%' }}></i></div><span className="mut" style=${{ fontSize: 12 }}>${step + 1}/${steps.length}</span>
@@ -2984,11 +2984,11 @@ function ClaudeLink({ onChange }) {
     catch (e) { (kind === 'g' ? AI.setGKey : AI.setKey)(''); Store.refreshAI(); setMsg(aiMsg(e) || 'Clé refusée.'); done(AI.hasAny()); }
     setBusy('');
   };
-  const G_RE = /^AIza[0-9A-Za-z_\-]{30,}$/;
-  const linkG = link('g', gk, setGk, G_RE, 'Une clé Gemini commence par « AIza ». Copie-la en entier depuis Google AI Studio.', 'gemini');
+  const G_RE = /^(AIza[0-9A-Za-z_\-]{30,}|AQ\.[0-9A-Za-z_\-.]{20,})$/;
+  const linkG = link('g', gk, setGk, G_RE, 'Une clé Gemini commence par « AIza » ou « AQ. ». Copie-la en entier depuis Google AI Studio.', 'gemini');
   const linkA = link('a', ak, setAk, /^sk-ant-[A-Za-z0-9_\-]{20,}$/, 'Une clé Anthropic commence par « sk-ant- ». Copie-la en entier depuis console.anthropic.com.', 'cle');
   const coller = async () => {
-    try { const t = ((await navigator.clipboard.readText()) || '').trim(); if (G_RE.test(t)) { setGk(t); await linkG(t); } else setMsg('Copie d’abord ta clé sur Google AI Studio (elle commence par « AIza »), puis reviens ici.'); }
+    try { const t = ((await navigator.clipboard.readText()) || '').trim(); if (G_RE.test(t)) { setGk(t); await linkG(t); } else setMsg('Copie d’abord ta clé sur Google AI Studio, puis reviens ici.'); }
     catch (e) { setMsg('Ton navigateur bloque le collage automatique : colle la clé dans le champ ci-dessous.'); }
   };
   const unlink = kind => { (kind === 'g' ? AI.setGKey : AI.setKey)(''); Store.refreshAI(); setMsg('Clé retirée de cet appareil.'); done(AI.hasAny()); };
@@ -2999,7 +2999,7 @@ function ClaudeLink({ onChange }) {
     : html`<div className="stack">
       <div className="row"><a className="btn" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">1 · Ouvrir Google AI Studio</a><button type="button" className="btn pri" disabled=${!!busy} onClick=${coller}>${busy === 'g' ? 'Connexion…' : '2 · Coller et lier'}</button></div>
       <p className="mut" style=${{ fontSize: 12 }}>Sur AI Studio : « Create API key », copie la clé, reviens ici et touche « Coller et lier ».</p>
-      ${Key('ai-gkey', 'Ou colle la clé ici', gk, setGk, 'AIza…')}${gk.trim() && html`<button type="button" className="btn wide" disabled=${!!busy} onClick=${linkG}>${busy === 'g' ? 'Connexion…' : 'Lier Gemini'}</button>`}</div>`;
+      ${Key('ai-gkey', 'Ou colle la clé ici', gk, setGk, 'AIza… ou AQ.…')}${gk.trim() && html`<button type="button" className="btn wide" disabled=${!!busy} onClick=${linkG}>${busy === 'g' ? 'Connexion…' : 'Lier Gemini'}</button>`}</div>`;
   return html`<div className="stack">
     <div className="row sb"><b>Intelligence artificielle</b><${Pill} st=${on ? 'good' : ''}>${on ? 'Connectée' : 'Non connectée'}<//></div>
     ${STANDALONE ? html`<div className="stack">
@@ -3009,13 +3009,6 @@ function ClaudeLink({ onChange }) {
         ${privacy}</div>
         <details className="ai-card"><summary><b>Utiliser ma propre clé Gemini</b> · quota perso</summary><div className="stack" style=${{ marginTop: 10 }}>${gemini}</div></details>`
       : html`<div className="ai-card"><div className="row sb"><b>Gemini</b><span className="tag-free">Gratuit</span></div>${gemini}${privacy}</div>`}
-      <details className="ai-card"><summary><b>Claude (clé API payante)</b> · facultatif</summary>
-        <div className="stack" style=${{ marginTop: 10 }}>
-          <p className="sec" style=${{ fontSize: 13 }}>Une clé Anthropic (console.anthropic.com) sert de secours quand Gemini est saturé. Facturation à l’usage, séparée de l’abonnement Claude.</p>
-          ${aOn ? html`<div className="row"><${Pill} st="good">Claude connecté<//><button type="button" className="btn sm" disabled=${!!busy} onClick=${retest('a')}>${busy === 'a' ? 'Test…' : 'Tester'}</button><${Confirm} label="Retirer" sure="Retirer ?" cls="ghost sm" onYes=${() => unlink('a')} /></div>`
-            : html`${Key('ai-akey', 'Clé Anthropic', ak, setAk, 'sk-ant-…')}<button type="button" className="btn wide" disabled=${!!busy || !ak.trim()} onClick=${linkA}>${busy === 'a' ? 'Connexion…' : 'Lier Claude'}</button>`}
-        </div></details>
-      <p className="mut" style=${{ fontSize: 12 }}>Plusieurs IA connectées : l’app bascule toute seule sur la suivante quand l’une atteint son quota.</p>
     </div>` : html`<div className="stack">
       <p className="sec" style=${{ fontSize: 13 }}>Tu es connecté avec ton compte Claude : tes données ApexHQ sont liées à ce compte, dans une base privée. L’IA utilise le quota de ton abonnement Claude, y compris gratuit. Quand il est atteint, l’IA se met en pause jusqu’à sa réinitialisation et le reste de l’app continue. Au premier test, Claude te demande l’autorisation.</p>
       <div className="row"><button type="button" className=${cx('btn', !on && 'pri')} disabled=${!!busy} onClick=${testClaude}>${busy === 'c' ? 'Test…' : on ? 'Tester la connexion' : 'Autoriser et tester'}</button>
