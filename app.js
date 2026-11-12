@@ -713,24 +713,32 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ['bic', 'Biceps', { n: 'Biceps', m: ['bic'], min: 10, max: 14, freq: 2 }],
     ['tri', 'Triceps', { n: 'Triceps', m: ['tri'], min: 10, max: 14, freq: 2 }],
     ['dLat', 'Épaules (faisceau latéral)', { n: 'Deltoïdes latéraux', m: ['dLat'], min: 12, max: 18, freq: 3 }],
+    ['dAnt', 'Épaules (faisceau avant)', { n: 'Épaules avant', m: ['dAnt'], min: 8, max: 12, freq: 2 }],
     ['dPost', 'Épaules arrière', { n: 'Épaules arrière', m: ['dPost'], min: 8, max: 14, freq: 2 }],
+    ['epaules', 'Épaules complètes', { n: 'Épaules (complètes)', m: ['dLat', 'dAnt', 'dPost'], min: 18, max: 26, freq: 3 }],
+    ['bras', 'Bras complets (biceps + triceps)', { n: 'Bras', m: ['bic', 'tri'], min: 18, max: 26, freq: 2 }],
     ['dos', 'Dos', { n: 'Dos', m: ['dos'], min: 14, max: 20, freq: 2 }],
     ['quad', 'Cuisses (quadriceps)', { n: 'Quadriceps', m: ['quad'], min: 10, max: 16, freq: 2 }],
     ['isch', 'Ischios et fessiers', { n: 'Ischios et fessiers', m: ['isch', 'fess'], min: 8, max: 14, freq: 2 }],
+    ['ischO', 'Ischio-jambiers', { n: 'Ischio-jambiers', m: ['isch'], min: 8, max: 12, freq: 2 }],
+    ['fess', 'Fessiers', { n: 'Fessiers', m: ['fess'], min: 8, max: 14, freq: 2 }],
+    ['jambes', 'Jambes complètes', { n: 'Jambes', m: ['quad', 'isch', 'fess'], min: 20, max: 30, freq: 2 }],
     ['mol', 'Mollets', { n: 'Mollets', m: ['mol'], min: 8, max: 14, freq: 2 }],
     ['abd', 'Abdos', { n: 'Abdos', m: ['abd'], min: 6, max: 12, freq: 2 }],
   ];
   const focusGroupes = keys => { const out = [], seen = {}; (keys || []).forEach(k => { const c = FOCUS_CHOIX.find(x => x[0] === k); if (!c) return; const g = Object.assign({ id: 'f_' + k }, c[2]); const key = g.m.join(); if (seen[key]) return; seen[key] = 1; out.push(g); }); return out; };
 
   /* ---------- programme de séances ---------- */
-  const SPLITS = { ppl: ['Push / Pull / Legs', ['Push', 'Pull', 'Legs']], ul: ['Haut / Bas', ['Upper', 'Lower']], fb: ['Full body', ['Full body']], ppl_ul: ['PPL + Haut / Bas (5 jours)', ['Push', 'Pull', 'Legs', 'Upper', 'Lower']] };
+  const SPLITS = { ppl: ['Push / Pull / Legs', ['Push', 'Pull', 'Legs']], ul: ['Upper / Lower', ['Upper', 'Lower']], fb: ['Full body (3 fois par semaine)', ['Full body']], ppl_ul: ['Push Pull Legs + Upper Lower (5 jours)', ['Push', 'Pull', 'Legs', 'Upper', 'Lower']], ulppl: ['Upper Lower Upper Lower Push Pull Legs', ['Upper', 'Lower', 'Upper', 'Lower', 'Push', 'Pull', 'Legs']], perso: ['Personnalisé : je choisis mes séances', []] };
+  const SPLIT_TYPES = ['Push', 'Pull', 'Legs', 'Upper', 'Lower', 'Full body'];
+  const splitBase = q => { const p = q.split === 'perso' && Array.isArray(q.splitPerso) ? q.splitPerso.filter(t => SPLIT_TYPES.indexOf(t) >= 0) : []; return p.length ? p : ((SPLITS[q.split] || SPLITS.ppl_ul)[1].length ? (SPLITS[q.split] || SPLITS.ppl_ul)[1] : SPLITS.ppl_ul[1]); };
   const JOURS_ENT = { 1: [1], 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 5, 6], 6: [1, 2, 3, 4, 5, 6], 7: [1, 2, 3, 4, 5, 6, 0] };
   const FULL = [['squat', 3], ['dc', 3], ['tractions', 3], ['dm_halt', 2], ['rdl', 2], ['curl_inc', 2], ['tri_corde', 2], ['el_halt', 3]];
   const ISO = { pecH: 'ec_bh', pec: 'pec_deck', dLat: 'el_halt', dAnt: 'dm_halt', dPost: 'face_pull', bic: 'curl_inc', tri: 'tri_corde', dos: 'tir_horiz', quad: 'leg_ext', isch: 'leg_curl', fess: 'rdl', mol: 'mollets', abd: 'crunch' };
   const SUBISO = { pecH: 'di_halt' };
-  const splitSuggere = n => (n <= 3 ? (n === 3 ? 'fb' : 'fb') : n === 4 ? 'ul' : n === 5 ? 'ppl_ul' : 'ppl');
+  const splitSuggere = n => (n <= 3 ? (n === 3 ? 'fb' : 'fb') : n === 4 ? 'ul' : n === 5 ? 'ppl_ul' : n === 7 ? 'ulppl' : 'ppl');
   function genProgramme(q, groupes, cfg) {
-    const ex = A.allExos(cfg), n = clamp(Math.round(q.seances || 0), 0, 7), base = (SPLITS[q.split] || SPLITS.ppl_ul)[1];
+    const ex = A.allExos(cfg), n = clamp(Math.round(q.seances || 0), 0, 7), base = splitBase(q);
     const planning = { 0: '', 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' };
     const ORD = [1, 2, 3, 4, 5, 6, 0], days = Array.isArray(q.jours) && q.jours.length ? q.jours.filter(d => d >= 0 && d <= 6).sort((a, b) => ORD.indexOf(a) - ORD.indexOf(b)) : (n ? JOURS_ENT[n] : []), seq = days.map((d, i) => base[i % base.length]);
     days.forEach((d, i) => { planning[d] = seq[i]; });
@@ -835,7 +843,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return l;
   };
 
-  Object.assign(A, { OBJECTIFS, INTENSITES, intensites, calcPlan, planToCfg, FOCUS_CHOIX, focusGroupes, SPLITS, splitSuggere, genProgramme, volumeGroupe, validerProgrammeIA, exclusIds, modelesPour, wheyAliments, SUPP_CHOIX, suppsListe });
+  Object.assign(A, { OBJECTIFS, INTENSITES, intensites, calcPlan, planToCfg, FOCUS_CHOIX, focusGroupes, SPLITS, SPLIT_TYPES, splitBase, splitSuggere, genProgramme, volumeGroupe, validerProgrammeIA, exclusIds, modelesPour, wheyAliments, SUPP_CHOIX, suppsListe });
 })();
 
 /* ---- 12-adapt-logic.js ---- */
@@ -2820,7 +2828,7 @@ async function optimiserProgramme(sample, a, groupes, cfg) {
   const obj = { seche: 'sèche (déficit calorique : garder les charges lourdes, volume modéré)', neutre: 'maintien et recomposition', masse: 'prise de masse' }[a.objectif];
   let prompt = ['Tu es préparateur physique. Conçois le programme hebdomadaire de musculation de cette personne.',
     'Profil : ' + (a.sexe === 'F' ? 'femme' : 'homme') + ', ' + a.age + ' ans, ' + a.poids + ' kg, niveau ' + a.niveau + ', objectif ' + obj + '.',
-    'Séances par semaine : ' + n + ' de ' + a.duree + ' minutes. Découpage souhaité : ' + (Apex.SPLITS[a.split] || Apex.SPLITS.ppl_ul)[0] + '.',
+    'Séances par semaine : ' + n + ' de ' + a.duree + ' minutes. Découpage souhaité : ' + (a.split === 'perso' ? 'enchaînement personnalisé, dans cet ordre : ' + Apex.splitBase(a).join(', ') : (Apex.SPLITS[a.split] || Apex.SPLITS.ppl_ul)[0]) + '.',
     'Points faibles à prioriser, avec leur cible de séries directes par semaine et leur fréquence : ' + (groupes.length ? groupes.map(g => g.n + ' ' + g.min + ' à ' + g.max + ' séries, ' + g.freq + ' fois par semaine') .join(' ; ') : 'aucun') + '.',
     'Exercices autorisés (id=nom) : ' + cat + '.',
     'Règles : 5 à 9 exercices par séance, 2 à 5 séries par exercice, exercices lourds en premier, chaque point faible travaillé au moins aussi souvent que sa fréquence, jours de repos répartis. Utilise uniquement les id autorisés.',
@@ -2834,12 +2842,13 @@ async function optimiserProgramme(sample, a, groupes, cfg) {
 
 function Wizard({ redo, onClose }) {
   const st = useStore(), cfg = st.cfg(), prev = cfg.q || {};
-  const [a, setA] = useState(() => Object.assign({ objectif: 'seche', intensite: 'normal', sexe: 'H', age: null, taille: null, poids: null, mg: null, poidsCible: null, metier: 'debout', pas: 8000, seances: 4, duree: 60, cardio: 0, niveau: 'intermediaire', split: 'ul', regime: 'omnivore', exclus: '', focus: [], supps: [], suppsAutre: '', whey: null }, prev));
+  const [a, setA] = useState(() => Object.assign({ objectif: 'seche', intensite: 'normal', sexe: 'H', age: null, taille: null, poids: null, mg: null, poidsCible: null, metier: 'debout', pas: 8000, seances: 4, duree: 60, cardio: 0, niveau: 'intermediaire', split: 'ul', splitPerso: [], regime: 'omnivore', exclus: '', focus: [], supps: [], suppsAutre: '', whey: null }, prev));
   const [step, setStep] = useState(0); const [busy, setBusy] = useState(''); const [scan, setScan] = useState(false); const [wmsg, setWmsg] = useState(''); const [wbusy, setWbusy] = useState(false); const [linked, setLinked] = useState(!!(cfg.claude && cfg.claude.on));
   const set = p => setA(x => Object.assign({}, x, p));
   const steps = STEPS.filter(s => !(s === 'intensite' && a.objectif === 'neutre')), cur = steps[step] || 'intro', last = step === steps.length - 1;
   const num = v => typeof v === 'number' && isFinite(v);
   const valid = cur === 'profil' ? num(a.age) && a.age >= 14 && a.age <= 90 && num(a.taille) && a.taille >= 120 && a.taille <= 230 && num(a.poids) && a.poids >= 35 && a.poids <= 250
+    : cur === 'training' ? (a.seances === 0 || a.split !== 'perso' || a.splitPerso.some(t => Apex.SPLIT_TYPES.indexOf(t) >= 0))
     : cur === 'activite' ? num(a.pas) && num(a.seances) && (a.seances === 0 || (num(a.duree) && a.duree >= 15)) : true;
   const plan = (cur === 'resultat' || cur === 'claude') && valid ? Apex.calcPlan(a) : null;
   const parts = plan ? [['Base', plan.parts.base, 'var(--s1)'], ['Pas', Math.max(0, plan.parts.steps), 'var(--s3)'], ['Séances', plan.parts.train, 'var(--s2)'], ['Cardio', plan.parts.cardio, 'var(--s4)']].filter(x => x[1] > 0.5) : [];
@@ -2865,11 +2874,11 @@ function Wizard({ redo, onClose }) {
     try {
       const cfgNow = Store.cfg(), p = Apex.calcPlan(a), base = Apex.planToCfg(a, p), groupes = Apex.focusGroupes(a.focus), foods = Apex.allFoods(Object.assign({}, cfgNow, { aliments: Object.assign({}, cfgNow.aliments, Apex.wheyAliments(a.whey)) }));
       let prog = Apex.genProgramme(a, groupes, cfgNow), ia = '';
-      if (sample && linked && a.seances > 0) {
+      if (sample && a.seances > 0) {
         setBusy('L’IA conçoit ton programme selon tes points faibles (≈ 30 s)…');
         try { const r = await optimiserProgramme(sample, a, groupes, cfgNow); if (r) { prog = r; ia = ' Programme optimisé par l’IA.'; } else ia = ' Programme calculé par l’app (la proposition de l’IA n’était pas valide).'; } catch (e) { ia = ' Programme calculé par l’app (IA indisponible).'; }
       }
-      const q = { objectif: a.objectif, intensite: a.intensite, sexe: a.sexe, age: a.age, taille: a.taille, poids: a.poids, mg: a.mg, poidsCible: a.poidsCible, metier: a.metier, pas: a.pas, seances: a.seances, duree: a.duree, cardio: a.cardio, niveau: a.niveau, split: a.split, regime: a.regime, exclus: a.exclus, focus: a.focus, supps: a.supps, suppsAutre: a.suppsAutre, whey: a.whey, fait: Apex.today() };
+      const q = { objectif: a.objectif, intensite: a.intensite, sexe: a.sexe, age: a.age, taille: a.taille, poids: a.poids, mg: a.mg, poidsCible: a.poidsCible, metier: a.metier, pas: a.pas, seances: a.seances, duree: a.duree, cardio: a.cardio, niveau: a.niveau, split: a.split, splitPerso: a.splitPerso, regime: a.regime, exclus: a.exclus, focus: a.focus, supps: a.supps, suppsAutre: a.suppsAutre, whey: a.whey, fait: Apex.today() };
       Store.patch('cfg', null, Object.assign({ onboarded: true, q }, base, {
         focus: groupes, supps: Apex.suppsListe(a.supps, a.suppsAutre), seanceTypes: prog.seanceTypes, programme: prog.programme, planning: prog.planning, photosJour: 0,
         repasModeles: Apex.modelesPour(a, foods), aliments: Object.assign({}, cfgNow.aliments, Apex.wheyAliments(a.whey)),
@@ -2910,7 +2919,8 @@ function Wizard({ redo, onClose }) {
     training: () => html`<h1>Ton entraînement</h1>
       <div className="stack"><span className="fld-l">Ton niveau</span><${Opts} items=${NIVEAUX} value=${a.niveau} onPick=${v => set({ niveau: v })} /></div>
       ${a.seances > 0 ? html`<div className="stack"><span className="fld-l">Découpage des séances</span>
-        <${Opts} items=${Object.keys(Apex.SPLITS).map(k => [k, Apex.SPLITS[k][0], k === Apex.splitSuggere(a.seances) ? 'Conseillé pour ' + a.seances + ' séance' + (a.seances > 1 ? 's' : '') + ' par semaine.' : ''])} value=${a.split} onPick=${v => set({ split: v })} /></div>` : html`<p className="sec">Aucune séance prévue : l’app ne créera pas de planning, tu pourras en ajouter dans Réglages.</p>`}`,
+        <${Opts} items=${Object.keys(Apex.SPLITS).map(k => [k, Apex.SPLITS[k][0], k === Apex.splitSuggere(a.seances) ? 'Conseillé pour ' + a.seances + ' séance' + (a.seances > 1 ? 's' : '') + ' par semaine.' : ''])} value=${a.split} onPick=${v => set({ split: v })} />
+        ${a.split === 'perso' && html`<div className="stack"><span className="fld-l">Tes séances, dans l’ordre où tu les enchaînes</span><${MultiChips} items=${Apex.SPLIT_TYPES.map(t => [t, t])} value=${a.splitPerso} onToggle=${v => toggle('splitPerso', v)} /><p className="mut" style=${{ fontSize: 12 }}>${a.splitPerso.length ? 'Ordre : ' + a.splitPerso.join(' → ') + '. Tu pourras tout modifier ensuite dans Réglages, onglet Séances.' : 'Choisis au moins un type de séance.'}</p></div>`}</div>` : html`<p className="sec">Aucune séance prévue : l’app ne créera pas de planning, tu pourras en ajouter dans Réglages.</p>`}`,
     focus: () => html`<h1>Tes points faibles</h1>
       <p className="sec">Les muscles que tu veux faire progresser en priorité. Ils reçoivent plus de volume dans ton programme et des alertes dans l’onglet Training.</p>
       <${MultiChips} items=${Apex.FOCUS_CHOIX} value=${a.focus} onToggle=${v => toggle('focus', v)} />
@@ -2956,7 +2966,7 @@ function Wizard({ redo, onClose }) {
     claude: () => html`<h1>${STANDALONE ? 'Connecte une IA gratuite' : 'Lie Claude à ton compte'}</h1>
       <p className="sec">Avec une IA connectée, ton coach enregistre tes repas et tes séances quand tu lui parles, recale ta journée après un écart, et optimise ton programme selon tes points faibles. Sans IA, l’app fonctionne avec ses calculs.</p>
       <${ClaudeLink} onChange=${setLinked} />
-      ${busy ? html`<div className="note acc"><${Icon} n="sparkles" /><div><span>${busy}</span></div></div>` : html`<button type="button" className="btn pri wide" onClick=${finish}><${Icon} n="check" s=${18} />${linked ? 'Créer mon plan avec l’IA' : 'Créer mon plan sans IA'}</button>`}`,
+      ${busy ? html`<div className="note acc"><${Icon} n="sparkles" /><div><span>${busy}</span></div></div>` : html`<button type="button" className="btn pri wide" onClick=${finish}><${Icon} n="check" s=${18} />${sample ? 'Suivant : créer mon plan' : 'Créer mon plan sans IA'}</button>${sample && html`<p className="mut" style=${{ fontSize: 12, textAlign: 'center' }}>L’IA optimise ton programme selon tes points faibles (environ 30 secondes).</p>`}`}`,
   };
   return ReactDOM.createPortal(html`<div className="wiz" role="dialog" aria-modal="true" aria-label="Configuration">
     <div className="wiz-top"><div className="wiz-bar" role="progressbar" aria-valuenow=${pct} aria-valuemin="0" aria-valuemax="100"><i style=${{ width: pct + '%' }}></i></div><span className="mut" style=${{ fontSize: 12 }}>${step + 1}/${steps.length}</span>
