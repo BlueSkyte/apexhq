@@ -359,11 +359,54 @@ table.dt { border-collapse: collapse; width: 100%; font-size: 13px; font-variant
 .opt b { font-size: 16px; font-weight: 600; } .opt span { font-size: 13px; color: var(--ink-2); }
 .opt[aria-pressed="true"] { border-color: var(--acc-hi); background: color-mix(in oklab, var(--acc) 22%, transparent); }
 .scan-v { width: 100%; max-width: 100%; aspect-ratio: 4 / 3; border-radius: var(--r-sm); background: #0b0b0d; object-fit: cover; border: 1px solid var(--line); }
+
+/* ---------- coup de neuf visuel ---------- */
+body { background: radial-gradient(120% 60% at 50% -10%, rgba(255, 255, 255, .03), transparent 60%), var(--bg); }
+.card { border-radius: 24px; border-color: rgba(255, 255, 255, .08); background: linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .022) 70%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 24px 48px -28px rgba(0, 0, 0, .9); }
+.card-h h2 { font-family: var(--f-num); font-weight: 600; font-size: 20px; letter-spacing: .02em; }
+.hero { background: radial-gradient(90% 120% at 100% 0%, color-mix(in oklab, var(--acc) 34%, transparent), transparent 65%), linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .02)); border-color: color-mix(in oklab, var(--acc-hi) 34%, var(--line)); }
+.hero-main { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.hero-l { min-width: 0; display: grid; gap: 6px; }
+.hero-bars { display: grid; gap: 10px; }
+.hero-bars .mt-b { height: 6px; } .hero-bars .mt-h { font-size: 12px; } .hero-bars .mt-h b { font-size: 15px; }
+.ring-c b { font-family: var(--f-num); } .ring svg circle { transition: stroke-dasharray .7s cubic-bezier(.2, .8, .2, 1); }
+.btn.pri { background: linear-gradient(180deg, var(--acc-hi), color-mix(in oklab, var(--acc-hi) 80%, #000)); box-shadow: 0 10px 28px -12px var(--acc-hi), inset 0 1px 0 rgba(255, 255, 255, .35); }
+.btn.pri:hover { background: linear-gradient(180deg, color-mix(in oklab, var(--acc-hi) 90%, #fff), var(--acc-hi)); }
+.tabs { background: rgba(18, 18, 21, .8); border-radius: 28px; box-shadow: 0 22px 60px rgba(0, 0, 0, .75), inset 0 1px 0 rgba(255, 255, 255, .07); }
+.tabs button { position: relative; transition: color .2s, background .25s, transform .15s; }
+.tabs button:active { transform: scale(.94); }
+.tabs button[aria-current="page"] { background: linear-gradient(180deg, var(--acc-hi), color-mix(in oklab, var(--acc-hi) 82%, #000)); box-shadow: 0 8px 24px -8px var(--acc-hi); }
+.tabs button[aria-current="page"] .ic { transform: translateY(-1px) scale(1.06); }
+.ic { transition: transform .2s; }
+main > div { animation: rise .32s cubic-bezier(.2, .8, .2, 1); }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+.week button { transition: background .2s, border-color .2s, transform .15s; } .week button:active { transform: scale(.95); }
+.week button[aria-pressed="true"] { box-shadow: 0 10px 26px -14px var(--acc-hi); }
+.opt { display: grid; gap: 3px; } .opt.has-ic { grid-template-columns: auto 1fr; align-items: center; gap: 14px; }
+.opt-ic { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: rgba(255, 255, 255, .07); color: var(--ink-2); font-style: normal; transition: background .2s, color .2s; }
+.opt[aria-pressed="true"] .opt-ic { background: var(--acc-hi); color: var(--acc-ink); }
+.opt > div { display: grid; gap: 3px; min-width: 0; }
+.intro-mark { width: 76px; height: 76px; border-radius: 24px; display: grid; place-items: center; color: var(--acc-ink); background: linear-gradient(180deg, var(--acc-hi), color-mix(in oklab, var(--acc-hi) 78%, #000)); box-shadow: 0 18px 44px -14px var(--acc-hi), inset 0 1px 0 rgba(255, 255, 255, .4); }
+.intro-list { display: grid; gap: 10px; } .intro-list li { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink-2); }
+.intro-list .ic { color: var(--good); background: color-mix(in oklab, var(--good) 20%, transparent); border-radius: 50%; padding: 4px; box-sizing: content-box; }
+.ai-card { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--glass); padding: 14px; display: grid; gap: 10px; }
+.ai-card summary { cursor: pointer; font-size: 14px; list-style: none; } .ai-card summary::-webkit-details-marker { display: none; }
+.tag-free { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; color: #fff; background: color-mix(in oklab, var(--good) 45%, transparent); }
+.tile b { font-size: 28px; }
+.view-h h1 { font-size: 34px; }
+
+.install { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; margin: 14px 0 0; padding: 12px 12px 12px 14px; border-radius: 20px; border: 1px solid color-mix(in oklab, var(--acc-hi) 40%, var(--line)); background: linear-gradient(120deg, color-mix(in oklab, var(--acc) 24%, transparent), rgba(255, 255, 255, .03)); }
+.install-ic { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; font-style: normal; color: var(--acc-ink); background: linear-gradient(180deg, var(--acc-hi), color-mix(in oklab, var(--acc-hi) 78%, #000)); }
+.install-t { min-width: 0; display: grid; gap: 1px; } .install-t b { font-size: 15px; } .install-t span { font-size: 12px; color: var(--ink-2); }
+.qr { width: 200px; max-width: 100%; margin: 0 auto; padding: 10px; border-radius: 18px; background: #fff; } .qr svg { display: block; width: 100%; height: auto; }
+@media (max-width: 420px) { .install { grid-template-columns: auto minmax(0, 1fr) auto; } .install .ib { display: none; } }
 </style>
 </head><body>
 <div id="app" class="app"><p style="padding:48px 16px;color:#85847e;font-family:system-ui,sans-serif">Chargement d’ApexHQ…</p></div>
-<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261112182755';</script>
+<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261112183657'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
+window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__bip = e; window.dispatchEvent(new Event('apex-bip')); });
+window.addEventListener('appinstalled', function () { window.__bip = null; });</script>
 <script src="vendor/react.min.js"></script><script src="vendor/react-dom.min.js"></script><script src="vendor/htm.js"></script>
 <script src="app.js"></script>
-<script>if ('serviceWorker' in navigator) { var had = !!navigator.serviceWorker.controller, done = false; navigator.serviceWorker.addEventListener('controllerchange', function () { if (had && !done) { done = true; location.reload(); } }); window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').then(function (r) { r.update(); }).catch(function () {}); }); }</script>
+<script>if ('serviceWorker' in navigator) { var had = !!navigator.serviceWorker.controller, done = false; navigator.serviceWorker.addEventListener('controllerchange', function () { if (had && !done) { done = true; location.reload(); } }); window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').then(function (r) { r.update(); document.addEventListener('visibilitychange', function () { if (!document.hidden) r.update(); }); }).catch(function () {}); }); }</script>
 </body></html>

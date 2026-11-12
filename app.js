@@ -844,6 +844,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 const Store = (() => {
   'use strict';
   const LS = 'apexhq:v1';
+  const pickSample = () => (window.APEX_STANDALONE ? (typeof AI !== 'undefined' && AI.hasAny() ? AI.chain(null) : null) : nativeSample);
   const COLLS = ['journal', 'seances', 'mensurations', 'photos'];
   const ID_OK = /^[A-Za-z0-9_\-.~:@+]{1,200}$/;
   let s = { cfg: {}, journal: {}, seances: {}, mensurations: {}, photos: {} };
@@ -951,7 +952,7 @@ const Store = (() => {
     const use = n => { try { const c = window.claude; return c && typeof c.use === 'function' ? Promise.resolve(c.use(n)).catch(() => null) : Promise.resolve(null); } catch (e) { return Promise.resolve(null); } };
     const names = Object.keys(caps), got = await Promise.all(names.map(use));
     names.forEach((n, i) => { caps[n] = got[i] || null; });
-    nativeSample = caps.sample; if (!caps.sample && typeof AI !== 'undefined' && AI.getKey()) caps.sample = AI.makeSample();
+    nativeSample = caps.sample; caps.sample = pickSample();
     let uid = null; try { uid = caps.user ? await caps.user.id() : null; } catch (e) { uid = null; }
     if (!caps.db || !uid) { sync.mode = 'local'; emit(); return; }
     base = 'data/users/' + uid + '/apex'; sync.mode = 'wait'; emit();
@@ -968,7 +969,7 @@ const Store = (() => {
   }
 
   /* Après ajout ou retrait d'une clé API : recalcule l'accès à Claude. */
-  const refreshAI = () => { caps.sample = nativeSample || (typeof AI !== 'undefined' && AI.getKey() ? AI.makeSample() : null); emit(); };
+  const refreshAI = () => { caps.sample = pickSample(); emit(); };
   const exportAll = () => ({ app: 'ApexHQ', v: 1, exportedAt: new Date().toISOString(), cfg: s.cfg, journal: s.journal, seances: s.seances, mensurations: s.mensurations, photos: s.photos });
   function importAll(o) {
     if (!isObj(o) || o.app !== 'ApexHQ') throw new Error('Ce fichier n’est pas un export ApexHQ.');
@@ -989,36 +990,42 @@ const Store = (() => {
 })();
 
 /* ---- 16-ai.js ---- */
-/* ApexHQ — accès à Claude.
-   - Version Claude : capacité `sample` (compte Claude de la personne, consentement demandé au premier appel).
-   - App autonome : clé API Anthropic collée par la personne, gardée sur l'appareil (jamais exportée ni synchronisée),
-     appels directs depuis le navigateur. Même interface que `sample` pour que le coach et l'assistant ne changent pas. */
+/* ApexHQ — accès à l'IA, gratuit d'abord.
+   - Version Claude : capacité `sample` = compte Claude de la personne (son quota, consentement au premier appel).
+   - App autonome : clé Gemini gratuite (Google AI Studio) et/ou clé API Anthropic, collées par la personne et gardées sur
+     l'appareil (jamais exportées ni synchronisées). Appels directs depuis le navigateur.
+   - Bascule automatique : si un fournisseur est saturé (quota atteint) ou refusé, on essaie le suivant.
+   Tous les fournisseurs exposent la même interface que `sample` : texte, json, outils de page, limits. */
 const AI = (() => {
   'use strict';
-  const KEY = 'apexhq:key';
-  const MODELS = { quick: 'claude-haiku-5-5', default: 'claude-sonnet-5-5', complex: 'claude-opus-5-5' };
-  const getKey = () => { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
-  const setKey = k => { try { if (k) localStorage.setItem(KEY, k); else localStorage.removeItem(KEY); } catch (e) { /* stockage indisponible */ } };
+  const K_ANTH = 'apexhq:key', K_GEM = 'apexhq:gkey', K_GMODEL = 'apexhq:gmodel';
+  const ls = { get: k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set: (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) { /* stockage indisponible */ } } };
+  const getKey = () => ls.get(K_ANTH), setKey = k => ls.set(K_ANTH, k), getGKey = () => ls.get(K_GEM), setGKey = k => { ls.set(K_GEM, k); ls.set(K_GMODEL, ''); };
   const fail = (code, message, text) => { const e = new Error(message); e.code = code; e.text = text; return e; };
+  const NO_FALLBACK = ['cancelled', 'invalid_json', 'refused', 'empty_completion', 'invalid_request', 'prompt_too_large'];
+  let last = '';
 
-  async function call(body, signal) {
+  const parseJson = (t, mk) => { try { return JSON.parse(t); } catch (e) { const m = String(t).match(/\{[\s\S]*\}|\[[\s\S]*\]/); if (m) { try { return JSON.parse(m[0]); } catch (e2) { /* erreur ci-dessous */ } } throw fail('invalid_json', 'Réponse illisible', t); } };
+  const mkJson = sample => async (input, o) => { const r = await sample(input, Object.assign({}, o, { _json: true })); return parseJson(r.text); };
+  const norm = (input) => (typeof input === 'string' ? [{ role: 'user', content: input }] : input.map(m => ({ role: m.role, content: m.content })));
+
+  /* ---------- Anthropic (clé API payante) ---------- */
+  const MODELS = { quick: 'claude-haiku-5-5', default: 'claude-sonnet-5-5', complex: 'claude-opus-5-5' };
+  async function acall(body, signal) {
     let r;
-    try {
-      r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-api-key': getKey(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify(body) });
-    } catch (e) { throw (e && e.name === 'AbortError') ? fail('cancelled', 'Annulé') : fail('upstream_error', 'Réseau indisponible'); }
+    try { r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-api-key': getKey(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify(body) }); }
+    catch (e) { throw (e && e.name === 'AbortError') ? fail('cancelled', 'Annulé') : fail('upstream_error', 'Réseau indisponible'); }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw fail(r.status === 401 || r.status === 403 ? 'not_granted' : r.status === 429 ? 'rate_limited' : 'upstream_error', (j.error && j.error.message) || ('HTTP ' + r.status));
     return j;
   }
-  function makeSample() {
+  function anthropic() {
     const sample = async (input, o) => {
-      o = o || {};
-      const msgs = typeof input === 'string' ? [{ role: 'user', content: input }] : input.map(m => ({ role: m.role, content: m.content }));
-      const tools = (o.tools || []).map(t => ({ name: t.name, description: t.description, input_schema: t.inputSchema || { type: 'object', properties: {} } }));
+      o = o || {}; const msgs = norm(input), tools = (o.tools || []).map(t => ({ name: t.name, description: t.description, input_schema: t.inputSchema || { type: 'object', properties: {} } }));
       let text = '';
       for (let round = 0; round < 6; round++) {
         const body = { model: MODELS[o.modelTier] || MODELS.default, max_tokens: 2048, messages: msgs }; if (tools.length) body.tools = tools;
-        const j = await call(body, o.signal), parts = j.content || [], tx = parts.filter(p => p.type === 'text').map(p => p.text).join('');
+        const j = await acall(body, o.signal), parts = j.content || [], tx = parts.filter(p => p.type === 'text').map(p => p.text).join('');
         if (tx) { text += (text ? '\n\n' : '') + tx; if (o.onText) o.onText({ text, delta: tx }); }
         const uses = parts.filter(p => p.type === 'tool_use');
         if (j.stop_reason !== 'tool_use' || !uses.length) return { text, truncated: j.stop_reason === 'max_tokens' };
@@ -1032,21 +1039,94 @@ const AI = (() => {
       }
       return { text, truncated: true };
     };
-    sample.json = async (input, o) => {
-      const r = await sample(input, o), t = r.text;
-      try { return JSON.parse(t); } catch (e) { const m = t.match(/\{[\s\S]*\}|\[[\s\S]*\]/); if (m) { try { return JSON.parse(m[0]); } catch (e2) { /* tombe sur l'erreur ci-dessous */ } } throw fail('invalid_json', 'Réponse illisible', t); }
+    sample.json = mkJson(sample); return sample;
+  }
+
+  /* ---------- Gemini (clé gratuite Google AI Studio) ---------- */
+  const GBASE = 'https://generativelanguage.googleapis.com/v1beta/';
+  async function gmodel() {
+    try { const c = JSON.parse(ls.get(K_GMODEL) || 'null'); if (c && c.m && Date.now() - c.t < 6048e5) return c.m; } catch (e) { /* cache illisible */ }
+    try {
+      const r = await fetch(GBASE + 'models?pageSize=200&key=' + encodeURIComponent(getGKey()));
+      if (r.ok) {
+        const j = await r.json(), c = (j.models || []).filter(m => (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0 && /^models\/gemini-\d+(\.\d+)?-flash$/.test(m.name)).map(m => m.name.slice(7)).sort((a, b) => parseFloat(b.split('-')[1]) - parseFloat(a.split('-')[1]));
+        if (c.length) { ls.set(K_GMODEL, JSON.stringify({ m: c[0], t: Date.now() })); return c[0]; }
+      }
+    } catch (e) { /* repli ci-dessous */ }
+    return 'gemini-2.5-flash';
+  }
+  const gschema = s => {
+    if (Array.isArray(s)) return s.map(gschema); if (!s || typeof s !== 'object') return s;
+    const o = {}; Object.keys(s).forEach(k => { if (k === 'additionalProperties' || k === '$schema') return; o[k] = k === 'type' && typeof s[k] === 'string' ? s[k].toUpperCase() : (k === 'properties' ? Object.keys(s[k]).reduce((a, p) => { a[p] = gschema(s[k][p]); return a; }, {}) : gschema(s[k])); });
+    return o;
+  };
+  async function gcall(model, body, signal) {
+    let r;
+    try { r = await fetch(GBASE + 'models/' + model + ':generateContent?key=' + encodeURIComponent(getGKey()), { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); }
+    catch (e) { throw (e && e.name === 'AbortError') ? fail('cancelled', 'Annulé') : fail('upstream_error', 'Réseau indisponible'); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const st = j.error && j.error.status, msg = (j.error && j.error.message) || ('HTTP ' + r.status);
+      throw fail(r.status === 429 || st === 'RESOURCE_EXHAUSTED' ? 'rate_limited' : (r.status === 400 && /api key/i.test(msg)) || r.status === 401 || r.status === 403 ? 'not_granted' : 'upstream_error', msg);
+    }
+    return j;
+  }
+  function gemini() {
+    const sample = async (input, o) => {
+      o = o || {}; const model = await gmodel(), tools = (o.tools || []).map(t => ({ name: t.name, description: t.description, parameters: gschema(t.inputSchema || { type: 'object', properties: {} }) }));
+      const contents = norm(input).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: String(m.content) }] }));
+      let text = '';
+      for (let round = 0; round < 6; round++) {
+        const body = { contents, generationConfig: { temperature: 0.4, maxOutputTokens: 2048 } };
+        if (tools.length) body.tools = [{ functionDeclarations: tools }]; else if (o._json) body.generationConfig.responseMimeType = 'application/json';
+        const j = await gcall(model, body, o.signal), cand = (j.candidates || [])[0];
+        if (!cand || !cand.content) { if (text) return { text, truncated: false }; throw fail(j.promptFeedback && j.promptFeedback.blockReason ? 'refused' : 'empty_completion', 'Réponse vide'); }
+        const parts = cand.content.parts || [], tx = parts.filter(p => typeof p.text === 'string').map(p => p.text).join(''), calls = parts.filter(p => p.functionCall);
+        if (tx) { text += (text ? '\n\n' : '') + tx; if (o.onText) o.onText({ text, delta: tx }); }
+        if (!calls.length) return { text, truncated: cand.finishReason === 'MAX_TOKENS' };
+        contents.push({ role: 'model', parts });
+        const res = [];
+        for (const c of calls) {
+          let out; try { const t = (o.tools || []).find(x => x.name === c.functionCall.name); out = t ? await t.execute(c.functionCall.args || {}, { signal: o.signal }) : 'Error: outil inconnu'; } catch (e) { out = 'Error: ' + (e && e.message ? e.message : e); }
+          res.push({ functionResponse: { name: c.functionCall.name, response: { result: typeof out === 'string' ? out : JSON.stringify(out) } } });
+        }
+        contents.push({ role: 'user', parts: res });
+      }
+      return { text, truncated: true };
     };
-    sample.limits = async () => ({ maxPromptBytes: 262144, tools: { maxCount: 12 }, modelTiers: ['quick', 'default', 'complex'] });
+    sample.json = mkJson(sample); return sample;
+  }
+
+  /* ---------- chaîne avec bascule automatique ---------- */
+  function chain(native) {
+    const list = () => { const l = []; if (native) l.push(['claude', native]); if (getGKey()) l.push(['gemini', gemini()]); if (getKey()) l.push(['anthropic', anthropic()]); return l; };
+    const run = async (kind, input, o) => {
+      const l = list(); let err = null;
+      for (const [name, p] of l) {
+        try { const r = await (kind === 'json' ? p.json(input, o) : p(input, o)); last = name; return r; }
+        catch (e) { err = e; if (NO_FALLBACK.indexOf(e && e.code) >= 0) throw e; }
+      }
+      throw err || fail('capability_disabled', 'Aucune IA connectée');
+    };
+    const sample = (i, o) => run('text', i, o); sample.json = (i, o) => run('json', i, o);
+    sample.limits = async () => { let nl = {}; if (native && native.limits) { try { nl = await native.limits(); } catch (e) { nl = {}; } } return { maxPromptBytes: 262144, tools: (nl && nl.tools) || { maxCount: 12 }, modelTiers: ['quick', 'default', 'complex'] }; };
     return sample;
   }
-  return { getKey, setKey, makeSample };
+  /* Test direct d'un fournisseur précis (sans bascule) : résout true ou lève l'erreur. */
+  async function test(kind, native) {
+    const p = kind === 'gemini' ? gemini() : kind === 'anthropic' ? anthropic() : native; if (!p) throw fail('capability_disabled', 'Fournisseur absent');
+    const r = await p.json('Réponds uniquement par le JSON {"ok":true}', { modelTier: 'quick', cache: false });
+    if (!r || r.ok !== true) throw fail('invalid_json', 'Réponse inattendue'); return true;
+  }
+  const hasAny = () => !!(getGKey() || getKey());
+  return { getKey, setKey, getGKey, setGKey, chain, test, hasAny, last: () => last };
 })();
 
 /* Messages d'erreur communs (coach, assistant, estimations). */
 const aiMsg = e => {
   const c = e && e.code;
-  if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].indexOf(c) >= 0) return AI.getKey() ? 'Clé API refusée ou sans crédit. Vérifie-la dans Réglages, Claude.' : 'Claude n’est pas autorisé dans cette vue.';
-  if (c === 'rate_limited') return 'Limite d’usage atteinte. Réessaie plus tard.';
+  if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].indexOf(c) >= 0) return AI.hasAny() ? 'Clé refusée ou IA indisponible. Vérifie tes clés dans Réglages, section IA.' : 'Aucune IA connectée. Ajoute-en une dans Réglages, section IA.';
+  if (c === 'rate_limited') return window.APEX_STANDALONE ? 'Quota gratuit atteint pour le moment. Réessaie plus tard, ou ajoute une 2e IA dans Réglages. Le reste de l’app fonctionne normalement.' : 'Ton quota Claude est atteint. L’IA revient quand il se réinitialise ; le reste de l’app fonctionne normalement.';
   if (c === 'session_expired') return 'Session expirée : reconnecte-toi à Claude.';
   if (c === 'refused' || c === 'empty_completion' || c === 'invalid_json') return 'Réponse inexploitable. Reformule avec aliments et quantités.';
   if (c === 'cancelled') return '';
@@ -1325,26 +1405,30 @@ const ST_LAB = { vert: 'good', orange: 'warn', rouge: 'crit' };
 function Hero({ date, go }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
   const j = S.journal[date] || {}, c = Apex.cibleDuJour(cfg, j, date), seance = Apex.seanceDuJour(cfg, j, date);
-  const t = Apex.totJour(j, foods), reel = t.man || t.eat, jour = Apex.diffDays(date, cfg.profil.dateDepart) + 1;
+  const t = Apex.totJour(j, foods), man = !!t.man, reel = t.man || t.eat, jour = Apex.diffDays(date, cfg.profil.dateDepart) + 1;
+  const pc = c.kcal ? Math.round(reel.k / c.kcal * 100) : 0;
   return html`<section className="card hero c7">
     <div className="row sb">
       <span className="eyebrow"><i></i>${c.statut === 'salle' ? 'Jour de salle' + (seance ? ' · ' + seance : '') : 'Jour de repos'}</span>
       <span className="hero-s">${jour > 0 ? 'J' + jour + ' · semaine ' + Math.ceil(jour / 7) : 'Avant le départ'}</span>
     </div>
-    <div>
-      <div className="hero-n">${f0(c.kcal)}<small>kcal</small></div>
-      ${c.ajust !== 0 && html`<div className="hero-s">dont ${sgn(c.ajust, f0)} kcal de lissage d’écart (base ${f0(c.base)})</div>`}
+    <div className="hero-main">
+      <div className="hero-l">
+        <div className="hero-n">${f0(c.kcal)}<small>kcal</small></div>
+        <div className="hero-s">${c.ajust !== 0 ? 'dont ' + sgn(c.ajust, f0) + ' de lissage (base ' + f0(c.base) + ')' : 'objectif du jour'}</div>
+      </div>
+      <${Ring} v=${reel.k} v2=${man ? 0 : t.plan.k} max=${c.kcal} size=118 sw=10><b style=${{ fontSize: 28 }}>${reel.k > 0 ? pc + ' %' : '–'}</b><span>mangé</span><//>
     </div>
-    <div className="macs">
-      <span className="mac" style=${{ '--c': 'var(--p)' }}><i></i>Protéines <b>${c.p} g</b></span>
-      <span className="mac" style=${{ '--c': 'var(--g)' }}><i></i>Glucides <b>${c.g} g</b></span>
-      <span className="mac" style=${{ '--c': 'var(--l)' }}><i></i>Lipides <b>${c.l} g</b></span>
+    <div className="hero-bars">
+      <${Meter} label="Protéines" v=${reel.p} v2=${man ? 0 : t.plan.p} max=${c.p} c="var(--p)" />
+      <${Meter} label="Glucides" v=${reel.g} v2=${man ? 0 : t.plan.g} max=${c.g} c="var(--g)" />
+      <${Meter} label="Lipides" v=${reel.l} v2=${man ? 0 : t.plan.l} max=${c.l} c="var(--l)" />
     </div>
     ${c.statut === 'salle' && html`<div className="chips" role="group" aria-label="Séance du jour">
       ${Apex.types(cfg).map(tp => html`<button key=${tp} className="chip" aria-pressed=${seance === tp} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: tp })}>${tp}</button>`)}
     </div>`}
     <div className="row sb">
-      <span className="hero-s">${reel.k > 0 ? 'Mangé ' + f0(reel.k) + ' kcal · reste ' + f0(Math.max(0, c.kcal - reel.k)) : c.statut === 'salle' ? 'Glucides autour de la séance, 10–14k pas.' : 'Glucides réduits, protéines hautes, 10–14k pas.'}</span>
+      <span className="hero-s">${reel.k > 0 ? 'Reste ' + f0(Math.max(0, c.kcal - reel.k)) + ' kcal · ' + f0(Math.max(0, c.p - reel.p)) + ' g de protéines' : c.statut === 'salle' ? 'Glucides autour de la séance, ' + f0(cfg.cibles.pasMin) + ' pas minimum.' : 'Glucides réduits, protéines hautes, ' + f0(cfg.cibles.pasMin) + ' pas minimum.'}</span>
       <button className="btn sm" onClick=${() => go('repas')}>Plan repas<${Icon} n="chevR" s=${16} /></button>
     </div>
   </section>`;
@@ -1486,11 +1570,12 @@ function MensuSheet({ date, onClose }) {
   <//>`;
 }
 
-function Dashboard({ date, go }) {
+function Dashboard({ date, go, setDate }) {
   const [win, setWin] = useState(90);
   return html`<div>
     <div className="view-h"><h1>${dLong(date)}</h1><p>Check-in à jeun, cibles du jour, tendance.</p></div>
     <div className="grid">
+      <div className="c12"><${WeekStrip} date=${date} setDate=${setDate} /></div>
       <${Hero} date=${date} go=${go} />
       <${CheckIn} date=${date} />
       <${Lecture} date=${date} />
@@ -2403,51 +2488,16 @@ function Coach({ date }) {
 /* ApexHQ — assistant de démarrage : questions, calcul précis des calories, programme de séances, lien Claude.
    S'affiche à la première ouverture (profil vide) ou via Réglages › Refaire le questionnaire. */
 const STEPS = ['intro', 'objectif', 'intensite', 'profil', 'activite', 'training', 'focus', 'alim', 'supps', 'resultat', 'claude'];
-const METIERS = [['sedentaire', 'Sédentaire', 'Bureau, études, télétravail : peu de déplacements.'], ['debout', 'Debout ou mobile', 'Commerce, enseignement, service : tu bouges dans la journée.'], ['actif', 'Physique', 'Manutention, chantier, métier très actif.']];
-const NIVEAUX = [['debutant', 'Débutant', 'Moins d’un an de musculation régulière.'], ['intermediaire', 'Intermédiaire', '1 à 3 ans, tu connais les mouvements de base.'], ['avance', 'Avancé', 'Plus de 3 ans, progression lente.']];
-const REGIMES = [['omnivore', 'Je mange de tout', ''], ['pescetarien', 'Pescétarien', 'Pas de viande, poisson oui.'], ['vegetarien', 'Végétarien', 'Ni viande ni poisson, œufs et laitages oui.'], ['vegan', 'Végan', 'Aucun produit animal.']];
+const METIERS = [['sedentaire', 'Sédentaire', 'Bureau, études, télétravail : peu de déplacements.', 'clock'], ['debout', 'Debout ou mobile', 'Commerce, enseignement, service : tu bouges dans la journée.', 'steps'], ['actif', 'Physique', 'Manutention, chantier, métier très actif.', 'bolt']];
+const NIVEAUX = [['debutant', 'Débutant', 'Moins d’un an de musculation régulière.', 'target'], ['intermediaire', 'Intermédiaire', '1 à 3 ans, tu connais les mouvements de base.', 'dumbbell'], ['avance', 'Avancé', 'Plus de 3 ans, progression lente.', 'trend']];
+const REGIMES = [['omnivore', 'Je mange de tout', '', 'utensils'], ['pescetarien', 'Pescétarien', 'Pas de viande, poisson oui.', 'droplet'], ['vegetarien', 'Végétarien', 'Ni viande ni poisson, œufs et laitages oui.', 'check'], ['vegan', 'Végan', 'Aucun produit animal.', 'sparkles']];
 const WHEY_DEFAUT = { n: 'Ma whey', k: 380, p: 80, g: 6, l: 5, f: 0, dose: 30, verified: false };
 
 function Opts({ items, value, onPick }) {
-  return html`<div className="opts">${items.map(x => html`<button key=${x[0]} type="button" className="opt" aria-pressed=${value === x[0]} onClick=${() => onPick(x[0])}><b>${x[1]}</b>${x[2] && html`<span>${x[2]}</span>`}</button>`)}</div>`;
+  return html`<div className="opts">${items.map(x => html`<button key=${x[0]} type="button" className=${cx('opt', x[3] && 'has-ic')} aria-pressed=${value === x[0]} onClick=${() => onPick(x[0])}>${x[3] && html`<i className="opt-ic"><${Icon} n=${x[3]} s=${22} /></i>`}<div><b>${x[1]}</b>${x[2] && html`<span>${x[2]}</span>`}</div></button>`)}</div>`;
 }
 function MultiChips({ items, value, onToggle }) {
   return html`<div className="chips">${items.map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${value.indexOf(x[0]) >= 0} onClick=${() => onToggle(x[0])}>${x[1]}</button>`)}</div>`;
-}
-
-/* Lien avec Claude : compte Claude (version Claude) ou clé API (app autonome). */
-function ClaudeLink({ onChange }) {
-  const st = useStore(), cfg = st.cfg(), caps = st.caps(); const [key, setKey] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('');
-  const on = !!(cfg.claude && cfg.claude.on && caps.sample);
-  const test = async () => {
-    setBusy(true); setMsg('');
-    try {
-      const s = Store.caps().sample; if (!s) throw { code: 'capability_disabled' };
-      const r = await s.json('Réponds uniquement par le JSON {"ok":true}', { modelTier: 'quick', cache: false });
-      if (!r || r.ok !== true) throw { code: 'invalid_json' };
-      Store.patch('cfg', null, { claude: { on: true, mode: STANDALONE ? 'cle' : 'compte', at: new Date().toISOString() } }); setMsg('Claude est connecté.'); if (onChange) onChange(true); setBusy(false); return true;
-    } catch (e) { setMsg(aiMsg(e) || 'Échec de la connexion.'); if (onChange) onChange(false); setBusy(false); return false; }
-  };
-  const linkKey = async () => {
-    const k = key.trim(); if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(k)) { setMsg('Une clé Anthropic commence par « sk-ant- ». Copie-la en entier depuis console.anthropic.com.'); return; }
-    AI.setKey(k); Store.refreshAI(); const good = await test(); if (!good) { AI.setKey(''); Store.refreshAI(); } else setKey('');
-  };
-  const unlink = () => { AI.setKey(''); Store.refreshAI(); Store.patch('cfg', null, { claude: null }); setMsg('Déconnecté.'); if (onChange) onChange(false); };
-  return html`<div className="stack">
-    <div className="row sb"><b>Compte Claude</b><${Pill} st=${on ? 'good' : ''}>${on ? 'Connecté' : 'Non connecté'}<//></div>
-    ${STANDALONE ? html`<div className="stack">
-      <p className="sec" style=${{ fontSize: 13 }}>Pour que Claude gère ta nutrition et optimise tes séances selon tes points faibles, colle ta clé API Anthropic. Elle reste sur ce téléphone : jamais envoyée ailleurs qu’à Anthropic, jamais exportée.</p>
-      ${on ? html`<div className="row"><button type="button" className="btn" disabled=${busy} onClick=${test}>${busy ? 'Test…' : 'Tester la connexion'}</button><${Confirm} label="Déconnecter" sure="Retirer la clé ?" cls="ghost" onYes=${unlink} /></div>`
-      : html`<label className="fld" htmlFor="ai-key"><span className="fld-l">Clé API Anthropic</span><input id="ai-key" className="inp" type="password" autoComplete="off" autoCapitalize="off" spellCheck="false" placeholder="sk-ant-…" value=${key} onChange=${e => setKey(e.target.value)} /></label>
-        <button type="button" className="btn pri wide" disabled=${busy || !key.trim()} onClick=${linkKey}>${busy ? 'Connexion…' : 'Lier Claude'}</button>`}
-      <p className="mut" style=${{ fontSize: 12 }}>Crée la clé sur console.anthropic.com (Settings, API keys). L’usage est facturé par Anthropic, séparément d’un abonnement Claude : règle une limite de dépense mensuelle. Quelques centimes par jour en usage normal.</p>
-    </div>` : html`<div className="stack">
-      <p className="sec" style=${{ fontSize: 13 }}>Tu es connecté avec ton compte Claude : tes données ApexHQ sont liées à ce compte, dans une base privée. Le coach utilise ton abonnement Claude. Au premier test, Claude te demande l’autorisation.</p>
-      <div className="row"><button type="button" className=${cx('btn', !on && 'pri')} disabled=${busy} onClick=${test}>${busy ? 'Test…' : on ? 'Tester la connexion' : 'Autoriser et tester'}</button>
-        ${on && html`<${Confirm} label="Désactiver" sure="Désactiver ?" cls="ghost" onYes=${unlink} />`}</div>
-    </div>`}
-    ${msg && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${msg}</p>`}
-  </div>`;
 }
 
 async function optimiserProgramme(sample, a, groupes, cfg) {
@@ -2511,11 +2561,12 @@ function Wizard({ redo, onClose }) {
   };
   const pct = Math.round(step / (steps.length - 1) * 100);
   const body = {
-    intro: () => html`<h1>Configurons ton ApexHQ</h1>
+    intro: () => html`<div className="intro-mark"><${Icon} n="apex" s=${40} w=${1.8} /></div><h1>Configurons ton ApexHQ</h1>
       <p className="sec">Quelques questions pour calculer tes calories et tes macros avec précision, bâtir ton programme de séances autour de tes points faibles et adapter ton plan repas. Compte 3 minutes. Tout reste modifiable ensuite dans les réglages.</p>
+      <ul className="intro-list"><li><${Icon} n="check" s=${16} w=${2.4} />Calories et macros calculées pour toi</li><li><${Icon} n="check" s=${16} w=${2.4} />Programme bâti autour de tes points faibles</li><li><${Icon} n="check" s=${16} w=${2.4} />Plan repas adapté à ton régime</li></ul>
       ${(redo || cfg.q) && html`<div className="note"><${Icon} n="alert" /><div><span><b>Refaire le questionnaire remplace</b> tes cibles, ton programme, tes points faibles, tes compléments et ton plan repas type. Tes journées, pesées et séances déjà notées sont conservées.</span></div></div>`}
       <button type="button" className="btn ghost" onClick=${skip}>Passer, je règle tout à la main</button>`,
-    objectif: () => html`<h1>Ton objectif ?</h1><${Opts} items=${Apex.OBJECTIFS} value=${a.objectif} onPick=${v => set({ objectif: v, intensite: 'normal' })} />`,
+    objectif: () => html`<h1>Ton objectif ?</h1><${Opts} items=${Apex.OBJECTIFS.map(x => x.concat({ seche: 'flame', neutre: 'scale', masse: 'dumbbell' }[x[0]]))} value=${a.objectif} onPick=${v => set({ objectif: v, intensite: 'normal' })} />`,
     intensite: () => html`<h1>${a.objectif === 'seche' ? 'Quel déficit ?' : 'Quel surplus ?'}</h1>
       <p className="sec">${a.objectif === 'seche' ? 'Plus le déficit est fort, plus la perte est rapide, mais plus la faim, la fatigue et le risque de perdre du muscle augmentent. L’app plafonne la perte à 1 % du poids par semaine.' : 'Un surplus plus fort fait prendre plus vite, avec plus de gras.'}</p>
       <${Opts} items=${Apex.intensites(a.objectif).map(x => [x[0], x[1] + ' · ' + (a.objectif === 'seche' ? '−' : '+') + Math.round(x[2] * 100) + ' %', x[3]])} value=${a.intensite} onPick=${v => set({ intensite: v })} />`,
@@ -2583,8 +2634,8 @@ function Wizard({ redo, onClose }) {
       ${a.objectif !== 'neutre' && html`<div className="fld"><span className="fld-l">Ajuster l’intensité</span><${Seg} neutral label="Intensité" value=${a.intensite} onChange=${v => set({ intensite: v })} options=${Apex.intensites(a.objectif).map(x => [x[0], x[1]])} /></div>`}
       ${plan.warn.map((w, i) => html`<div key=${i} className="note"><${Icon} n="alert" /><div><span>${w}</span></div></div>`)}
       <div className="note"><${Icon} n="info" /><div><span><b>Comment c’est calculé.</b> Base ${f0(plan.parts.base)} kcal (métabolisme × activité quotidienne), ${sgn(plan.parts.steps, f0)} pour tes pas, +${f0(plan.parts.train)} pour tes séances, +${f0(plan.parts.cardio)} pour le cardio. Protéines ${f1(plan.salle.p / a.poids)} g/kg, lipides ${f1(plan.salle.l / a.poids)} g/kg, glucides pour le reste. Plancher de sécurité ${f0(plan.planchers.kcal)} kcal. Les jours de salle sont un peu plus riches, les jours de repos plus légers, pour la même moyenne.</span></div></div>`,
-    claude: () => html`<h1>Lie Claude à ton compte</h1>
-      <p className="sec">Avec Claude connecté, ton coach enregistre tes repas et tes séances quand tu lui parles, recale ta journée après un écart, et optimise ton programme selon tes points faibles. Sans lui, l’app fonctionne avec ses calculs.</p>
+    claude: () => html`<h1>${STANDALONE ? 'Connecte une IA gratuite' : 'Lie Claude à ton compte'}</h1>
+      <p className="sec">Avec une IA connectée, ton coach enregistre tes repas et tes séances quand tu lui parles, recale ta journée après un écart, et optimise ton programme selon tes points faibles. Sans IA, l’app fonctionne avec ses calculs.</p>
       <${ClaudeLink} onChange=${setLinked} />
       ${busy ? html`<div className="note acc"><${Icon} n="sparkles" /><div><span>${busy}</span></div></div>` : html`<button type="button" className="btn pri wide" onClick=${finish}><${Icon} n="check" s=${18} />${linked ? 'Créer mon plan avec Claude' : 'Créer mon plan sans Claude'}</button>`}`,
   };
@@ -2597,6 +2648,57 @@ function Wizard({ redo, onClose }) {
       ${!last ? html`<button type="button" className="btn pri" disabled=${!valid || cur === 'intro' && false} onClick=${() => go(1)}>${cur === 'intro' ? 'Commencer' : 'Suivant'}</button>` : html`<span></span>`}</div></div>
     ${scan && html`<${ScanSheet} title="Scanner ta whey" onClose=${() => setScan(false)} onProduct=${p => { set({ whey: { n: p.n, k: p.k, p: p.p, g: p.g, l: p.l, f: p.f, dose: p.dose || (a.whey && a.whey.dose) || 30, verified: true } }); setWmsg('Produit trouvé dans Open Food Facts. Vérifie la dose.'); }} />`}
   </div>`, document.body);
+}
+
+/* ---- 67-ui-ailink.js ---- */
+/* ApexHQ — connexion à l'IA (réglages et assistant de démarrage).
+   Version Claude : le compte Claude de la personne. App autonome : clé Gemini gratuite et/ou clé API Anthropic.
+   Plusieurs IA connectées = bascule automatique quand l'une atteint son quota. */
+function ClaudeLink({ onChange }) {
+  const st = useStore(), cfg = st.cfg(), caps = st.caps();
+  const [gk, setGk] = useState(''); const [ak, setAk] = useState(''); const [busy, setBusy] = useState(''); const [msg, setMsg] = useState('');
+  const gOn = !!AI.getGKey(), aOn = !!AI.getKey();
+  const on = !!caps.sample && (STANDALONE ? (gOn || aOn) : !!(cfg.claude && cfg.claude.on));
+  const done = (ok, mode) => { if (ok && mode) Store.patch('cfg', null, { claude: { on: true, mode, at: new Date().toISOString() } }); if (!ok && !AI.hasAny() && STANDALONE) Store.patch('cfg', null, { claude: null }); if (onChange) onChange(ok); };
+  const testClaude = async () => {
+    setBusy('c'); setMsg('');
+    try { await AI.test('claude', Store.caps().sample); setMsg('Claude est connecté.'); done(true, 'compte'); } catch (e) { setMsg(aiMsg(e) || 'Échec de la connexion.'); done(false); }
+    setBusy('');
+  };
+  const link = (kind, key, setter, re, hint, mode) => async () => {
+    const k = key.trim(); if (!re.test(k)) { setMsg(hint); return; }
+    setBusy(kind); setMsg(''); (kind === 'g' ? AI.setGKey : AI.setKey)(k); Store.refreshAI();
+    try { await AI.test(kind === 'g' ? 'gemini' : 'anthropic'); setter(''); setMsg((kind === 'g' ? 'Gemini' : 'Claude') + ' est connecté.'); done(true, mode); }
+    catch (e) { (kind === 'g' ? AI.setGKey : AI.setKey)(''); Store.refreshAI(); setMsg(aiMsg(e) || 'Clé refusée.'); done(AI.hasAny()); }
+    setBusy('');
+  };
+  const linkG = link('g', gk, setGk, /^AIza[0-9A-Za-z_\-]{30,}$/, 'Une clé Gemini commence par « AIza ». Copie-la en entier depuis aistudio.google.com.', 'gemini');
+  const linkA = link('a', ak, setAk, /^sk-ant-[A-Za-z0-9_\-]{20,}$/, 'Une clé Anthropic commence par « sk-ant- ». Copie-la en entier depuis console.anthropic.com.', 'cle');
+  const unlink = kind => { (kind === 'g' ? AI.setGKey : AI.setKey)(''); Store.refreshAI(); setMsg('Clé retirée de cet appareil.'); done(AI.hasAny()); };
+  const retest = kind => async () => { setBusy(kind); setMsg(''); try { await AI.test(kind === 'g' ? 'gemini' : 'anthropic'); setMsg('Connexion valide.'); } catch (e) { setMsg(aiMsg(e) || 'Échec.'); } setBusy(''); };
+  const Key = (id, label, val, set, ph) => html`<label className="fld" htmlFor=${id}><span className="fld-l">${label}</span><input id=${id} className="inp" type="password" autoComplete="off" autoCapitalize="off" spellCheck="false" placeholder=${ph} value=${val} onChange=${e => set(e.target.value)} /></label>`;
+  return html`<div className="stack">
+    <div className="row sb"><b>Intelligence artificielle</b><${Pill} st=${on ? 'good' : ''}>${on ? 'Connectée' : 'Non connectée'}<//></div>
+    ${STANDALONE ? html`<div className="stack">
+      <div className="ai-card"><div className="row sb"><b>Gemini</b><span className="tag-free">Gratuit</span></div>
+        <p className="sec" style=${{ fontSize: 13 }}>Une clé gratuite Google, sans carte bancaire. 1. Ouvre aistudio.google.com avec ton compte Google. 2. Touche « Get API key » puis « Create API key ». 3. Copie la clé et colle-la ici.</p>
+        ${gOn ? html`<div className="row"><${Pill} st="good">Gemini connecté<//><button type="button" className="btn sm" disabled=${!!busy} onClick=${retest('g')}>${busy === 'g' ? 'Test…' : 'Tester'}</button><${Confirm} label="Retirer" sure="Retirer ?" cls="ghost sm" onYes=${() => unlink('g')} /></div>`
+          : html`${Key('ai-gkey', 'Clé Gemini', gk, setGk, 'AIza…')}<button type="button" className="btn pri wide" disabled=${!!busy || !gk.trim()} onClick=${linkG}>${busy === 'g' ? 'Connexion…' : 'Lier Gemini'}</button>`}
+        <p className="mut" style=${{ fontSize: 12 }}>Le niveau gratuit a des limites par minute et par jour : si tu les atteins, l’IA se met en pause un moment et le reste de l’app continue. Avec le niveau gratuit, Google peut réutiliser tes échanges pour améliorer ses produits : n’y mets rien de sensible. La clé reste sur cet appareil, jamais exportée.</p></div>
+      <details className="ai-card"><summary><b>Claude (clé API payante)</b> · facultatif</summary>
+        <div className="stack" style=${{ marginTop: 10 }}>
+          <p className="sec" style=${{ fontSize: 13 }}>Si tu as une clé Anthropic (console.anthropic.com), elle sert de secours quand Gemini est saturé. Facturation à l’usage, séparée de l’abonnement Claude.</p>
+          ${aOn ? html`<div className="row"><${Pill} st="good">Claude connecté<//><button type="button" className="btn sm" disabled=${!!busy} onClick=${retest('a')}>${busy === 'a' ? 'Test…' : 'Tester'}</button><${Confirm} label="Retirer" sure="Retirer ?" cls="ghost sm" onYes=${() => unlink('a')} /></div>`
+            : html`${Key('ai-akey', 'Clé Anthropic', ak, setAk, 'sk-ant-…')}<button type="button" className="btn wide" disabled=${!!busy || !ak.trim()} onClick=${linkA}>${busy === 'a' ? 'Connexion…' : 'Lier Claude'}</button>`}
+        </div></details>
+      <p className="mut" style=${{ fontSize: 12 }}>Plusieurs IA connectées : l’app bascule toute seule sur la suivante quand l’une atteint son quota.</p>
+    </div>` : html`<div className="stack">
+      <p className="sec" style=${{ fontSize: 13 }}>Tu es connecté avec ton compte Claude : tes données ApexHQ sont liées à ce compte, dans une base privée. L’IA utilise le quota de ton abonnement Claude, y compris gratuit. Quand il est atteint, l’IA se met en pause jusqu’à sa réinitialisation et le reste de l’app continue. Au premier test, Claude te demande l’autorisation.</p>
+      <div className="row"><button type="button" className=${cx('btn', !on && 'pri')} disabled=${!!busy} onClick=${testClaude}>${busy === 'c' ? 'Test…' : on ? 'Tester la connexion' : 'Autoriser et tester'}</button>
+        ${on && html`<${Confirm} label="Désactiver" sure="Désactiver ?" cls="ghost" onYes=${() => { Store.patch('cfg', null, { claude: null }); setMsg('IA désactivée.'); if (onChange) onChange(false); }} />`}</div>
+    </div>`}
+    ${msg && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${msg}</p>`}
+  </div>`;
 }
 
 /* ---- 68-ui-custom.js ---- */
@@ -2774,6 +2876,74 @@ function FoodsEditor() {
   </div>`;
 }
 
+/* ---- 69-ui-share.js ---- */
+/* ApexHQ — partage, installation et mises à jour de l'app autonome.
+   - Lien + QR code pour la faire essayer à des amis (chacun a ses propres données, sur son téléphone).
+   - Bouton « Installer » (Android) ou mode d'emploi (iPhone).
+   - Vérification de version à chaque ouverture : l'app se met à jour seule, sans désinstaller. */
+const PUBLIC_URL = window.APEX_URL || 'https://blueskyte.github.io/apexhq/';
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isInstalled = () => { try { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } };
+
+/* Compare la version publiée à celle qui tourne ; recharge si elle a changé (une seule fois par version). */
+async function checkUpdate(manual) {
+  if (!STANDALONE) return;
+  try {
+    const r = await fetch('version.json?cb=' + Date.now(), { cache: 'no-store' }); if (!r.ok) throw new Error('http');
+    const j = await r.json(), cur = window.APEX_VERSION;
+    if (j && j.v && cur && j.v !== cur) {
+      let done = ''; try { done = sessionStorage.getItem('apexhq:rl') || ''; } catch (e) { done = ''; }
+      if (done === j.v) { if (manual) toast('Mise à jour déjà demandée : ferme et rouvre l’app.'); return; }
+      try { sessionStorage.setItem('apexhq:rl', j.v); } catch (e) { /* sans effet */ }
+      toast('Mise à jour en cours…');
+      try { const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) { /* le rechargement suffit */ }
+      setTimeout(() => location.reload(), 700);
+    } else if (manual) toast('ApexHQ est à jour (version ' + cur + ').');
+  } catch (e) { if (manual) toast('Vérification impossible : es-tu connecté à internet ?'); }
+}
+
+function InstallHelp() {
+  const bip = !!window.__bip;
+  const go = async () => { if (!window.__bip) return; try { window.__bip.prompt(); await window.__bip.userChoice; } catch (e) { /* refusé */ } window.__bip = null; window.dispatchEvent(new Event('apex-bip')); };
+  return html`<div className="stack">
+    ${bip && html`<button type="button" className="btn pri wide" onClick=${go}><${Icon} n="download" s=${18} />Installer l’application</button>`}
+    <div className="ai-card"><b>Android · Chrome</b><p className="sec" style=${{ fontSize: 13 }}>Ouvre le lien dans Chrome, touche le menu ⋮, puis « Installer l’application » (ou « Ajouter à l’écran d’accueil »).</p></div>
+    <div className="ai-card"><b>iPhone · Safari</b><p className="sec" style=${{ fontSize: 13 }}>Ouvre le lien dans Safari (pas dans une autre app), touche le bouton Partager, puis « Sur l’écran d’accueil ».</p></div>
+    <p className="mut" style=${{ fontSize: 12 }}>Mises à jour automatiques : l’app se met à jour toute seule à chaque ouverture. Rien à désinstaller.</p>
+  </div>`;
+}
+
+function ShareBody() {
+  const [copied, setCopied] = useState(false); const inp = useRef(null);
+  const copy = async () => { try { await navigator.clipboard.writeText(PUBLIC_URL); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch (e) { if (inp.current) { inp.current.focus(); inp.current.select(); } toast('Sélectionne le lien et copie-le.'); } };
+  const share = async () => { try { await navigator.share({ title: 'ApexHQ', text: 'Essaie ApexHQ : suivi de sèche, repas et séances.', url: PUBLIC_URL }); } catch (e) { /* annulé */ } };
+  return html`<div className="stack">
+    <p className="sec" style=${{ fontSize: 13 }}>Fais essayer ApexHQ à tes amis : gratuit, sans compte. Chacun a ses propres données, gardées sur son téléphone. Ce lien ne partage rien de toi.</p>
+    <div className="row" style=${{ flexWrap: 'nowrap' }}><input ref=${inp} className="inp grow" readOnly value=${PUBLIC_URL} aria-label="Lien de l’application" onFocus=${e => e.target.select()} />
+      <button type="button" className="btn" onClick=${copy}><${Icon} n=${copied ? 'check' : 'copy'} s=${18} />${copied ? 'Copié' : 'Copier'}</button></div>
+    ${typeof navigator.share === 'function' && html`<button type="button" className="btn pri wide" onClick=${share}><${Icon} n="upload" s=${18} />Envoyer le lien</button>`}
+    ${window.APEX_QR && html`<div className="qr" role="img" aria-label="QR code du lien" dangerouslySetInnerHTML=${{ __html: window.APEX_QR }}></div>`}
+    ${window.APEX_QR && html`<p className="mut" style=${{ fontSize: 12, textAlign: 'center' }}>Tes amis scannent ce QR code avec l’appareil photo de leur téléphone.</p>`}
+    <h3>Installer</h3><${InstallHelp} />
+  </div>`;
+}
+
+function InstallBanner() {
+  const [, bump] = useState(0); const [sheet, setSheet] = useState(false);
+  const [hide, setHide] = useState(() => { try { return !!localStorage.getItem('apexhq:nobanner'); } catch (e) { return false; } });
+  useEffect(() => { const f = () => bump(x => x + 1); window.addEventListener('apex-bip', f); window.addEventListener('appinstalled', f); return () => { window.removeEventListener('apex-bip', f); window.removeEventListener('appinstalled', f); }; }, []);
+  if (!STANDALONE || hide || isInstalled()) return null;
+  const install = async () => { if (window.__bip) { try { window.__bip.prompt(); await window.__bip.userChoice; } catch (e) { /* refusé */ } window.__bip = null; bump(x => x + 1); } else setSheet(true); };
+  const dismiss = () => { try { localStorage.setItem('apexhq:nobanner', '1'); } catch (e) { /* sans effet */ } setHide(true); };
+  return html`<div className="install" role="region" aria-label="Installer l’application">
+    <i className="install-ic"><${Icon} n="apex" s=${22} w=${2} /></i>
+    <div className="install-t"><b>Installe ApexHQ</b><span>Icône sur l’écran d’accueil, plein écran, hors ligne.</span></div>
+    <button type="button" className="btn sm pri" onClick=${install}>${window.__bip ? 'Installer' : 'Comment ?'}</button>
+    <button type="button" className="ib sm" aria-label="Masquer" onClick=${dismiss}><${Icon} n="x" s=${16} /></button>
+    ${sheet && html`<${Sheet} title="Installer ApexHQ" onClose=${() => setSheet(false)}><${InstallHelp} /><//>`}
+  </div>`;
+}
+
 /* ---- 70-ui-app.js ---- */
 /* ApexHQ — coque : en-tête (jour + statut), onglets, réglages et données, démarrage. */
 const STANDALONE = !!window.APEX_STANDALONE;
@@ -2801,7 +2971,7 @@ function SettingsSheet({ onClose }) {
     <${Num} id=${'c-' + s + '-l'} label="Lipides" unit="g" value=${cfg.cibles[s].l} onChange=${setC(s, 'l')} dec=${0} min=${cfg.cibles.planchers.l} max=${200} />
     <div className="fld"><span className="fld-l">Glucides</span><div className="inp" style=${{ display: 'grid', alignItems: 'center' }}>${cfg.cibles[s].g} g</div></div>
   </div>`;
-  const SECS = [['profil', 'Profil'], ['seances', 'Séances'], ['focus', 'Points faibles'], ['repas', 'Repas'], ['claude', 'Claude'], ['data', 'Données']];
+  const SECS = [['profil', 'Profil'], ['seances', 'Séances'], ['focus', 'Points faibles'], ['repas', 'Repas'], ['claude', 'IA'], ['partage', 'Partager'], ['data', 'Données']];
   return html`<${Sheet} title="Réglages et données" onClose=${onClose}>
     <div className="chips" role="group" aria-label="Sections">${SECS.map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${sec === x[0]} onClick=${() => setSec(x[0])}>${x[1]}</button>`)}</div>
     ${sec === 'profil' && html`<${React.Fragment}>
@@ -2842,8 +3012,10 @@ function SettingsSheet({ onClose }) {
       </div></div>`; })}
     <//>`}
     ${sec === 'claude' && html`<${ClaudeLink} />`}
+    ${sec === 'partage' && html`<${ShareBody} />`}
     ${sec === 'data' && html`<${React.Fragment}>
     <h3>Données</h3>
+    ${STANDALONE && html`<button type="button" className="btn wide" onClick=${() => checkUpdate(true)}><${Icon} n="refresh" s=${18} />Rechercher une mise à jour</button>`}
     <p className="mut" style=${{ fontSize: 12 }}>Version : ${window.APEX_VERSION ? 'app autonome ' + window.APEX_VERSION : 'version Claude'}</p>
     <div className="note"><${Icon} n="info" /><div><span>${sy.mode === 'ok' ? 'Synchronisé avec la base privée de ton compte Claude, et copié sur cet appareil.' : sy.mode === 'local' ? (STANDALONE ? 'Tout est enregistré sur ce téléphone, sans compte ni serveur. Si tu désinstalles l’app ou effaces les données du navigateur, tout disparaît : exporte régulièrement.' : 'Enregistré sur cet appareil uniquement : cette vue n’a pas accès à la base du compte.') : sy.mode === 'err' ? 'La base du compte ne répond pas (' + (sy.err || 'erreur') + '). Les saisies restent sur cet appareil et repartiront à la prochaine ouverture.' : 'Connexion à la base du compte en cours. Les saisies sont gardées sur cet appareil.'}${st.pendingKeys() ? ' ' + st.pendingKeys() + ' modification(s) en attente d’envoi.' : ''}</span></div></div>
     <div className="row">
@@ -2875,6 +3047,7 @@ function App() {
   const st = useStore(), S = st.get(), cfg = st.cfg(), sy = st.sync();
   const [tab, setTab] = useState(tabOf); const [date, setDate] = useState(Apex.today); const [open, setOpen] = useState(false);
   useEffect(() => { const f = () => setTab(tabOf()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f); }, []);
+  useEffect(() => { if (!STANDALONE) return undefined; const t = setTimeout(() => checkUpdate(false), 3000), f = () => { if (!document.hidden) checkUpdate(false); }; document.addEventListener('visibilitychange', f); return () => { clearTimeout(t); document.removeEventListener('visibilitychange', f); }; }, []);
   const j = S.journal[date] || {}, statut = Apex.statutDuJour(cfg, j, date), today = Apex.today();
   useEffect(() => { document.body.dataset.statut = statut; }, [statut]);
   const go = t => { setTab(t); try { if (location.hash !== '#' + t) location.hash = t; } catch (e) { /* hash indisponible */ } try { window.scrollTo(0, 0); } catch (e) { /* sans effet */ } };
@@ -2899,7 +3072,7 @@ function App() {
         <${Seg} label="Statut du jour" value=${statut} onChange=${setStatut} options=${[['repos', 'Repos'], ['salle', 'Salle']]} />
       </div>
     </div></header>
-    <main className="wrap"><${Boundary} key=${tab}><${View} date=${date} setDate=${setDate} go=${go} /><//></main>
+    <main className="wrap"><${InstallBanner} /><${Boundary} key=${tab}><${View} date=${date} setDate=${setDate} go=${go} /><//></main>
     <nav className="tabs" aria-label="Sections" style=${{ gridTemplateColumns: 'repeat(' + tabs.length + ', 1fr)' }}>${tabs.map(t => html`<button key=${t[0]} type="button" aria-current=${tab === t[0] ? 'page' : undefined} onClick=${() => go(t[0])}><${Icon} n=${t[2]} s=${22} />${t[1]}</button>`)}</nav>
     ${open && html`<${SettingsSheet} onClose=${() => setOpen(false)} />`}
     ${wiz && html`<${Wizard} redo=${cfg.onboarded === false} onClose=${() => {}} />`}

@@ -3,6 +3,7 @@
  "short_name": "ApexHQ",
  "description": "Sèche : check-in, repas, training, analyse.",
  "lang": "fr",
+ "id": "./",
  "start_url": "./",
  "scope": "./",
  "display": "standalone",
