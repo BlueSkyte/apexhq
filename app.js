@@ -24,6 +24,7 @@ const Apex = (() => {
 
   /* ================= profil & cibles ================= */
   const TYPES = ['Push', 'Pull', 'Legs', 'Upper', 'Lower'];
+  const types = cfg => (cfg && Array.isArray(cfg.seanceTypes) && cfg.seanceTypes.length ? cfg.seanceTypes : TYPES);
   const DEFAULT_CFG = {
     v: 1,
     profil: { sexe: 'H', age: 25, taille: 175, poidsDepart: 75, dateDepart: iso(new Date()), poidsCible: 70, nap: 1.5 },
@@ -39,6 +40,9 @@ const Apex = (() => {
     exos: {},
     programme: null,
     repasModeles: null,
+    focus: null,
+    supps: null,
+    seanceTypes: null,
   };
   const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
   const deep = (a, b) => { const o = Object.assign({}, a); for (const k in (b || {})) o[k] = isObj(a[k]) && isObj(b[k]) ? deep(a[k], b[k]) : b[k]; return o; };
@@ -47,8 +51,8 @@ const Apex = (() => {
   function seanceDuJour(cfg, j, date) {
     if (j && j.statut === 'repos') return '';
     if (j && j.seance) return j.seance;
-    const plan = cfg.planning[dow(date)] || '';
-    if (j && j.statut === 'salle') return plan || 'Upper';
+    const pl0 = cfg.planning[dow(date)] || '', plan = pl0 && types(cfg).indexOf(pl0) >= 0 ? pl0 : '';
+    if (j && j.statut === 'salle') return plan || types(cfg)[0];
     return plan;
   }
   function statutDuJour(cfg, j, date) {
@@ -161,7 +165,7 @@ const Apex = (() => {
   E('cocktail', 'Cocktail / shot sucré', 170, 0, 17, 0, 0, 'verre');
   E('soda', 'Soda 33 cl', 139, 0, 35, 0, 0, 'canette');
 
-  const CATS = [['prot', 'Protéines'], ['lait', 'Laitages'], ['feck', 'Féculents'], ['fruit', 'Fruits'], ['leg', 'Légumes'], ['lip', 'Lipides'], ['supp', 'Suppléments'], ['ecart', 'Écarts']];
+  const CATS = [['prot', 'Protéines'], ['lait', 'Laitages'], ['feck', 'Féculents'], ['fruit', 'Fruits'], ['leg', 'Légumes'], ['lip', 'Lipides'], ['supp', 'Suppléments'], ['ecart', 'Écarts'], ['perso', 'Ma base']];
   const allFoods = cfg => Object.assign({}, FOODS, (cfg && cfg.aliments) || {});
 
   const Z = () => ({ k: 0, p: 0, g: 0, l: 0, f: 0 });
@@ -258,12 +262,13 @@ const Apex = (() => {
     }
     return ms;
   }
+  const tup = x => (Array.isArray(x) ? x : [x.a, x.q, x.adj]);
   function planDuJour(cfg, statut, cible) {
     const foods = allFoods(cfg);
     const tpl = (cfg.repasModeles && cfg.repasModeles[statut]) || MODELES[statut];
     const meals = tpl.map(m => ({
       id: m.id, nom: m.nom, h: m.h, ok: false,
-      items: m.items.filter(x => foods[x[0]]).map(x => { const o = { id: uid(), a: x[0], q: x[1] }; if (x[2]) o.adj = 1; return o; }),
+      items: m.items.map(tup).filter(x => foods[x[0]]).map(x => { const o = { id: uid(), a: x[0], q: x[1] }; if (x[2]) o.adj = 1; return o; }),
     }));
     return ajuster(meals, cible, foods, { tous: true });
   }
@@ -469,13 +474,22 @@ const Apex = (() => {
     Upper: [['di_smith', 4], ['tir_neutre', 3], ['pec_deck', 3], ['row_uni', 3], ['el_mach', 4], ['curl_bay', 3], ['curl_mart', 2], ['barre_front', 2]],
     Lower: [['hack', 3], ['fentes', 2], ['leg_curl_assis', 3], ['leg_ext', 3], ['mollets_assis', 3], ['el_halt', 3], ['curl_ez', 2]],
   };
-  const GROUPES = {
-    pecs: { n: 'Pectoraux', m: ['pecH', 'pec'], min: 14, max: 20, freq: 2, sub: { m: 'pecH', n: 'haut', min: 9 }, lifts: ['di_halt', 'di_smith', 'dc'] },
-    biceps: { n: 'Biceps', m: ['bic'], min: 10, max: 14, freq: 2, lifts: ['curl_inc', 'curl_pup', 'curl_bay'] },
-    delts: { n: 'Deltoïdes latéraux', m: ['dLat'], min: 12, max: 18, freq: 3, lifts: ['el_halt', 'el_poulie', 'el_mach'] },
-  };
+  const GROUPES_DEF = [
+    { id: 'pecs', n: 'Pectoraux', m: ['pecH', 'pec'], min: 14, max: 20, freq: 2, sub: { m: 'pecH', n: 'haut', min: 9 } },
+    { id: 'biceps', n: 'Biceps', m: ['bic'], min: 10, max: 14, freq: 2 },
+    { id: 'delts', n: 'Deltoïdes latéraux', m: ['dLat'], min: 12, max: 18, freq: 3 },
+  ];
+  const GROUPES = (() => { const o = {}; GROUPES_DEF.forEach(g => { o[g.id] = g; }); return o; })();
   const allExos = cfg => Object.assign({}, EXOS, (cfg && cfg.exos) || {});
-  const progOf = cfg => (cfg && cfg.programme) || PROG;
+  const progOf = cfg => {
+    const p = cfg && cfg.programme; if (!isObj(p)) return PROG;
+    const o = {}; Object.keys(p).forEach(t => { o[t] = (Array.isArray(p[t]) ? p[t] : []).map(x => (Array.isArray(x) ? x : [x.e, x.n])).filter(x => x[0]); });
+    return o;
+  };
+  const SUPPS_DEF = [{ id: 'crea', n: 'Créatine 3–5 g', note: 'tous les jours' }, { id: 'om3', n: 'Oméga-3', note: 'avec un repas' }, { id: 'd3', n: 'Vitamine D3', note: 'avec un repas gras' }, { id: 'ash', n: 'Ashwagandha', note: 'le soir' }];
+  const supps = cfg => (cfg && Array.isArray(cfg.supps) ? cfg.supps : SUPPS_DEF);
+  const groupes = cfg => { const a = cfg && Array.isArray(cfg.focus) ? cfg.focus : GROUPES_DEF, o = {}; a.forEach(g => { if (g && g.id && Array.isArray(g.m)) o[g.id] = g; }); return o; };
+  const focusLabel = (cfg, muscle) => { const g = groupes(cfg); for (const k in g) if (g[k].m.indexOf(muscle) >= 0) return g[k].n; return ''; };
 
   const setFait = s => !!s && s.r > 0;
   const setDur = s => setFait(s) && (s.rpe == null || s.rpe >= 6.5);
@@ -520,8 +534,9 @@ const Apex = (() => {
       const e = progOf(cfg)[t] || []; e.forEach(x => { const ex = exos[x[0]]; if (ex) (reste['#' + ex.m] = reste['#' + ex.m] || {})[d] = 1; });
     });
     const out = {};
-    Object.keys(GROUPES).forEach(k => {
-      const G = GROUPES[k]; let fait = 0, proj = 0, indir = 0; const jd = {}, jp = {};
+    const GR = groupes(cfg);
+    Object.keys(GR).forEach(k => {
+      const G = GR[k]; let fait = 0, proj = 0, indir = 0; const jd = {}, jp = {};
       G.m.forEach(m => { fait += done.vol[m] || 0; indir += done.ind[m] || 0; proj += reste[m] || 0; Object.assign(jd, done.jours[m] || {}); Object.assign(jp, reste['#' + m] || {}); });
       const freq = Object.keys(jd).length, freqProj = Object.keys(Object.assign({}, jd, jp)).length;
       const o = { k, n: G.n, min: G.min, max: G.max, fait, indir, proj: fait + proj, freq, freqProj, freqMin: G.freq };
@@ -553,20 +568,21 @@ const Apex = (() => {
     const best = Math.max.apply(null, v.map(x => x.e1));
     return { pct, n: w.length, st: pct < -3 ? 'regression' : pct <= 0.5 ? 'plateau' : 'progression', pr: w[w.length - 1].e1 >= best - 1e-9, e1: w[w.length - 1].e1 };
   }
-  function liftCle(seances, g) {
-    const G = GROUPES[g]; let pick = null;
-    G.lifts.forEach(id => { const h = histoExo(seances, id); if (h.length && (!pick || h.length > pick.h.length)) pick = { id, h }; });
+  /* Mouvement clé d'un groupe : l'exercice du groupe le plus souvent noté. */
+  function liftCle(seances, g, cfg) {
+    const G = groupes(cfg)[g], ex = allExos(cfg); let pick = null; if (!G) return null;
+    Object.keys(ex).forEach(id => { if (G.m.indexOf(ex[id].m) < 0) return; const h = histoExo(seances, id); if (h.length && (!pick || h.length > pick.h.length)) pick = { id, h }; });
     return pick;
   }
   /* Alertes points faibles : volume, fréquence, tendance de force. */
   function alertesFocus(seances, journal, cfg, date) {
     const f = focusSemaine(seances, journal, cfg, date), exos = allExos(cfg), out = [];
     Object.keys(f).forEach(k => {
-      const o = f[k], lk = liftCle(seances, k), t = lk ? tendanceExo(lk.h) : null;
+      const o = f[k], lk = liftCle(seances, k, cfg), t = lk ? tendanceExo(lk.h) : null;
       let st = 'good', tag = 'Dans la cible'; const txt = [];
       if (o.proj < o.min) { st = 'warn'; tag = 'Sous-dosé'; txt.push('Projection ' + fx(o.proj, 0) + ' séries pour ' + o.min + '–' + o.max + ' : ajoute ' + Math.ceil(o.min - o.proj) + ' séries cette semaine.'); }
       else if (o.fait > o.max) { st = 'warn'; tag = 'Au-dessus'; txt.push(fx(o.fait, 0) + ' séries > ' + o.max + ' : en déficit, la récupération plafonne. Garde la qualité.'); }
-      if (o.sub && o.sub.proj < o.sub.min) { if (st === 'good') { st = 'warn'; tag = 'Haut des pecs court'; } txt.push('Faisceau ' + o.sub.n + ' : ' + fx(o.sub.proj, 0) + ' séries projetées pour ≥ ' + o.sub.min + '.'); }
+      if (o.sub && o.sub.proj < o.sub.min) { if (st === 'good') { st = 'warn'; tag = 'Faisceau ' + o.sub.n + ' court'; } txt.push('Faisceau ' + o.sub.n + ' : ' + fx(o.sub.proj, 0) + ' séries projetées pour ≥ ' + o.sub.min + '.'); }
       if (o.freqProj < o.freqMin) { if (st === 'good') { st = 'warn'; tag = 'Fréquence basse'; } txt.push('Fréquence ' + o.freqProj + '×/sem pour ≥ ' + o.freqMin + '×.'); }
       if (t && t.st === 'regression') { st = 'crit'; tag = 'Régression'; txt.push(exos[lk.id].n + ' : ' + sg(t.pct, 1) + ' % sur ' + t.n + ' séances. Fatigue ou déficit trop dur : vérifie sommeil et glucides pré-séance.'); }
       else if (t && t.st === 'plateau') { if (st === 'good') { st = 'warn'; tag = 'Plateau'; } txt.push(exos[lk.id].n + ' : ' + sg(t.pct, 1) + ' % sur ' + t.n + ' séances. Change la variante ou gagne 1 rép avant de monter la charge.'); }
@@ -587,8 +603,8 @@ const Apex = (() => {
     Object.keys(seances).forEach(k => { const se = seances[k]; if (!se || se.date < from || se.date > date) return; (se.exos || []).forEach(x => (x.sets || []).forEach(s => { if (setFait(s) && num(s.rpe)) { rs += s.rpe; rn++; } })); });
     const rpe = rn ? rs / rn : null;
     if (rpe != null && rpe >= 9.3) { score += 2; why.push('RPE moyen ' + fx(rpe, 1)); }
-    let reg = 0; Object.keys(GROUPES).concat(['squat', 'tractions']).forEach(k => {
-      const h = GROUPES[k] ? (liftCle(seances, k) || {}).h : histoExo(seances, k); const t = h ? tendanceExo(h) : null; if (t && t.st === 'regression') reg++;
+    let reg = 0; const GR = groupes(cfg); Object.keys(GR).concat(['squat', 'tractions']).forEach(k => {
+      const h = GR[k] ? (liftCle(seances, k, cfg) || {}).h : histoExo(seances, k); const t = h ? tendanceExo(h) : null; if (t && t.st === 'regression') reg++;
     });
     if (reg >= 2) { score += 2; why.push(reg + ' mouvements en régression'); }
     const niveau = score >= 6 ? 'élevée' : score >= 3 ? 'modérée' : 'faible';
@@ -598,8 +614,8 @@ const Apex = (() => {
   function prochaineSeance(seances, cfg, date) {
     const from = lundi(date), fait = {};
     Object.keys(seances).forEach(k => { const se = seances[k]; if (se && se.date >= from && se.date <= addDays(from, 6) && se.date !== date) fait[se.type] = 1; });
-    for (const t of TYPES) if (!fait[t]) return t;
-    return 'Upper';
+    const tp = types(cfg); for (const t of tp) if (!fait[t]) return t;
+    return tp[0];
   }
   /* Marche inclinée, équation ACSM (kcal brutes). */
   function cardioKcal(min, kmh, incl, poids) {
@@ -615,7 +631,7 @@ const Apex = (() => {
 
   return {
     pad, iso, parse, today, addDays, dow, diffDays, range, lundi, uid, num, fx, sg, kgTxt,
-    TYPES, DEFAULT_CFG, mergeCfg, seanceDuJour, statutDuJour, cibleDuJour, mifflin, bilanTheorique,
+    TYPES, types, SUPPS_DEF, supps, groupes, GROUPES_DEF, focusLabel, DEFAULT_CFG, mergeCfg, seanceDuJour, statutDuJour, cibleDuJour, mifflin, bilanTheorique,
     FOODS, CATS, allFoods, foodOf, grams, mac, totMeal, totJour, Z, add,
     MODELES, pas, arrondi, ajuster, planDuJour, swapOptions, boucler, lissage,
     serie, mm7, serieMM7, pente, tendance, verdictRythme, eta, tdee, adherence, navy, lecture,
@@ -828,6 +844,8 @@ const IC = {
   mic: ['M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0z', 'M5.5 11a6.5 6.5 0 0 0 13 0', 'M12 17.5V21'],
   send: ['M4 12 20 4l-4.5 16-3.5-6.5z', 'M12 13.5 20 4'],
   chat: ['M4 5h16v11H9l-5 4z', 'M8 9.5h8', 'M8 12.5h5'],
+  up: ['M6 14.5l6-6 6 6'],
+  down: ['M6 9.5l6 6 6-6'],
 };
 function Icon({ n, s = 20, w = 1.75 }) {
   return html`<svg className="ic" width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth=${w} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1059,7 +1077,7 @@ function Hero({ date, go }) {
       <span className="mac" style=${{ '--c': 'var(--l)' }}><i></i>Lipides <b>${c.l} g</b></span>
     </div>
     ${c.statut === 'salle' && html`<div className="chips" role="group" aria-label="Séance du jour">
-      ${Apex.TYPES.map(tp => html`<button key=${tp} className="chip" aria-pressed=${seance === tp} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: tp })}>${tp}</button>`)}
+      ${Apex.types(cfg).map(tp => html`<button key=${tp} className="chip" aria-pressed=${seance === tp} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: tp })}>${tp}</button>`)}
     </div>`}
     <div className="row sb">
       <span className="hero-s">${reel.k > 0 ? 'Mangé ' + f0(reel.k) + ' kcal · reste ' + f0(Math.max(0, c.kcal - reel.k)) : c.statut === 'salle' ? 'Glucides autour de la séance, 10–14k pas.' : 'Glucides réduits, protéines hautes, 10–14k pas.'}</span>
@@ -1227,7 +1245,6 @@ function Dashboard({ date, go }) {
 
 /* ---- 40-ui-repas.js ---- */
 /* ApexHQ — onglet 2 : plan repas, swap, recalage, écarts, macros résiduelles, suppléments. */
-const SUPPS = [['crea', 'Créatine 3–5 g', 'tous les jours'], ['om3', 'Oméga-3', 'avec un repas'], ['d3', 'Vitamine D3', 'avec un repas gras'], ['ash', 'Ashwagandha', 'le soir']];
 const unitOf = f => (f.u ? f.u[0] : 'g');
 const macTxt = m => 'P ' + f0(m.p) + ' · G ' + f0(m.g) + ' · L ' + f0(m.l);
 const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -1279,7 +1296,13 @@ function AddSheet({ foods, title, onAdd, onClose }) {
   const sample = Store.caps().sample;
   const list = Object.keys(foods).map(k => foods[k]).filter(f => (!cat || f.c === cat) && (!q || norm(f.n).indexOf(norm(q)) >= 0));
   const pick = f => { onAdd({ a: f.id, q: f.d || (f.u ? 1 : 100) }); onClose(); };
-  const addFree = () => { if (!fr.n.trim() || fr.k == null) return; onAdd({ q: 1, x: { n: fr.n.trim().slice(0, 60), k: fr.k || 0, p: fr.p || 0, g: fr.g || 0, l: fr.l || 0 } }); onClose(); };
+  const addFree = () => {
+    if (!fr.n.trim() || fr.k == null) return;
+    const x = { n: fr.n.trim().slice(0, 60), k: fr.k || 0, p: fr.p || 0, g: fr.g || 0, l: fr.l || 0 };
+    if (fr.keep) { const id = 'u_' + Apex.uid(); Store.patch('cfg', null, { aliments: Object.assign({}, Store.cfg().aliments, { [id]: { id, n: x.n, c: 'perso', r: '', k: x.k, p: x.p, g: x.g, l: x.l, f: 0, d: 1, u: ['portion', 100] } }) }); onAdd({ a: id, q: 1 }); }
+    else onAdd({ q: 1, x });
+    onClose();
+  };
   const estimate = async () => {
     const txt = ai.txt.trim(); if (!txt || !sample) return;
     setAi(s => Object.assign({}, s, { busy: true, err: '', res: null }));
@@ -1310,6 +1333,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
       <${Num} id="fr-g" label="Glucides" value=${fr.g} onChange=${v => setFr(Object.assign({}, fr, { g: v }))} dec=${0} min=${0} max=${900} />
       <${Num} id="fr-l" label="Lipides" value=${fr.l} onChange=${v => setFr(Object.assign({}, fr, { l: v }))} dec=${0} min=${0} max=${400} />
     </div>
+    <label className="row" htmlFor="fr-keep" style=${{ fontSize: 13, color: 'var(--ink-2)', gap: 8 }}><input id="fr-keep" type="checkbox" checked=${!!fr.keep} onChange=${e => setFr(Object.assign({}, fr, { keep: e.target.checked }))} />Garder dans ma base (valeurs par portion)</label>
     <button type="button" className="btn wide" disabled=${!fr.n.trim() || fr.k == null} onClick=${addFree}>Ajouter la saisie libre</button>
     ${sample && html`<div className="stack">
       <h3>Estimation par Claude</h3>
@@ -1380,6 +1404,12 @@ function Repas({ date }) {
   const lis = exc > 60 && !j.lisse ? Apex.lissage(exc, cfg, S.journal, date) : null;
   const reste = { k: c.kcal - plan.k, p: c.p - plan.p, g: c.g - plan.g, l: c.l - plan.l };
   const gen = () => { put(Apex.planDuJour(cfg, c.statut, c)); toast('Plan ' + c.statut + ' chargé, calé sur ' + f0(c.kcal) + ' kcal'); };
+  const tplOk = !!(cfg.repasModeles && cfg.repasModeles[c.statut]);
+  const saveTpl = () => {
+    const tpl = meals.map((m, i) => ({ id: 'm' + (i + 1), nom: m.nom, h: m.h || '', items: m.items.filter(it => !it.x && foods[it.a]).map(it => ({ a: it.a, q: it.q, adj: foods[it.a].r ? 1 : 0 })) })), libres = meals.reduce((s, m) => s + m.items.filter(it => it.x).length, 0);
+    Store.patch('cfg', null, { repasModeles: Object.assign({}, cfg.repasModeles || {}, { [c.statut]: tpl }) }); toast('Plan type ' + c.statut + ' enregistré' + (libres ? ' (' + libres + ' saisie(s) libre(s) ignorée(s))' : ''));
+  };
+  const resetTpl = () => { const o = Object.assign({}, cfg.repasModeles || {}); delete o[c.statut]; Store.patch('cfg', null, { repasModeles: Object.keys(o).length ? o : null }); toast('Plan type ' + c.statut + ' rétabli'); };
   const refit = () => { put(fitted); toast('Recalé : ' + f0(fitK) + ' kcal prévus'); };
   const addMeal = () => { const used = meals.map(m => m.nom), n = nomRepas(), m = { id: Apex.uid(), nom: used.indexOf(n) < 0 ? n : 'Extra', h: heure(), ok: false, items: [] }; put(meals.concat(m)); setSheet({ t: 'add', mid: m.id }); };
   const addItems = (mid, items) => {
@@ -1390,7 +1420,7 @@ function Repas({ date }) {
   };
   const lisser = () => { lis.plan.forEach(p => Store.patch('journal', p.d, { date: p.d, ajust: p.ajust })); Store.patch('journal', date, { date, lisse: lis.plan.map(p => ({ d: p.d, cut: p.cut })) }); toast('Écart lissé sur ' + lis.plan.length + ' jour' + (lis.plan.length > 1 ? 's' : '')); };
   const delisser = () => { (j.lisse || []).forEach(p => { const o = Store.get().journal[p.d] || {}; const a = (o.ajust || 0) + p.cut; Store.patch('journal', p.d, { date: p.d, ajust: a === 0 ? null : a }); }); Store.patch('journal', date, { date, lisse: null }); toast('Lissage annulé'); };
-  const supp = j.supp || {};
+  const supp = j.supp || {}, supL = Apex.supps(cfg);
   const sh = sheet && meals.find(m => m.id === sheet.mid), shIt = sh && sheet.t === 'swap' ? sh.items.find(i => i.id === sheet.iid) : null;
 
   return html`<div>
@@ -1424,6 +1454,8 @@ function Repas({ date }) {
             onDel=${() => put(meals.filter(x => x.id !== m.id))} />`)}</div>`
           : html`<div className="empty"><span><b>Aucun repas planifié.</b> Charge le plan ${c.statut} : repas autour de la séance, quantités calées sur ${f0(c.kcal)} kcal et ${c.p} g de protéines. Tu remplaces ensuite ce que tu veux.</span>
             <button type="button" className="btn pri" onClick=${gen}><${Icon} n="utensils" s=${18} />Charger le plan du jour</button></div>`}
+          ${meals.length > 0 && html`<div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>Plan type ${c.statut} : ${tplOk ? 'le tien' : 'par défaut'}</span>
+            <div className="row"><button type="button" className="btn sm ghost" onClick=${saveTpl}>Enregistrer comme plan type</button>${tplOk && html`<${Confirm} label="Rétablir" sure="Rétablir le défaut ?" cls="ghost" onYes=${resetTpl} />`}</div></div>`}
         <//>
         ${j.repasTxt && html`<${Card} title="Journal du jour" sub="Texte repris du QG Sèche"><div className="pre">${j.repasTxt}</div><//>`}
       </div>
@@ -1447,10 +1479,11 @@ function Repas({ date }) {
             ${canFit && html`<button type="button" className="btn wide" onClick=${refit}><${Icon} n="refresh" s=${18} />Ou recaler les quantités existantes</button>`}
           </div>`}
         <//>
-        <${Card} title="Suppléments" sub="Coche à la prise">
-          <div className="supp">${SUPPS.map(x => html`<button key=${x[0]} type="button" aria-pressed=${!!supp[x[0]]} onClick=${() => { const o = Object.assign({}, supp); if (o[x[0]]) delete o[x[0]]; else o[x[0]] = 1; Store.patch('journal', date, { date, supp: Object.keys(o).length ? o : null }); }}>
-            <span className="chk" aria-pressed=${!!supp[x[0]]}><${Icon} n="check" s=${16} w=${2.5} /></span><span><b>${x[1]}</b><span>${x[2]}</span></span></button>`)}</div>
-          <p className="mut" style=${{ fontSize: 12 }}>Clear Whey et Whey Ultimate Chocolate sont dans le plan repas : leurs protéines comptent dans le total.</p>
+        <${Card} title="Compléments" sub="Coche à la prise">
+          ${supL.length ? html`<div className="supp">${supL.map(x => html`<button key=${x.id} type="button" aria-pressed=${!!supp[x.id]} onClick=${() => { const o = Object.assign({}, supp); if (o[x.id]) delete o[x.id]; else o[x.id] = 1; Store.patch('journal', date, { date, supp: Object.keys(o).length ? o : null }); }}>
+            <span className="chk" aria-pressed=${!!supp[x.id]}><${Icon} n="check" s=${16} w=${2.5} /></span><span><b>${x.n}</b><span>${x.note || ''}</span></span></button>`)}</div>`
+          : html`<div className="empty"><span>Aucun complément. Ajoute les tiens dans Réglages, onglet Repas.</span></div>`}
+          <p className="mut" style=${{ fontSize: 12 }}>Les protéines en poudre ajoutées au plan repas comptent dans le total, pas besoin de les cocher ici.</p>
         <//>
       </div>
     </div>
@@ -1463,7 +1496,7 @@ function Repas({ date }) {
 
 /* ---- 50-ui-training.js ---- */
 /* ApexHQ — onglet 3 : séance du jour, charges, points faibles (pecs, biceps, deltoïdes latéraux), fatigue. */
-const FOCUS_M = { pecH: 'Pecs haut', pec: 'Pecs', bic: 'Biceps', dLat: 'Delts lat.' };
+const fl = e => Apex.focusLabel(Store.cfg(), e.m);
 const setsTxt = sets => { const g = {}; sets.forEach(s => { const k = fq(s.kg || 0); (g[k] = g[k] || []).push(s.r); }); return Object.keys(g).map(k => k + ' × ' + g[k].join('·')).join('  '); };
 const cleanSet = s => { const o = {}; ['kg', 'r', 'rpe'].forEach(k => { if (s[k] != null) o[k] = s[k]; }); return o; };
 
@@ -1483,7 +1516,7 @@ function ExoBlock({ ex, exos, seances, date, onSets, onSwap, onDel }) {
   const setAt = (i, k, v) => onSets(ex.sets.map((s, n) => (n === i ? cleanSet(Object.assign({}, s, { [k]: v })) : s)));
   return html`<div className="exo">
     <div className="exo-h">
-      <div><h3>${e.n}${FOCUS_M[e.m] && html`<span className="badge">${FOCUS_M[e.m]}</span>`}</h3>
+      <div><h3>${e.n}${fl(e) && html`<span className="badge">${fl(e)}</span>`}</h3>
         <div className="exo-m">
           <span>${last ? html`Dernier <b>${setsTxt(last.sets)}</b>` : 'Première fois'}</span>
           <span>Objectif <b>${obj.txt}</b></span>
@@ -1513,9 +1546,9 @@ function ExoBlock({ ex, exos, seances, date, onSets, onSwap, onDel }) {
 }
 
 function ExoSheet({ exos, title, muscle, onPick, onClose }) {
-  const [q, setQ] = useState(''); const [cu, setCu] = useState({ n: '', m: muscle || 'pecH' });
+  const [q, setQ] = useState(''); const [cu, setCu] = useState({ n: '', m: muscle || 'pecH', lo: 8, hi: 12, inc: 2.5 });
   const list = Object.keys(exos).map(k => exos[k]).filter(e => !q || norm(e.n).indexOf(norm(q)) >= 0).sort((a, b) => (a.m === muscle ? 0 : 1) - (b.m === muscle ? 0 : 1) || a.m.localeCompare(b.m));
-  const create = () => { const n = cu.n.trim(); if (!n) return; const id = 'c_' + Apex.uid(), all = Object.assign({}, Store.cfg().exos || {}); all[id] = { id, n: n.slice(0, 60), m: cu.m, s: [], lo: 8, hi: 12, inc: 2.5 }; Store.patch('cfg', null, { exos: all }); onPick(id); onClose(); };
+  const create = () => { const n = cu.n.trim(); if (!n) return; const id = 'c_' + Apex.uid(), all = Object.assign({}, Store.cfg().exos || {}); const lo = Math.max(1, Math.round(cu.lo || 8)), hi = Math.max(lo, Math.round(cu.hi || 12)); all[id] = { id, n: n.slice(0, 60), m: cu.m, s: [], lo, hi, inc: cu.inc > 0 ? cu.inc : 2.5 }; Store.patch('cfg', null, { exos: all }); onPick(id); onClose(); };
   return html`<${Sheet} title=${title} onClose=${onClose}>
     <input id="ex-q" className="inp" type="search" placeholder="Chercher un exercice" value=${q} onChange=${e => setQ(e.target.value)} aria-label="Chercher un exercice" />
     <div className="lst">${list.map(e => html`<button key=${e.id} type="button" onClick=${() => { onPick(e.id); onClose(); }}>
@@ -1524,6 +1557,11 @@ function ExoSheet({ exos, title, muscle, onPick, onClose }) {
     <div className="form">
       <label className="fld" htmlFor="ex-n"><span className="fld-l">Nom</span><input id="ex-n" className="inp" type="text" maxLength="60" value=${cu.n} onChange=${e => setCu(Object.assign({}, cu, { n: e.target.value }))} /></label>
       <label className="fld" htmlFor="ex-m"><span className="fld-l">Muscle principal</span><select id="ex-m" className="inp" value=${cu.m} onChange=${e => setCu(Object.assign({}, cu, { m: e.target.value }))}>${Object.keys(Apex.MUSCLES).map(k => html`<option key=${k} value=${k}>${Apex.MUSCLES[k]}</option>`)}</select></label>
+    </div>
+    <div className="form" style=${{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+      <${Num} id="ex-lo" label="Rép. min" value=${cu.lo} onChange=${v => setCu(Object.assign({}, cu, { lo: v }))} dec=${0} min=${1} max=${50} />
+      <${Num} id="ex-hi" label="Rép. max" value=${cu.hi} onChange=${v => setCu(Object.assign({}, cu, { hi: v }))} dec=${0} min=${1} max=${60} />
+      <${Num} id="ex-inc" label="Pas de charge" unit="kg" value=${cu.inc} onChange=${v => setCu(Object.assign({}, cu, { inc: v }))} dec=${2} min=${0.25} max=${20} />
     </div>
     <button type="button" className="btn wide" disabled=${!cu.n.trim()} onClick=${create}>Créer et ajouter</button>
   <//>`;
@@ -1534,14 +1572,14 @@ function SeanceCard({ date }) {
   const j = S.journal[date] || {}, statut = Apex.statutDuJour(cfg, j, date), type = Apex.seanceDuJour(cfg, j, date), se = S.seances[date];
   const [sheet, setSheet] = useState(null);
   const putExos = ex => Store.patch('seances', date, { date, exos: ex });
-  const start = () => { Store.patch('seances', date, { date, type: type || 'Upper', debut: new Date().toISOString(), exos: (prog[type] || []).map(x => ({ e: x[0], sets: Array.from({ length: x[1] }, () => ({})) })) }); toast('Séance ' + type + ' ouverte'); };
+  const start = () => { Store.patch('seances', date, { date, type: type || Apex.types(cfg)[0], debut: new Date().toISOString(), exos: (prog[type] || []).map(x => ({ e: x[0], sets: Array.from({ length: x[1] }, () => ({})) })) }); toast('Séance ' + type + ' ouverte'); };
   if (!se && statut === 'repos') return html`<${Card} cls="c7" title="Repos" sub=${dMid(date)}>
     <div className="empty"><span><b>Pas de séance prévue.</b> Objectif du jour : ${f0(cfg.cibles.pasMin)}–${f0(cfg.cibles.pasMax)} pas, ${f0(cfg.cibles.repos.kcal)} kcal, sommeil ≥ ${cfg.cibles.sommeil} h.</span>
       <button type="button" className="btn" onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: Apex.prochaineSeance(S.seances, cfg, date) })}><${Icon} n="dumbbell" s=${18} />Passer en jour de salle</button></div>
   <//>`;
   if (!se) return html`<${Card} cls="c7" title=${'Séance ' + type} sub=${dMid(date) + ' · double progression, RPE 8–9'}>
     <div className="rows">${(prog[type] || []).map(x => { const e = exos[x[0]]; if (!e) return null; const h = Apex.histoExo(S.seances, x[0]).filter(q => q.date < date), o = Apex.objectif(e, h.length ? h[h.length - 1] : null);
-      return html`<div key=${x[0]} className="mini"><span><b style=${{ color: 'var(--ink)', fontWeight: 500 }}>${e.n}</b>${FOCUS_M[e.m] && html`<span className="badge">${FOCUS_M[e.m]}</span>`}<br />${o.txt}</span><span></span><b>${x[1]}<small>séries</small></b></div>`; })}</div>
+      return html`<div key=${x[0]} className="mini"><span><b style=${{ color: 'var(--ink)', fontWeight: 500 }}>${e.n}</b>${fl(e) && html`<span className="badge">${fl(e)}</span>`}<br />${o.txt}</span><span></span><b>${x[1]}<small>séries</small></b></div>`; })}</div>
     <button type="button" className="btn pri wide" onClick=${start}><${Icon} n="dumbbell" s=${18} />Démarrer la séance</button>
   <//>`;
   const r = Apex.resumeSeance(se), swEx = sheet && sheet.t === 'swap' ? se.exos[sheet.i] : null;
@@ -1610,7 +1648,7 @@ function FatigueCard({ date }) {
 function HistoCard() {
   const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg);
   const ids = Object.keys(exos).filter(id => Apex.histoExo(S.seances, id).length > 0); const [sel, setSel] = useState('');
-  const id = sel && ids.indexOf(sel) >= 0 ? sel : ((Apex.liftCle(S.seances, 'pecs') || {}).id || ids[0] || '');
+  const id = sel && ids.indexOf(sel) >= 0 ? sel : (((Object.keys(Apex.groupes(cfg))[0] && Apex.liftCle(S.seances, Object.keys(Apex.groupes(cfg))[0], cfg)) || {}).id || ids[0] || '');
   const h = id ? Apex.histoExo(S.seances, id) : [];
   const table = h.length ? { cols: ['Date', 'Séries (kg × rép.)', 'e1RM (kg)', 'Tonnage (kg)'], rows: h.slice().reverse().slice(0, 12).map(x => [dMid(x.date), setsTxt(x.sets), f1(x.e1), f0(x.vol)]) } : null;
   return html`<${ChartCard} cls="c12" title="Historique des charges" sub="e1RM = charge × (1 + (rép. + RIR) / 30)" table=${table}>
@@ -1638,7 +1676,6 @@ function Training({ date, setDate }) {
 /* ---- 60-ui-analytics.js ---- */
 /* ApexHQ — onglet 4 : sèche (poids, projection, bilan métabolique), adhérence, force, volume, physique. */
 const POSES = [['face', 'Face'], ['profil', 'Profil'], ['dos', 'Dos']];
-const PISTES = [['pecs', 'Pecs', 'var(--s1)'], ['biceps', 'Biceps', 'var(--s2)'], ['delts', 'Delts lat.', 'var(--s3)'], ['jambes', 'Jambes', 'var(--s4)']];
 
 function SecheCard({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg();
@@ -1701,11 +1738,10 @@ function AdherenceCard({ date }) {
 
 function ForceCard({ date, win }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), from = win ? Apex.addDays(date, -win) : '';
-  const pick = k => { if (k !== 'jambes') return Apex.liftCle(S.seances, k); let b = null; ['squat', 'hack', 'presse'].forEach(id => { const h = Apex.histoExo(S.seances, id); if (h.length && (!b || h.length > b.h.length)) b = { id, h }; }); return b; };
-  const series = [], rows = [], legend = [];
-  PISTES.forEach(p => { const lk = pick(p[0]); if (!lk) return; const h = lk.h.filter(x => x.e1 > 0 && x.date >= from); if (!h.length) return; const b = h[0].e1;
-    series.push({ name: p[1] + ' · ' + exos[lk.id].n, c: p[2], type: 'line', pts: h.map(x => ({ d: x.date, v: x.e1 / b * 100 })) }); legend.push([p[1] + ' · ' + exos[lk.id].n, p[2]]);
-    const l = h[h.length - 1], m = Apex.mm7(S.journal, l.date); rows.push([p[1], exos[lk.id].n, f1(b), f1(l.e1), sgn((l.e1 / b - 1) * 100) + ' %', m ? f2(l.e1 / m.v) : '–']); });
+  const GR = Apex.groupes(cfg), COLS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'], series = [], rows = [], legend = [];
+  Object.keys(GR).slice(0, 4).forEach((k, i) => { const lk = Apex.liftCle(S.seances, k, cfg); if (!lk) return; const h = lk.h.filter(x => x.e1 > 0 && x.date >= from); if (!h.length) return; const b = h[0].e1, nm = GR[k].n, col = COLS[i], lab = nm + ' · ' + (exos[lk.id] ? exos[lk.id].n : lk.id);
+    series.push({ name: lab, c: col, type: 'line', pts: h.map(x => ({ d: x.date, v: x.e1 / b * 100 })) }); legend.push([lab, col]);
+    const l = h[h.length - 1], m = Apex.mm7(S.journal, l.date); rows.push([nm, exos[lk.id] ? exos[lk.id].n : lk.id, f1(b), f1(l.e1), sgn((l.e1 / b - 1) * 100) + ' %', m ? f2(l.e1 / m.v) : '–']); });
   return html`<${ChartCard} cls="c7" title="Progression de force" sub="e1RM en base 100 à la 1re séance de la période" legend=${legend.length ? legend : null}
     table=${rows.length ? { cols: ['Piste', 'Mouvement', 'e1RM départ', 'e1RM actuel', 'Évolution', 'e1RM / poids'], rows } : null}>
     <${LineChart} h=${250} fmt=${f0} from=${from || null} label="Progression de force en base 100" series=${series} refs=${series.length ? [{ v: 100, label: '100' }] : []}
@@ -1716,12 +1752,12 @@ function ForceCard({ date, win }) {
 function VolumeCard({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), l0 = Apex.lundi(date), weeks = [];
   for (let i = 5; i >= 0; i--) weeks.push(Apex.addDays(l0, -7 * i));
-  const any = Object.keys(S.seances).length > 0;
+  const any = Object.keys(S.seances).length > 0, GRP = Apex.groupes(cfg);
   return html`<${Card} cls="c12" title="Volume hebdo des points faibles" sub="Séries directes par semaine, repère = minimum visé">
-    ${any ? html`<div className="grid" style=${{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>${Object.keys(Apex.GROUPES).map(k => { const G = Apex.GROUPES[k];
+    ${any && Object.keys(GRP).length ? html`<div className="grid" style=${{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>${Object.keys(GRP).map(k => { const G = GRP[k];
       const data = weeks.map(w => { const v = Apex.volumeEntre(S.seances, w, Apex.addDays(w, 6), exos).vol; return { d: w, v: G.m.reduce((s, m) => s + (v[m] || 0), 0), t: G.min, name: 'semaine du ' + dTiny(w) }; });
       return html`<div key=${k} className="stack"><span className="fld-l">${G.n}<b>${G.min}–${G.max} séries</b></span><${BarChart} h=${150} data=${data} unit=" séries" tName="Minimum" label=${'Volume hebdomadaire ' + G.n} /></div>`; })}</div>`
-    : html`<div className="empty"><span><b>Aucune séance notée.</b> Cibles hebdo : pectoraux 14–20 séries dont 9 pour le haut, biceps 10–14, deltoïdes latéraux 12–18.</span></div>`}
+    : html`<div className="empty"><span>${Object.keys(GRP).length ? html`<b>Aucune séance notée.</b> Cibles hebdo : ${Object.keys(GRP).map(k => GRP[k].n + ' ' + GRP[k].min + '–' + GRP[k].max).join(', ')}.` : html`<b>Aucun point faible défini.</b> Ajoute-en dans Réglages, onglet Points faibles.`}</span></div>`}
   <//>`;
 }
 
@@ -1952,9 +1988,9 @@ function coachTools(ref, push) {
         push({ lab: cur.length ? 'Plan recalé sur ' + f0(c.kcal) + ' kcal' : 'Plan ' + c.statut + ' chargé', undo: [u] });
         return Object.assign(bilan(d), { repas: ms.map(m => m.nom + (m.ok ? ' (mangé)' : '') + ' : ' + m.items.map(it => { const f = Apex.foodOf(it, foods); return f ? f.n + ' ' + fq(it.q) + ' ' + unitOf(f) : ''; }).filter(Boolean).join(', ')) }); } },
     { name: 'definir_jour', description: 'Définit le statut d’une journée (salle = 2000 kcal, repos = 1800 kcal) et le type de séance.',
-      inputSchema: { type: 'object', properties: { date: DATE, statut: { type: 'string', enum: ['salle', 'repos'] }, seance: { type: 'string', enum: Apex.TYPES } }, required: ['statut'] },
+      inputSchema: { type: 'object', properties: { date: DATE, statut: { type: 'string', enum: ['salle', 'repos'] }, seance: { type: 'string', enum: Apex.types(C()) } }, required: ['statut'] },
       execute: inp => { const d = dOf(inp.date), st = inp.statut === 'repos' ? 'repos' : inp.statut === 'salle' ? 'salle' : null; if (!st) throw new Error('statut doit valoir salle ou repos.');
-        const u = snap('journal', d), f = { date: d, statut: st }; if (st === 'salle') f.seance = Apex.TYPES.indexOf(inp.seance) >= 0 ? inp.seance : (Apex.seanceDuJour(C(), S().journal[d], d) || Apex.prochaineSeance(S().seances, C(), d));
+        const u = snap('journal', d), f = { date: d, statut: st }; if (st === 'salle') f.seance = Apex.types(C()).indexOf(inp.seance) >= 0 ? inp.seance : (Apex.seanceDuJour(C(), S().journal[d], d) || Apex.prochaineSeance(S().seances, C(), d));
         Store.patch('journal', d, f); push({ lab: 'Jour · ' + st + (f.seance ? ' ' + f.seance : ''), undo: [u] }); return bilan(d); } },
     { name: 'noter_mensurations', description: 'Enregistre des mensurations en cm : tour de taille au nombril, cou, poitrine, épaules, bras contracté, cuisse. Renvoie le % de masse grasse US Navy si taille et cou sont connus.',
       inputSchema: { type: 'object', properties: { date: DATE, taille: NB('tour de taille cm'), cou: NB('cm'), poitrine: NB('cm'), epaules: NB('cm'), bras: NB('bras contracté cm'), cuisse: NB('cm') } },
@@ -2040,6 +2076,179 @@ function Coach({ date }) {
   </div>`;
 }
 
+/* ---- 68-ui-custom.js ---- */
+/* ApexHQ — personnalisation : séances, exercices, points faibles, compléments, aliments perso.
+   Tout est stocké dans la config (cfg.seanceTypes, cfg.programme, cfg.exos, cfg.focus, cfg.supps, cfg.aliments). */
+
+/* Champ texte : valide à la perte de focus ou sur Entrée. */
+function Txt({ id, label, value, onCommit, max, placeholder }) {
+  const [t, setT] = useState(value || ''); const foc = useRef(false);
+  useEffect(() => { if (!foc.current) setT(value || ''); }, [value]);
+  const commit = () => { const v = t.trim().slice(0, max || 40); if (v && v !== (value || '')) onCommit(v); else setT(value || ''); };
+  return html`<label className="fld" htmlFor=${id}>${label && html`<span className="fld-l">${label}</span>`}
+    <input id=${id} className="inp" type="text" maxLength=${max || 40} value=${t} placeholder=${placeholder || ''} autoComplete="off"
+      onFocus=${() => { foc.current = true; }} onChange=${e => setT(e.target.value)} onBlur=${() => { foc.current = false; commit(); }} onKeyDown=${e => { if (e.key === 'Enter') e.target.blur(); }} /></label>`;
+}
+
+/* ---------- séances ---------- */
+function ExoAdmin({ onClose }) {
+  const st = useStore(), cfg = st.cfg(), exos = Apex.allExos(cfg); const [q, setQ] = useState(''); const [sel, setSel] = useState(''); const [mk, setMk] = useState(false);
+  const e = sel ? exos[sel] : null, custom = e && String(e.id).indexOf('c_') === 0;
+  const put = f => { const all = Object.assign({}, cfg.exos || {}); all[e.id] = Object.assign({}, e, f); Store.patch('cfg', null, { exos: all }); };
+  const del = () => {
+    const all = Object.assign({}, cfg.exos || {}); delete all[e.id]; const pr = Apex.progOf(cfg), tp = Apex.types(cfg), o = {};
+    tp.forEach(t => { o[t] = (pr[t] || []).filter(x => x[0] !== e.id).map(x => ({ e: x[0], n: x[1] })); });
+    Store.patch('cfg', null, { exos: all, programme: o, seanceTypes: tp }); setSel(''); toast('Exercice supprimé');
+  };
+  const list = Object.keys(exos).map(k => exos[k]).filter(x => !q || norm(x.n).indexOf(norm(q)) >= 0).sort((a, b) => a.n.localeCompare(b.n, 'fr'));
+  return html`<${Sheet} title=${e ? e.n : 'Mes exercices'} onClose=${onClose}>
+    ${e ? html`<div className="stack">
+      <${Txt} id="xe-n" label="Nom" value=${e.n} max=${60} onCommit=${v => put({ n: v })} />
+      <label className="fld" htmlFor="xe-m"><span className="fld-l">Muscle principal</span><select id="xe-m" className="inp" value=${e.m} onChange=${ev => put({ m: ev.target.value })}>${Object.keys(Apex.MUSCLES).map(k => html`<option key=${k} value=${k}>${Apex.MUSCLES[k]}</option>`)}</select></label>
+      <div className="form" style=${{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+        <${Num} id="xe-lo" label="Rép. min" value=${e.lo} onChange=${v => { if (v != null) put({ lo: Math.max(1, v), hi: Math.max(e.hi, v) }); }} dec=${0} min=${1} max=${50} />
+        <${Num} id="xe-hi" label="Rép. max" value=${e.hi} onChange=${v => { if (v != null) put({ hi: Math.max(e.lo, v) }); }} dec=${0} min=${1} max=${60} />
+        <${Num} id="xe-inc" label="Pas de charge" unit="kg" value=${e.inc} onChange=${v => { if (v != null && v > 0) put({ inc: v }); }} dec=${2} min=${0.25} max=${20} />
+      </div>
+      <p className="mut" style=${{ fontSize: 12 }}>Double progression : quand toutes les séries atteignent le max de répétitions, l’objectif suivant ajoute le pas de charge.</p>
+      <div className="row sb"><button type="button" className="btn" onClick=${() => setSel('')}>Retour</button>${custom && html`<${Confirm} label="Supprimer" sure="Supprimer ?" icon="trash" onYes=${del} />`}</div>
+    </div>` : html`<${React.Fragment}>
+      <input id="xa-q" className="inp" type="search" placeholder="Chercher un exercice" value=${q} onChange=${ev => setQ(ev.target.value)} aria-label="Chercher un exercice" />
+      <button type="button" className="btn" onClick=${() => setMk(true)}><${Icon} n="plus" s=${18} />Nouvel exercice</button>
+      <div className="lst">${list.map(x => html`<button key=${x.id} type="button" onClick=${() => setSel(x.id)}><div><b>${x.n}</b><span>${Apex.MUSCLES[x.m] || x.m} · ${x.lo}–${x.hi} rép. · +${fq(x.inc)} kg${String(x.id).indexOf('c_') === 0 ? ' · perso' : ''}</span></div><em></em></button>`)}</div>
+    <//>`}
+    ${mk && html`<${ExoSheet} exos=${exos} title="Nouvel exercice" onClose=${() => setMk(false)} onPick=${id => setSel(id)} />`}
+  <//>`;
+}
+
+function SeancesEditor() {
+  const st = useStore(), cfg = st.cfg(), exos = Apex.allExos(cfg), types = Apex.types(cfg), prog = Apex.progOf(cfg);
+  const [open, setOpen] = useState(''); const [nn, setNn] = useState(''); const [msg, setMsg] = useState(''); const [sheet, setSheet] = useState(null);
+  const P = () => { const o = {}; types.forEach(t => { o[t] = (prog[t] || []).map(x => ({ e: x[0], n: x[1] })); }); return o; };
+  const save = (tp, pr, pl) => { const f = { seanceTypes: tp, programme: pr }; if (pl) f.planning = pl; Store.patch('cfg', null, f); };
+  const upd = (t, fn) => { const o = P(); o[t] = fn(o[t] || []); save(types, o); };
+  const exists = (v, but) => types.some(x => x !== but && x.toLowerCase() === v.toLowerCase());
+  const addType = () => { const v = nn.trim().slice(0, 24); if (!v) return; if (exists(v)) { setMsg('Une séance porte déjà ce nom.'); return; } const o = P(); o[v] = []; save(types.concat(v), o); setNn(''); setMsg(''); setOpen(v); };
+  const rename = (old, nw) => {
+    if (exists(nw, old)) { setMsg('Une séance porte déjà ce nom.'); return; }
+    const o = P(); o[nw] = o[old]; delete o[old]; const pl = Object.assign({}, cfg.planning); Object.keys(pl).forEach(k => { if (pl[k] === old) pl[k] = nw; });
+    save(types.map(x => (x === old ? nw : x)), o, pl); setOpen(nw); setMsg('Renommée. Les séances déjà faites gardent l’ancien nom.');
+  };
+  const delType = t => { if (types.length <= 1) { setMsg('Garde au moins une séance.'); return; } const o = P(); delete o[t]; const pl = Object.assign({}, cfg.planning); Object.keys(pl).forEach(k => { if (pl[k] === t) pl[k] = ''; }); save(types.filter(x => x !== t), o, pl); setMsg('Séance supprimée. Ses jours du planning passent en repos.'); };
+  const reset = () => { Store.patch('cfg', null, { seanceTypes: null, programme: null, planning: Apex.DEFAULT_CFG.planning }); setMsg('Programme et planning par défaut rétablis.'); };
+  const swap = (t, i, k) => upd(t, a => { const b = a.slice(); const x = b[i]; b[i] = b[k]; b[k] = x; return b; });
+  return html`<div className="stack">
+    <p className="mut" style=${{ fontSize: 12 }}>Crée, renomme et réordonne tes séances, choisis leurs exercices et le nombre de séries. Le planning de la semaine se règle dans l’onglet Profil.</p>
+    ${types.map(t => { const list = prog[t] || [], on = open === t; return html`<article key=${t} className="meal">
+      <button type="button" className="meal-h" style=${{ width: '100%', textAlign: 'left', gridTemplateColumns: 'minmax(0, 1fr) auto' }} aria-expanded=${on} onClick=${() => setOpen(on ? '' : t)}>
+        <div className="meal-t"><b>${t}</b><span>${list.length} exercice${list.length > 1 ? 's' : ''} · ${list.reduce((s, x) => s + x[1], 0)} séries</span></div><${Icon} n=${on ? 'up' : 'down'} s=${18} /></button>
+      ${on && html`<div className="its">
+        <div style=${{ padding: '10px 14px' }}><${Txt} id=${'tn-' + t} label="Nom de la séance" value=${t} max=${24} onCommit=${v => rename(t, v)} /></div>
+        ${list.map((x, i) => { const e = exos[x[0]]; return html`<div key=${x[0] + '-' + i} className="it">
+          <div className="it-n"><b>${e ? e.n : x[0]}</b><span>${e ? (Apex.MUSCLES[e.m] || e.m) + ' · ' + e.lo + '–' + e.hi + ' rép.' : 'exercice supprimé'}</span></div>
+          <div className="row" style=${{ gap: 0, flexWrap: 'nowrap' }}>
+            <button type="button" className="ib sm" aria-label=${'Moins de séries : ' + (e ? e.n : x[0])} onClick=${() => upd(t, a => a.map((y, k) => (k === i ? { e: y.e, n: Math.max(1, y.n - 1) } : y)))}><${Icon} n="minus" s=${16} /></button>
+            <b className="num" style=${{ minWidth: 22, textAlign: 'center', fontSize: 17 }}>${x[1]}</b>
+            <button type="button" className="ib sm" aria-label=${'Plus de séries : ' + (e ? e.n : x[0])} onClick=${() => upd(t, a => a.map((y, k) => (k === i ? { e: y.e, n: Math.min(10, y.n + 1) } : y)))}><${Icon} n="plus" s=${16} /></button>
+            <button type="button" className="ib sm" aria-label="Monter" disabled=${i === 0} onClick=${() => swap(t, i, i - 1)}><${Icon} n="up" s=${16} /></button>
+            <button type="button" className="ib sm" aria-label="Descendre" disabled=${i === list.length - 1} onClick=${() => swap(t, i, i + 1)}><${Icon} n="down" s=${16} /></button>
+            <button type="button" className="ib sm" aria-label="Retirer de la séance" onClick=${() => upd(t, a => a.filter((_, k) => k !== i))}><${Icon} n="x" s=${16} /></button>
+          </div></div>`; })}
+        ${!list.length && html`<div className="empty" style=${{ padding: '10px 14px' }}><span>Séance vide. Ajoute des exercices.</span></div>`}
+        <div className="meal-f"><button type="button" className="btn sm ghost" onClick=${() => setSheet({ t })}><${Icon} n="plus" s=${16} />Exercice</button>
+          <${Confirm} label="Supprimer la séance" sure="Supprimer ?" cls="ghost" onYes=${() => delType(t)} /></div>
+      </div>`}
+    </article>`; })}
+    <div className="row"><input id="nt-name" className="inp grow" type="text" maxLength="24" placeholder="Nouvelle séance (Bras, Haut du corps…)" value=${nn} onChange=${e => { setNn(e.target.value); setMsg(''); }} onKeyDown=${e => { if (e.key === 'Enter') addType(); }} aria-label="Nom de la nouvelle séance" />
+      <button type="button" className="btn" disabled=${!nn.trim()} onClick=${addType}><${Icon} n="plus" s=${18} />Ajouter</button></div>
+    ${msg && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${msg}</p>`}
+    <div className="row sb"><button type="button" className="btn sm" onClick=${() => setSheet({ admin: true })}>Gérer mes exercices</button>
+      <${Confirm} label="Programme par défaut" sure="Tout rétablir ?" cls="ghost" onYes=${reset} /></div>
+    ${sheet && sheet.t && html`<${ExoSheet} exos=${exos} title=${'Ajouter à ' + sheet.t} onClose=${() => setSheet(null)} onPick=${id => upd(sheet.t, a => a.concat({ e: id, n: 3 }))} />`}
+    ${sheet && sheet.admin && html`<${ExoAdmin} onClose=${() => setSheet(null)} />`}
+  </div>`;
+}
+
+/* ---------- points faibles ---------- */
+const PRESETS = [['Dos', ['dos'], 14, 20, 2], ['Jambes', ['quad', 'isch', 'fess'], 12, 20, 2], ['Triceps', ['tri'], 10, 14, 2], ['Épaules arrière', ['dPost'], 8, 14, 2], ['Mollets', ['mol'], 8, 14, 2], ['Abdos', ['abd'], 6, 12, 2], ['Épaules avant', ['dAnt'], 6, 10, 2]];
+function FocusEditor() {
+  const st = useStore(), cfg = st.cfg(), GR = Apex.groupes(cfg), arr = Object.keys(GR).map(k => GR[k]);
+  const put = a => Store.patch('cfg', null, { focus: a });
+  const upd = (id, f) => put(arr.map(g => (g.id === id ? Object.assign({}, g, f) : g)));
+  const togM = (g, m) => { const has = g.m.indexOf(m) >= 0; if (has && g.m.length === 1) return; upd(g.id, { m: has ? g.m.filter(x => x !== m) : g.m.concat(m) }); };
+  const setMin = (g, v) => { if (v == null) return; const mn = Math.max(1, Math.round(v)); upd(g.id, { min: mn, max: Math.max(g.max, mn) }); };
+  const setMax = (g, v) => { if (v == null) return; upd(g.id, { max: Math.max(g.min, Math.round(v)) }); };
+  const have = arr.map(g => g.n.toLowerCase());
+  return html`<div className="stack">
+    <p className="mut" style=${{ fontSize: 12 }}>Tes muscles prioritaires. L’app compte les séries directes de la semaine pour chacun, prévient si le volume projeté ou la fréquence sont sous ta cible, et suit la force de son exercice le plus noté.</p>
+    ${arr.map(g => html`<article key=${g.id} className="meal"><div className="its" style=${{ borderTop: 0, padding: '12px 14px', display: 'grid', gap: 12 }}>
+      <div className="row sb"><div className="grow"><${Txt} id=${'fn-' + g.id} label="Nom" value=${g.n} max=${30} onCommit=${v => upd(g.id, { n: v })} /></div>
+        <${Confirm} label="Retirer" sure="Retirer ?" cls="ghost" onYes=${() => put(arr.filter(x => x.id !== g.id))} /></div>
+      <div className="stack"><span className="fld-l">Muscles comptés</span>
+        <div className="chips">${Object.keys(Apex.MUSCLES).map(m => html`<button key=${m} type="button" className="chip" aria-pressed=${g.m.indexOf(m) >= 0} onClick=${() => togM(g, m)}>${Apex.MUSCLES[m]}</button>`)}</div></div>
+      <div className="form f4">
+        <${Num} id=${'fmin-' + g.id} label="Séries min" value=${g.min} onChange=${v => setMin(g, v)} dec=${0} min=${1} max=${60} />
+        <${Num} id=${'fmax-' + g.id} label="Séries max" value=${g.max} onChange=${v => setMax(g, v)} dec=${0} min=${1} max=${80} />
+        <${Num} id=${'ffq-' + g.id} label="Fois / sem." value=${g.freq} onChange=${v => { if (v != null) upd(g.id, { freq: Math.max(1, Math.min(7, Math.round(v))) }); }} dec=${0} min=${1} max=${7} />
+        ${g.sub && html`<${Num} id=${'fsub-' + g.id} label=${'Min. « ' + g.sub.n + ' »'} value=${g.sub.min} onChange=${v => { if (v != null) upd(g.id, { sub: Object.assign({}, g.sub, { min: Math.max(1, Math.round(v)) }) }); }} dec=${0} min=${1} max=${40} />`}
+      </div>
+    </div></article>`)}
+    ${!arr.length && html`<div className="empty"><span><b>Aucun point faible.</b> Ajoutes-en : l’onglet Training affichera leur volume et leurs alertes.</span></div>`}
+    ${arr.length < 8 && html`<div className="stack"><span className="fld-l">Ajouter un groupe</span><div className="chips">
+      ${PRESETS.filter(p => have.indexOf(p[0].toLowerCase()) < 0).map(p => html`<button key=${p[0]} type="button" className="chip" onClick=${() => put(arr.concat({ id: 'g_' + Apex.uid(), n: p[0], m: p[1], min: p[2], max: p[3], freq: p[4] }))}><${Icon} n="plus" s=${14} />${p[0]}</button>`)}
+      <button type="button" className="chip" onClick=${() => put(arr.concat({ id: 'g_' + Apex.uid(), n: 'Nouveau groupe', m: ['pec'], min: 10, max: 16, freq: 2 }))}><${Icon} n="plus" s=${14} />Autre…</button></div></div>`}
+    <div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${cfg.focus ? 'Liste personnalisée' : 'Liste par défaut : pectoraux, biceps, deltoïdes latéraux'}</span>
+      ${cfg.focus && html`<${Confirm} label="Rétablir" sure="Rétablir la liste ?" cls="ghost" onYes=${() => Store.patch('cfg', null, { focus: null })} />`}</div>
+  </div>`;
+}
+
+/* ---------- compléments ---------- */
+function SuppEditor() {
+  const st = useStore(), cfg = st.cfg(), L = Apex.supps(cfg); const [nn, setNn] = useState('');
+  const put = a => Store.patch('cfg', null, { supps: a });
+  const add = () => { const v = nn.trim().slice(0, 40); if (!v || L.length >= 16) return; put(L.concat({ id: 's_' + Apex.uid(), n: v, note: '' })); setNn(''); };
+  return html`<div className="stack">
+    <h3>Mes compléments</h3>
+    ${L.map(x => html`<div key=${x.id} className="row" style=${{ alignItems: 'end', flexWrap: 'nowrap' }}>
+      <div className="grow"><${Txt} id=${'sn-' + x.id} label="Nom" value=${x.n} max=${40} onCommit=${v => put(L.map(y => (y.id === x.id ? Object.assign({}, y, { n: v }) : y)))} /></div>
+      <div className="grow"><${Txt} id=${'so-' + x.id} label="Quand" value=${x.note} max=${40} placeholder="le soir, avec un repas…" onCommit=${v => put(L.map(y => (y.id === x.id ? Object.assign({}, y, { note: v }) : y)))} /></div>
+      <button type="button" className="ib" aria-label=${'Retirer ' + x.n} onClick=${() => put(L.filter(y => y.id !== x.id))}><${Icon} n="trash" s=${18} /></button></div>`)}
+    ${!L.length && html`<p className="mut" style=${{ fontSize: 13 }}>Aucun complément.</p>`}
+    <div className="row"><input id="sp-new" className="inp grow" type="text" maxLength="40" placeholder="Nouveau complément (magnésium, caféine…)" value=${nn} onChange=${e => setNn(e.target.value)} onKeyDown=${e => { if (e.key === 'Enter') add(); }} aria-label="Nom du nouveau complément" />
+      <button type="button" className="btn" disabled=${!nn.trim()} onClick=${add}><${Icon} n="plus" s=${18} />Ajouter</button></div>
+    ${cfg.supps && html`<div className="row"><${Confirm} label="Liste par défaut" sure="Rétablir ?" cls="ghost" onYes=${() => put(null)} /></div>`}
+  </div>`;
+}
+
+/* ---------- aliments perso ---------- */
+function FoodsEditor() {
+  const st = useStore(), cfg = st.cfg(); const [f, setF] = useState({ n: '', k: null, p: null, g: null, l: null, f: null, r: '' });
+  const mine = Object.keys(cfg.aliments || {}).filter(k => k.indexOf('u_') === 0).map(k => cfg.aliments[k]);
+  const ok = f.n.trim() && f.k != null;
+  const add = () => {
+    if (!ok) return; const id = 'u_' + Apex.uid();
+    Store.patch('cfg', null, { aliments: Object.assign({}, cfg.aliments, { [id]: { id, n: f.n.trim().slice(0, 60), c: 'perso', r: f.r, k: f.k, p: f.p || 0, g: f.g || 0, l: f.l || 0, f: f.f || 0, d: 100, u: null } }) });
+    setF({ n: '', k: null, p: null, g: null, l: null, f: null, r: '' }); toast('Aliment ajouté à ta base');
+  };
+  const del = id => { const a = Object.assign({}, cfg.aliments); delete a[id]; Store.patch('cfg', null, { aliments: a }); };
+  return html`<div className="stack">
+    <h3>Mes aliments (pour 100 g)</h3>
+    ${mine.map(x => html`<div key=${x.id} className="mini"><span><b style=${{ color: 'var(--ink)', fontWeight: 500 }}>${x.n}</b><br />${f0(x.k)} kcal · P ${fq(x.p)} · G ${fq(x.g)} · L ${fq(x.l)}${x.u ? ' · par portion' : ''}</span><span></span>
+      <${Confirm} label="Retirer" sure="Retirer ?" cls="ghost" onYes=${() => del(x.id)} /></div>`)}
+    ${!mine.length && html`<p className="mut" style=${{ fontSize: 13 }}>Aucun aliment perso. Ajoute ceux que tu manges souvent : ils apparaissent dans la recherche d’aliments.</p>`}
+    <label className="fld" htmlFor="uf-n"><span className="fld-l">Nom</span><input id="uf-n" className="inp" type="text" maxLength="60" placeholder="Poulet rôti, Skyr vanille…" value=${f.n} onChange=${e => setF(Object.assign({}, f, { n: e.target.value }))} /></label>
+    <div className="form f4">
+      <${Num} id="uf-k" label="kcal" value=${f.k} onChange=${v => setF(Object.assign({}, f, { k: v }))} dec=${0} min=${0} max=${950} />
+      <${Num} id="uf-p" label="Protéines" value=${f.p} onChange=${v => setF(Object.assign({}, f, { p: v }))} dec=${1} min=${0} max=${100} />
+      <${Num} id="uf-g" label="Glucides" value=${f.g} onChange=${v => setF(Object.assign({}, f, { g: v }))} dec=${1} min=${0} max=${100} />
+      <${Num} id="uf-l" label="Lipides" value=${f.l} onChange=${v => setF(Object.assign({}, f, { l: v }))} dec=${1} min=${0} max=${100} />
+    </div>
+    <label className="fld" htmlFor="uf-r"><span className="fld-l">Rôle dans le recalage du plan</span><select id="uf-r" className="inp" value=${f.r} onChange=${e => setF(Object.assign({}, f, { r: e.target.value }))}>
+      <option value="">Neutre : quantité jamais modifiée</option><option value="P">Protéines : ajustable pour tenir la cible</option><option value="G">Glucides : ajustable pour boucler les kcal</option><option value="L">Lipides : ajustable</option></select></label>
+    <button type="button" className="btn wide" disabled=${!ok} onClick=${add}><${Icon} n="plus" s=${18} />Ajouter à ma base</button>
+  </div>`;
+}
+
 /* ---- 70-ui-app.js ---- */
 /* ApexHQ — coque : en-tête (jour + statut), onglets, réglages et données, démarrage. */
 const STANDALONE = !!window.APEX_STANDALONE;
@@ -2051,7 +2260,7 @@ const JOURS = [[1, 'Lundi'], [2, 'Mardi'], [3, 'Mercredi'], [4, 'Jeudi'], [5, 'V
 
 function SettingsSheet({ onClose }) {
   const st = useStore(), cfg = st.cfg(), sy = st.sync(), foods = Apex.allFoods(cfg);
-  const [imp, setImp] = useState(''); const [msg, setMsg] = useState(''); const [dump, setDump] = useState('');
+  const [sec, setSec] = useState('profil'); const [imp, setImp] = useState(''); const [msg, setMsg] = useState(''); const [dump, setDump] = useState('');
   const setP = k => v => { if (v != null) Store.patch('cfg', null, { profil: Object.assign({}, cfg.profil, { [k]: v }) }); };
   const setC = (s, k) => v => { if (v == null) return; const o = Object.assign({}, cfg.cibles[s], { [k]: v }); o.g = Math.max(0, Math.round((o.kcal - o.p * 4 - o.l * 9) / 4)); Store.patch('cfg', null, { cibles: Object.assign({}, cfg.cibles, { [s]: o }) }); };
   const setFood = (id, k) => v => { if (v == null) return; const f = Object.assign({}, foods[id]); if (k === 'dose') f.u = [f.u[0].replace(/[\d.,]+ ?g/, fq(v) + ' g'), v]; else f[k] = v; f.etq = 0; Store.patch('cfg', null, { aliments: Object.assign({}, cfg.aliments, { [id]: f }) }); };
@@ -2068,7 +2277,10 @@ function SettingsSheet({ onClose }) {
     <${Num} id=${'c-' + s + '-l'} label="Lipides" unit="g" value=${cfg.cibles[s].l} onChange=${setC(s, 'l')} dec=${0} min=${cfg.cibles.planchers.l} max=${200} />
     <div className="fld"><span className="fld-l">Glucides</span><div className="inp" style=${{ display: 'grid', alignItems: 'center' }}>${cfg.cibles[s].g} g</div></div>
   </div>`;
+  const SECS = [['profil', 'Profil'], ['seances', 'Séances'], ['focus', 'Points faibles'], ['repas', 'Repas'], ['data', 'Données']];
   return html`<${Sheet} title="Réglages et données" onClose=${onClose}>
+    <div className="chips" role="group" aria-label="Sections">${SECS.map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${sec === x[0]} onClick=${() => setSec(x[0])}>${x[1]}</button>`)}</div>
+    ${sec === 'profil' && html`<${React.Fragment}>
     <h3>Profil</h3>
     <div className="form">
       <${Num} id="p-taille" label="Taille" unit="cm" value=${cfg.profil.taille} onChange=${setP('taille')} dec=${1} min=${120} max=${230} />
@@ -2084,9 +2296,15 @@ function SettingsSheet({ onClose }) {
     <h3>Planning hebdo</h3>
     <div className="form">${JOURS.map(d => html`<label key=${d[0]} className="fld" htmlFor=${'pl-' + d[0]}><span className="fld-l">${d[1]}</span>
       <select id=${'pl-' + d[0]} className="inp" value=${cfg.planning[d[0]] || ''} onChange=${e => Store.patch('cfg', null, { planning: Object.assign({}, cfg.planning, { [d[0]]: e.target.value }) })}>
-        <option value="">Repos</option>${Apex.TYPES.map(t => html`<option key=${t} value=${t}>${t}</option>`)}</select></label>`)}
+        <option value="">Repos</option>${Apex.types(cfg).map(t => html`<option key=${t} value=${t}>${t}</option>`)}</select></label>`)}
       <label className="fld" htmlFor="pl-ph"><span className="fld-l">Jour photos</span><select id="pl-ph" className="inp" value=${cfg.photosJour} onChange=${e => Store.patch('cfg', null, { photosJour: +e.target.value })}>${JOURS.map(d => html`<option key=${d[0]} value=${d[0]}>${d[1]}</option>`)}</select></label>
     </div>
+    <//>`}
+    ${sec === 'seances' && html`<${SeancesEditor} />`}
+    ${sec === 'focus' && html`<${FocusEditor} />`}
+    ${sec === 'repas' && html`<${React.Fragment}>
+    <${SuppEditor} />
+    <${FoodsEditor} />
     <h3>Étiquettes Prozis · pour 100 g</h3>
     ${['clearwhey', 'wheychoco'].map(id => { const f = foods[id]; return html`<div key=${id} className="stack">
       <span className="fld-l">${f.n}<b>${f.etq ? 'valeurs par défaut' : 'calé sur l’étiquette'}</b></span>
@@ -2097,6 +2315,8 @@ function SettingsSheet({ onClose }) {
         <${Num} id=${id + '-l'} label="Lip." value=${f.l} onChange=${setFood(id, 'l')} dec=${1} min=${0} max=${100} />
         <${Num} id=${id + '-d'} label="Dose g" value=${f.u[1]} onChange=${setFood(id, 'dose')} dec=${0} min=${5} max=${100} />
       </div></div>`; })}
+    <//>`}
+    ${sec === 'data' && html`<${React.Fragment}>
     <h3>Données</h3>
     <div className="note"><${Icon} n="info" /><div><span>${sy.mode === 'ok' ? 'Synchronisé avec la base privée de ton compte Claude, et copié sur cet appareil.' : sy.mode === 'local' ? (STANDALONE ? 'Tout est enregistré sur ce téléphone, sans compte ni serveur. Si tu désinstalles l’app ou effaces les données du navigateur, tout disparaît : exporte régulièrement.' : 'Enregistré sur cet appareil uniquement : cette vue n’a pas accès à la base du compte.') : sy.mode === 'err' ? 'La base du compte ne répond pas (' + (sy.err || 'erreur') + '). Les saisies restent sur cet appareil et repartiront à la prochaine ouverture.' : 'Connexion à la base du compte en cours. Les saisies sont gardées sur cet appareil.'}${st.pendingKeys() ? ' ' + st.pendingKeys() + ' modification(s) en attente d’envoi.' : ''}</span></div></div>
     <div className="row">
@@ -2108,6 +2328,7 @@ function SettingsSheet({ onClose }) {
     <textarea id="imp-txt" className="inp" placeholder="Colle ici le contenu d’un export ApexHQ pour l’importer" value=${imp} onChange=${e => setImp(e.target.value)} aria-label="Contenu JSON à importer"></textarea>
     <button type="button" className="btn wide" disabled=${!imp.trim()} onClick=${doImp}><${Icon} n="upload" s=${18} />Importer et fusionner</button>
     ${msg && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${msg}</p>`}
+    <//>`}
   <//>`;
 }
 
