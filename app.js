@@ -1094,9 +1094,10 @@ const AI = (() => {
   const K_ANTH = 'apexhq:key', K_GEM = 'apexhq:gkey', K_GMODEL = 'apexhq:gmodel';
   const ls = { get: k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set: (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) { /* stockage indisponible */ } } };
   const K_CONS = 'apexhq:iaok';
-  const embedded = () => !!window.APEX_GKEY, consent = () => ls.get(K_CONS), setConsent = v => ls.set(K_CONS, v);
+  const RELAY = '__relay__';
+  const embedded = () => !!(window.APEX_GKEY || window.APEX_RELAY), consent = () => ls.get(K_CONS), setConsent = v => ls.set(K_CONS, v);
   const getKey = () => ls.get(K_ANTH), setKey = k => ls.set(K_ANTH, k), ownG = () => ls.get(K_GEM);
-  const getGKey = () => ls.get(K_GEM) || (embedded() && consent() === '1' ? window.APEX_GKEY : ''), setGKey = k => { ls.set(K_GEM, k); ls.set(K_GMODEL, ''); };
+  const getGKey = () => ls.get(K_GEM) || (embedded() && consent() === '1' ? (window.APEX_GKEY || RELAY) : ''), setGKey = k => { ls.set(K_GEM, k); ls.set(K_GMODEL, ''); };
   const fail = (code, message, text) => { const e = new Error(message); e.code = code; e.text = text; return e; };
   const NO_FALLBACK = ['cancelled', 'invalid_json', 'refused', 'empty_completion', 'invalid_request', 'prompt_too_large'];
   let last = '';
@@ -1141,6 +1142,7 @@ const AI = (() => {
   /* ---------- Gemini (clé gratuite Google AI Studio) ---------- */
   const GBASE = 'https://generativelanguage.googleapis.com/v1beta/';
   async function gmodel() {
+    if (getGKey() === RELAY) return 'relay';
     try { const c = JSON.parse(ls.get(K_GMODEL) || 'null'); if (c && c.m && Date.now() - c.t < 6048e5) return c.m; } catch (e) { /* cache illisible */ }
     try {
       const r = await fetch(GBASE + 'models?pageSize=200&key=' + encodeURIComponent(getGKey()));
@@ -1156,7 +1158,19 @@ const AI = (() => {
     const o = {}; Object.keys(s).forEach(k => { if (k === 'additionalProperties' || k === '$schema') return; o[k] = k === 'type' && typeof s[k] === 'string' ? s[k].toUpperCase() : (k === 'properties' ? Object.keys(s[k]).reduce((a, p) => { a[p] = gschema(s[k][p]); return a; }, {}) : gschema(s[k])); });
     return o;
   };
+  /* Relais Google (Apps Script) : la clé reste secrète côté Google, l'app n'envoie que son identifiant et la demande. */
+  const cid = () => { let c = ls.get('apexhq:cid'); if (!c) { c = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(36).padStart(2, '0')).join('').slice(0, 24); ls.set('apexhq:cid', c); } return c; };
+  async function relayCall(body, signal) {
+    let r;
+    try { r = await fetch(window.APEX_RELAY, { method: 'POST', signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ cid: cid(), body }) }); }
+    catch (e) { throw (e && e.name === 'AbortError') ? fail('cancelled', 'Annulé') : fail('upstream_error', 'Relais injoignable'); }
+    const j = await r.json().catch(() => null);
+    if (!j) throw fail('upstream_error', 'Réponse du relais illisible');
+    if (j.error) { const st = j.error.status; throw fail(st === 'RELAY_LIMIT' || st === 'RESOURCE_EXHAUSTED' || j.error.code === 429 ? 'rate_limited' : 'upstream_error', j.error.message || 'Erreur du relais'); }
+    return j;
+  }
   async function gcall(model, body, signal) {
+    if (getGKey() === RELAY) return relayCall(body, signal);
     let r;
     try { r = await fetch(GBASE + 'models/' + model + ':generateContent?key=' + encodeURIComponent(getGKey()), { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); }
     catch (e) { throw (e && e.name === 'AbortError') ? fail('cancelled', 'Annulé') : fail('upstream_error', 'Réseau indisponible'); }
@@ -1222,7 +1236,7 @@ const AI = (() => {
 const aiMsg = e => {
   const c = e && e.code;
   if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].indexOf(c) >= 0) return AI.hasAny() ? 'Clé refusée ou IA indisponible. Vérifie tes clés dans Réglages, section IA.' : 'Aucune IA connectée. Ajoute-en une dans Réglages, section IA.';
-  if (c === 'rate_limited') return window.APEX_STANDALONE ? 'Quota gratuit atteint pour le moment. Réessaie plus tard, ou ajoute une 2e IA dans Réglages. Le reste de l’app fonctionne normalement.' : 'Ton quota Claude est atteint. L’IA revient quand il se réinitialise ; le reste de l’app fonctionne normalement.';
+  if (c === 'rate_limited') return window.APEX_STANDALONE ? 'Quota gratuit atteint pour le moment. Réessaie dans un moment : le reste de l’app fonctionne normalement.' : 'Ton quota Claude est atteint. L’IA revient quand il se réinitialise ; le reste de l’app fonctionne normalement.';
   if (c === 'session_expired') return 'Session expirée : reconnecte-toi à Claude.';
   if (c === 'refused' || c === 'empty_completion' || c === 'invalid_json') return 'Réponse inexploitable. Reformule avec aliments et quantités.';
   if (c === 'cancelled') return '';
