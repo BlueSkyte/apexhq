@@ -346,8 +346,8 @@ table.dt { border-collapse: collapse; width: 100%; font-size: 13px; font-variant
 </style>
 </head><body>
 <div id="app" class="app"><p style="padding:48px 16px;color:#85847e;font-family:system-ui,sans-serif">Chargement d’ApexHQ…</p></div>
-<script>window.APEX_STANDALONE = true;</script>
+<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261112144834';</script>
 <script src="vendor/react.min.js"></script><script src="vendor/react-dom.min.js"></script><script src="vendor/htm.js"></script>
 <script src="app.js"></script>
-<script>if ('serviceWorker' in navigator) window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });</script>
+<script>if ('serviceWorker' in navigator) { var had = !!navigator.serviceWorker.controller, done = false; navigator.serviceWorker.addEventListener('controllerchange', function () { if (had && !done) { done = true; location.reload(); } }); window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').then(function (r) { r.update(); }).catch(function () {}); }); }</script>
 </body></html>

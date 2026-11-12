@@ -2318,6 +2318,7 @@ function SettingsSheet({ onClose }) {
     <//>`}
     ${sec === 'data' && html`<${React.Fragment}>
     <h3>Données</h3>
+    <p className="mut" style=${{ fontSize: 12 }}>Version : ${window.APEX_VERSION ? 'app autonome ' + window.APEX_VERSION : 'version Claude'}</p>
     <div className="note"><${Icon} n="info" /><div><span>${sy.mode === 'ok' ? 'Synchronisé avec la base privée de ton compte Claude, et copié sur cet appareil.' : sy.mode === 'local' ? (STANDALONE ? 'Tout est enregistré sur ce téléphone, sans compte ni serveur. Si tu désinstalles l’app ou effaces les données du navigateur, tout disparaît : exporte régulièrement.' : 'Enregistré sur cet appareil uniquement : cette vue n’a pas accès à la base du compte.') : sy.mode === 'err' ? 'La base du compte ne répond pas (' + (sy.err || 'erreur') + '). Les saisies restent sur cet appareil et repartiront à la prochaine ouverture.' : 'Connexion à la base du compte en cours. Les saisies sont gardées sur cet appareil.'}${st.pendingKeys() ? ' ' + st.pendingKeys() + ' modification(s) en attente d’envoi.' : ''}</span></div></div>
     <div className="row">
       <button type="button" className="btn grow" onClick=${exp}><${Icon} n="download" s=${18} />Exporter en JSON</button>
