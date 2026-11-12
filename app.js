@@ -281,7 +281,7 @@ const Apex = (() => {
     const m = mac(it, foods), key = f.r === 'P' ? 'p' : f.r === 'G' ? 'g' : f.r === 'L' ? 'l' : null;
     return Object.keys(foods).map(id => foods[id]).filter(o => o.id !== f.id && (key ? o.r === f.r : (o.c === f.c && !o.r))).map(o => {
       let gr = key && o[key] > 0 ? m[key] / o[key] * 100 : grams(it, f);
-      if (f.c === 'ecart') gr = 100;
+      if (f.c === 'ecart' || f.est) gr = it.q * 100; // plats par portion : on garde le même nombre de portions
       let q = arrondi(o.u ? gr / o.u[1] : gr, o); if (!(q > 0)) q = o.u ? pas(o, 1) : 5;
       const nm = mac({ a: o.id, q }, foods);
       return { f: o, q, m: nm, dk: nm.k - m.k, same: o.c === f.c ? 0 : 1 };
@@ -1053,6 +1053,236 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   }
 
   Object.assign(A, { EQUIP, EQMODES, eqOk, dureeSeance, zonesSensibles, adapterSeance, validerSeanceIA });
+})();
+
+/* ---- 12b-foods-world.js ---- */
+/* ApexHQ — base de plats, chaînes et produits du monde. Valeurs MOYENNES par portion (flag est) : à corriger avec l'étiquette si besoin.
+   Chaque ligne : [id, nom, mots de recherche, protéines g, glucides g, lipides g, fibres g, unité, (kcal imposées pour l'alcool)].
+   Les kcal sont calculées (4 P + 4 G + 9 L) pour rester cohérentes. Étend le moteur Apex. */
+(function () {
+  'use strict';
+  const A = Apex;
+  const W = (cat, rows) => rows.forEach(x => {
+    const k = x[8] != null ? x[8] : Math.round((4 * x[3] + 4 * x[4] + 9 * x[5]) / 5) * 5;
+    A.FOODS['w_' + x[0]] = { id: 'w_' + x[0], n: x[1], al: x[2] || '', c: cat, r: '', k, p: x[3], g: x[4], l: x[5], f: x[6] || 0, d: 1, u: [x[7] || 'portion', 100], etq: 0, est: 1, alc: x[8] != null ? 1 : 0 };
+  });
+
+  /* ---------- fast-food et chaînes ---------- */
+  W('fast', [
+    ['mcdo_double_cheese', 'Double cheeseburger (McDonald’s)', 'mcdo macdo mc do', 25, 34, 23, 2, 'burger'], ['mcdo_bigtasty', 'Big Tasty (McDonald’s)', 'mcdo macdo bacon', 38, 50, 52, 3, 'burger'],
+    ['mcdo_filet_fish', 'Filet-O-Fish (McDonald’s)', 'mcdo macdo poisson', 16, 38, 14, 2, 'burger'], ['mcdo_nuggets9', 'McNuggets ×9', 'mcdo macdo nuggets poulet', 24, 25, 23, 2, 'boîte'],
+    ['mcdo_mcwrap', 'McWrap poulet (McDonald’s)', 'mcdo macdo wrap', 24, 45, 20, 3, 'wrap'], ['mcdo_frites_grandes', 'Grande frite (McDonald’s)', 'mcdo macdo frites', 6, 56, 24, 5, 'portion'],
+    ['mcdo_potatoes', 'Potatoes (McDonald’s)', 'mcdo macdo potatoes', 3, 33, 14, 3, 'portion'], ['mcdo_mcflurry', 'McFlurry Oreo', 'mcdo macdo glace', 7, 48, 13, 1, 'pot'],
+    ['mcdo_mcmuffin', 'Egg McMuffin', 'mcdo macdo petit dejeuner', 17, 29, 13, 2, 'muffin'], ['mcdo_salade_cesar', 'Salade César poulet (McDonald’s)', 'mcdo macdo salade', 28, 14, 18, 3, 'salade'],
+    ['bk_whopper', 'Whopper (Burger King)', 'bk burger king', 28, 49, 40, 3, 'burger'], ['bk_long_chicken', 'Long Chicken (Burger King)', 'bk burger king poulet', 21, 48, 25, 3, 'burger'],
+    ['bk_chicken_royal', 'Chicken Royal (Burger King)', 'bk burger king poulet', 24, 52, 26, 3, 'burger'], ['bk_king_fries', 'King Fries moyennes (Burger King)', 'bk burger king frites', 4, 42, 16, 4, 'portion'],
+    ['bk_onion_rings', 'Onion rings ×9 (Burger King)', 'bk burger king oignons', 4, 34, 15, 3, 'portion'],
+    ['kfc_tenders3', 'Tenders ×3 (KFC)', 'kfc poulet pane', 26, 18, 17, 1, 'portion'], ['kfc_wings4', 'Hot wings ×4 (KFC)', 'kfc ailes poulet', 24, 14, 21, 1, 'portion'],
+    ['kfc_zinger', 'Zinger burger (KFC)', 'kfc poulet burger', 25, 42, 23, 2, 'burger'], ['kfc_twister', 'Twister (KFC)', 'kfc wrap poulet', 21, 44, 24, 3, 'wrap'],
+    ['kfc_pilon', 'Pilon de poulet frit (KFC)', 'kfc poulet frit', 14, 7, 12, 0, 'pilon'], ['kfc_coleslaw', 'Coleslaw (KFC)', 'kfc salade chou', 1, 13, 9, 2, 'portion'],
+    ['crousty_chicken', 'Crousty chicken (sandwich poulet pané)', 'crousty crousty game poulet pane sandwich quick', 25, 47, 26, 3, 'sandwich'], ['quick_giant', 'Giant (Quick)', 'quick burger', 28, 41, 36, 3, 'burger'],
+    ['quick_long_chicken', 'Long Chicken (Quick)', 'quick poulet', 21, 46, 26, 3, 'burger'],
+    ['subway_15_teriyaki', 'Sub 15 cm poulet teriyaki (Subway)', 'subway sandwich', 26, 55, 6, 4, 'sub'], ['subway_15_thon', 'Sub 15 cm thon (Subway)', 'subway sandwich', 22, 47, 17, 4, 'sub'],
+    ['subway_30_teriyaki', 'Sub 30 cm poulet teriyaki (Subway)', 'subway sandwich', 52, 110, 12, 8, 'sub'], ['subway_cookie', 'Cookie (Subway)', 'subway biscuit', 2, 30, 10, 1, 'cookie'],
+    ['fiveguys_cheeseburger', 'Cheeseburger (Five Guys)', 'five guys burger', 47, 40, 55, 3, 'burger'], ['fiveguys_little', 'Little cheeseburger (Five Guys)', 'five guys burger', 27, 40, 28, 2, 'burger'],
+    ['fiveguys_frites_s', 'Frites petites (Five Guys)', 'five guys frites', 7, 70, 25, 6, 'portion'],
+    ['pizza_margherita_part', 'Pizza margherita (part 1/8)', 'pizza dominos pizza hut', 10, 29, 8, 2, 'part'], ['pizza_4fromages_part', 'Pizza 4 fromages (part 1/8)', 'pizza quatre fromages', 12, 27, 14, 2, 'part'],
+    ['pizza_reine_part', 'Pizza reine jambon champignons (part 1/8)', 'pizza', 12, 28, 8, 2, 'part'], ['pizza_pepperoni_part', 'Pizza pepperoni (part 1/8)', 'pizza chorizo', 11, 27, 12, 2, 'part'],
+    ['pizza_calzone', 'Calzone', 'pizza chausson', 35, 90, 30, 5, 'calzone'], ['pizza_margherita_entiere', 'Pizza margherita entière (30 cm)', 'pizza entiere', 80, 232, 64, 14, 'pizza'],
+    ['pizza_surgelee', 'Pizza surgelée margherita (350 g)', 'pizza supermarche', 28, 105, 28, 6, 'pizza'],
+    ['tacos_l_2viandes', 'Tacos L 2 viandes', 'o tacos tacos francais', 55, 95, 60, 6, 'tacos'], ['tacos_xl_3viandes', 'Tacos XL 3 viandes', 'o tacos tacos francais', 70, 105, 80, 7, 'tacos'],
+    ['kebab_assiette', 'Assiette kebab (viande, frites, salade)', 'kebab grec assiette', 45, 85, 60, 7, 'assiette'], ['kebab_durum', 'Dürüm (kebab)', 'durum kebab grec wrap', 36, 62, 28, 4, 'dürüm'],
+    ['kebab_frites', 'Frites kebab (portion)', 'frites', 5, 55, 25, 5, 'portion'], ['hotdog', 'Hot-dog', 'hot dog saucisse', 12, 26, 18, 2, 'hot-dog'],
+    ['club_sandwich', 'Club sandwich poulet bacon', 'club', 38, 45, 33, 4, 'sandwich'], ['cheeseburger_maison', 'Cheeseburger de restaurant (sans frites)', 'burger resto', 30, 35, 30, 3, 'burger'],
+    ['wrap_poulet_cesar', 'Wrap poulet César', 'wrap', 28, 45, 22, 3, 'wrap'], ['panini_poulet_fromage', 'Panini poulet fromage', 'panini', 28, 52, 22, 3, 'panini'],
+    ['croque_monsieur', 'Croque-monsieur', 'croque jambon fromage', 20, 28, 20, 2, 'croque'], ['croque_madame', 'Croque-madame', 'croque oeuf', 26, 28, 29, 2, 'croque'],
+    ['sandwich_jambon_beurre', 'Sandwich jambon-beurre (½ baguette)', 'jambon beurre baguette boulangerie', 20, 50, 22, 3, 'sandwich'], ['sandwich_poulet_crudites', 'Sandwich poulet crudités', 'sandwich boulangerie', 27, 50, 16, 4, 'sandwich'],
+    ['sandwich_thon_mayo', 'Sandwich thon mayonnaise', 'sandwich', 22, 48, 22, 3, 'sandwich'], ['sandwich_pain_mie', 'Sandwich de supermarché (pain de mie)', 'sandwich triangle', 17, 32, 14, 2, 'sandwich'],
+    ['bagel_saumon', 'Bagel saumon cream cheese', 'bagel', 24, 50, 18, 3, 'bagel'], ['bagel_nature', 'Bagel nature', 'bagel', 10, 55, 2, 3, 'bagel'],
+    ['quiche_lorraine_part', 'Quiche lorraine (part)', 'quiche tarte salee', 13, 20, 24, 1, 'part'], ['wings_bbq6', 'Wings BBQ ×6', 'ailes poulet barbecue', 36, 14, 28, 1, 'portion'],
+    ['cordon_bleu', 'Cordon bleu', 'poulet pane jambon fromage', 22, 18, 20, 1, 'pièce'], ['poutine', 'Poutine', 'frites fromage sauce canada', 25, 80, 40, 7, 'portion'],
+    ['fish_chips', 'Fish and chips', 'poisson pane frites angleterre', 40, 90, 48, 8, 'assiette'],
+    ['sushi_plateau12', 'Plateau sushi 12 pièces', 'sushi maki california', 24, 82, 12, 3, 'plateau'], ['maki_1', 'Maki saumon (1 pièce)', 'sushi maki', 1.5, 6, 0.5, 0.3, 'pièce'],
+    ['california_1', 'California roll (1 pièce)', 'sushi california', 1.5, 7, 2.5, 0.3, 'pièce'], ['sashimi_saumon3', 'Sashimi saumon (3 tranches, 60 g)', 'sashimi poisson cru', 12, 0, 7, 0, 'portion'],
+    ['chirashi', 'Chirashi (bol de riz au poisson)', 'sushi bol riz', 32, 95, 14, 3, 'bol'],
+  ]);
+
+  /* ---------- plats du monde ---------- */
+  W('plat', [
+    // France
+    ['pot_au_feu', 'Pot-au-feu (assiette)', 'boeuf legumes', 38, 28, 24, 6, 'assiette'], ['boeuf_bourguignon', 'Bœuf bourguignon (assiette)', 'daube', 35, 14, 30, 3, 'assiette'],
+    ['blanquette_veau', 'Blanquette de veau (assiette)', 'veau creme riz', 32, 17, 28, 2, 'assiette'], ['coq_au_vin', 'Coq au vin (assiette)', 'poulet vin', 36, 10, 25, 2, 'assiette'],
+    ['cassoulet', 'Cassoulet (assiette)', 'haricots saucisse canard', 42, 38, 40, 10, 'assiette'], ['choucroute', 'Choucroute garnie (assiette)', 'alsace saucisses', 45, 32, 50, 7, 'assiette'],
+    ['tartiflette', 'Tartiflette (assiette)', 'reblochon pommes de terre lardons', 32, 42, 58, 4, 'assiette'], ['raclette', 'Raclette (3 pommes de terre, fromage, charcuterie)', 'fromage', 45, 45, 65, 4, 'assiette'],
+    ['fondue_savoyarde', 'Fondue savoyarde (portion + pain)', 'fromage', 40, 25, 50, 2, 'portion'], ['gratin_dauphinois', 'Gratin dauphinois (portion)', 'pommes de terre creme', 8, 28, 20, 3, 'portion'],
+    ['hachis_parmentier', 'Hachis parmentier (portion)', 'puree viande', 25, 38, 24, 4, 'portion'], ['ratatouille', 'Ratatouille (assiette)', 'legumes provence', 3, 14, 9, 4, 'assiette'],
+    ['steak_frites', 'Steak frites', 'boeuf frites', 40, 62, 45, 6, 'assiette'], ['moules_frites', 'Moules frites', 'moules marinieres', 38, 85, 32, 7, 'assiette'],
+    ['poulet_roti_pdt', 'Poulet rôti et pommes de terre', 'cuisse poulet', 45, 30, 28, 4, 'assiette'], ['magret_canard', 'Magret de canard (150 g)', 'canard', 30, 0, 24, 0, 'magret'],
+    ['salade_nicoise', 'Salade niçoise', 'thon oeuf anchois', 22, 16, 26, 4, 'salade'], ['salade_chevre_chaud', 'Salade de chèvre chaud', 'fromage toast', 18, 28, 32, 4, 'salade'],
+    ['salade_cesar_poulet', 'Salade César poulet', 'caesar', 32, 20, 30, 3, 'salade'], ['soupe_legumes', 'Soupe de légumes (bol)', 'veloute potage', 3, 16, 3, 3, 'bol'],
+    ['soupe_oignon', 'Soupe à l’oignon gratinée', 'gratinee', 14, 30, 18, 3, 'bol'], ['omelette_3oeufs', 'Omelette nature (3 œufs)', 'oeufs', 22, 1, 25, 0, 'omelette'],
+    ['omelette_jambon_fromage', 'Omelette jambon fromage', 'oeufs', 32, 2, 36, 0, 'omelette'], ['oeufs_brouilles', 'Œufs brouillés (3 œufs)', 'oeufs', 20, 2, 24, 0, 'portion'],
+    ['galette_complete', 'Galette complète (jambon, œuf, fromage)', 'crepe bretonne ble noir', 25, 32, 25, 3, 'galette'], ['crepe_sucre', 'Crêpe au sucre', 'crepe', 4, 28, 6, 1, 'crêpe'],
+    ['crepe_nutella', 'Crêpe Nutella', 'crepe chocolat', 5, 38, 12, 2, 'crêpe'], ['crepe_confiture', 'Crêpe confiture', 'crepe', 4, 36, 5, 1, 'crêpe'],
+    ['pates_fromage', 'Pâtes au beurre et fromage (assiette)', 'pates', 18, 80, 20, 5, 'assiette'], ['saucisse_puree', 'Saucisse-purée', 'puree', 25, 40, 40, 4, 'assiette'],
+    ['porridge_bol', 'Porridge d’avoine au lait (bol)', 'flocons avoine', 12, 48, 8, 6, 'bol'], ['bol_acai', 'Bol açaï (granola, fruits)', 'acai bowl', 6, 70, 15, 8, 'bol'],
+    ['poke_saumon', 'Poke bowl saumon', 'poke bowl riz avocat', 30, 70, 22, 7, 'bol'], ['buddha_bowl', 'Buddha bowl (légumes, pois chiches, quinoa)', 'bowl vegetarien', 20, 65, 22, 12, 'bol'],
+    // Italie
+    ['spag_bolo', 'Spaghetti bolognaise (assiette)', 'pates viande', 30, 82, 22, 6, 'assiette'], ['carbonara', 'Pâtes carbonara (assiette)', 'spaghetti lardons creme', 30, 82, 34, 5, 'assiette'],
+    ['lasagnes', 'Lasagnes (portion)', 'lasagne', 27, 45, 28, 4, 'portion'], ['pates_pesto', 'Pâtes au pesto (assiette)', 'pesto', 20, 82, 28, 5, 'assiette'],
+    ['risotto_champignons', 'Risotto aux champignons', 'riz italien', 12, 70, 16, 3, 'assiette'], ['gnocchi_gorgonzola', 'Gnocchi gorgonzola', 'gnocchi', 20, 80, 30, 4, 'assiette'],
+    ['ravioli_epinards', 'Ravioli ricotta épinards (assiette)', 'raviolis', 18, 60, 14, 4, 'assiette'], ['parmigiana', 'Parmigiana d’aubergines', 'aubergine', 22, 18, 30, 5, 'portion'],
+    ['caprese', 'Salade caprese (tomate mozzarella)', 'mozzarella', 20, 6, 26, 2, 'assiette'], ['bruschetta2', 'Bruschetta ×2', 'tomate pain', 6, 32, 8, 3, 'portion'],
+    ['arancini2', 'Arancini ×2', 'croquettes riz', 14, 55, 16, 3, 'portion'], ['minestrone', 'Minestrone (bol)', 'soupe legumes', 7, 24, 5, 6, 'bol'],
+    ['osso_buco', 'Osso buco', 'veau', 38, 8, 18, 2, 'portion'],
+    // Espagne et Méditerranée
+    ['paella', 'Paella (assiette)', 'riz fruits de mer poulet', 32, 78, 18, 4, 'assiette'], ['tortilla_part', 'Tortilla espagnole (part)', 'omelette pommes de terre', 10, 16, 16, 2, 'part'],
+    ['gazpacho', 'Gazpacho (bol)', 'soupe tomate', 2, 12, 8, 2, 'bol'], ['patatas_bravas', 'Patatas bravas', 'tapas', 5, 45, 20, 4, 'portion'],
+    ['jamon_serrano50', 'Jambon serrano (50 g)', 'jambon cru tapas', 15, 0, 8, 0, 'portion'], ['churros4', 'Churros ×4', 'beignet', 6, 56, 18, 2, 'portion'],
+    ['moussaka', 'Moussaka (portion)', 'grece aubergine', 26, 22, 36, 5, 'portion'], ['gyros_pita', 'Gyros pita', 'grec sandwich', 32, 62, 30, 4, 'pita'],
+    ['salade_grecque', 'Salade grecque (feta, olives)', 'feta', 9, 10, 24, 4, 'salade'], ['tzatziki100', 'Tzatziki (100 g)', 'yaourt concombre', 4, 4, 6, 1, 'pot'],
+    ['souvlaki2', 'Souvlaki ×2 brochettes', 'brochettes porc', 38, 4, 24, 1, 'portion'],
+    // Moyen-Orient et Maghreb
+    ['houmous60', 'Houmous (60 g)', 'pois chiches', 5, 8, 10, 3, 'portion'], ['falafel4', 'Falafels ×4', 'pois chiches', 13, 30, 18, 6, 'portion'],
+    ['sandwich_falafel', 'Sandwich falafel', 'pita', 20, 70, 24, 9, 'sandwich'], ['taboule150', 'Taboulé (150 g)', 'semoule persil', 4, 28, 12, 3, 'portion'],
+    ['chawarma_assiette', 'Assiette chawarma poulet', 'shawarma', 45, 80, 40, 6, 'assiette'], ['shawarma_wrap', 'Shawarma wrap', 'chawarma sandwich', 32, 55, 28, 4, 'wrap'],
+    ['kefta3', 'Kefta ×3', 'boulettes viande', 28, 4, 28, 1, 'portion'], ['brochettes_agneau2', 'Brochettes d’agneau ×2', 'kebab', 34, 3, 24, 0, 'portion'],
+    ['baba_ganoush80', 'Baba ganoush (80 g)', 'aubergine', 2, 7, 8, 3, 'portion'], ['manakish', 'Manakish zaatar', 'pain libanais', 10, 55, 14, 3, 'pièce'],
+    ['couscous_royal', 'Couscous royal (assiette)', 'merguez agneau poulet', 55, 95, 38, 10, 'assiette'], ['couscous_poulet', 'Couscous poulet légumes', 'couscous', 38, 85, 16, 9, 'assiette'],
+    ['tajine_poulet_olives', 'Tajine poulet olives citron', 'tagine', 38, 22, 28, 4, 'assiette'], ['tajine_agneau_pruneaux', 'Tajine agneau pruneaux', 'tagine', 34, 45, 34, 5, 'assiette'],
+    ['pastilla_part', 'Pastilla au poulet (part)', 'bastilla', 20, 40, 25, 3, 'part'], ['harira', 'Harira (bol)', 'soupe marocaine', 10, 28, 7, 5, 'bol'],
+    ['brick_oeuf', 'Brick à l’œuf', 'tunisie', 10, 20, 16, 1, 'pièce'], ['merguez2', 'Merguez ×2', 'saucisse', 22, 2, 36, 0, 'portion'],
+    // Inde
+    ['poulet_tikka_masala', 'Poulet tikka masala (assiette)', 'curry indien', 38, 15, 34, 3, 'assiette'], ['poulet_tandoori2', 'Poulet tandoori ×2 morceaux', 'indien', 40, 5, 15, 1, 'portion'],
+    ['butter_chicken', 'Butter chicken (assiette)', 'poulet beurre indien', 35, 18, 40, 3, 'assiette'], ['dal', 'Dal de lentilles (bol)', 'dhal indien', 14, 38, 8, 9, 'bol'],
+    ['riz_basmati_cuit200', 'Riz basmati cuit (200 g)', 'riz', 5, 56, 1, 1, 'portion'], ['naan_nature', 'Naan nature', 'pain indien', 8, 46, 5, 2, 'naan'],
+    ['naan_fromage', 'Naan au fromage', 'pain indien cheese naan', 12, 52, 15, 2, 'naan'], ['samoussa2', 'Samoussas ×2', 'samosa legumes', 6, 36, 17, 3, 'portion'],
+    ['palak_paneer', 'Palak paneer', 'epinards fromage indien', 18, 14, 28, 5, 'assiette'], ['chana_masala', 'Chana masala', 'pois chiches curry', 14, 42, 12, 10, 'assiette'],
+    ['biryani_poulet', 'Biryani poulet (assiette)', 'riz epice', 34, 82, 20, 4, 'assiette'], ['raita', 'Raita (pot)', 'yaourt concombre', 3, 6, 3, 0.5, 'pot'],
+    ['lassi_mangue', 'Lassi mangue (verre)', 'boisson yaourt', 6, 38, 5, 1, 'verre'], ['dosa', 'Dosa nature', 'crepe indienne', 4, 28, 4, 2, 'dosa'],
+    ['pakora4', 'Pakoras ×4', 'beignets legumes', 6, 22, 14, 3, 'portion'],
+    // Asie
+    ['pad_thai', 'Pad thaï poulet', 'nouilles thailande', 28, 85, 25, 5, 'assiette'], ['riz_cantonais', 'Riz cantonais', 'riz sauté', 15, 78, 16, 3, 'assiette'],
+    ['nems4', 'Nems ×4', 'rouleaux imperiaux', 10, 38, 20, 3, 'portion'], ['rouleaux_printemps2', 'Rouleaux de printemps ×2', 'crevettes', 6, 30, 2, 3, 'portion'],
+    ['bobun', 'Bo bun (bol)', 'vietnam nouilles', 30, 85, 25, 6, 'bol'], ['pho', 'Pho (bol)', 'soupe vietnamienne boeuf', 28, 60, 9, 3, 'bol'],
+    ['ramen', 'Ramen (bol)', 'soupe japonaise nouilles', 28, 75, 20, 4, 'bol'], ['soupe_miso', 'Soupe miso', 'japon', 3, 4, 2, 1, 'bol'],
+    ['gyoza5', 'Gyoza ×5', 'raviolis japonais', 10, 28, 11, 2, 'portion'], ['tempura_crevettes3', 'Tempura de crevettes ×3', 'beignets', 12, 20, 14, 1, 'portion'],
+    ['poulet_teriyaki_riz', 'Poulet teriyaki et riz', 'japon', 38, 82, 16, 3, 'assiette'], ['katsu_curry', 'Katsu curry (porc pané, riz)', 'japon', 35, 110, 38, 6, 'assiette'],
+    ['bibimbap', 'Bibimbap', 'coree riz legumes oeuf', 25, 90, 15, 6, 'bol'], ['kimchi50', 'Kimchi (50 g)', 'coree chou', 1, 3, 0, 1, 'portion'],
+    ['curry_vert_thai', 'Curry vert thaï poulet (sans riz)', 'thailande lait de coco', 30, 20, 36, 4, 'assiette'], ['poulet_aigre_douce', 'Poulet aigre-douce et riz', 'chinois', 28, 80, 22, 3, 'assiette'],
+    ['boeuf_oignons_riz', 'Bœuf sauté aux oignons et riz', 'chinois', 32, 78, 22, 3, 'assiette'], ['canard_laque', 'Canard laqué (portion)', 'chinois', 30, 20, 32, 1, 'portion'],
+    ['porc_caramel', 'Porc au caramel (portion)', 'vietnam', 30, 28, 32, 1, 'portion'], ['nouilles_sautees_poulet', 'Nouilles sautées au poulet', 'chow mein', 28, 78, 20, 5, 'assiette'],
+    ['beignets_crevettes4', 'Beignets de crevettes ×4', 'chinois', 14, 25, 20, 1, 'portion'], ['dimsum4', 'Dim sum vapeur ×4', 'raviolis chinois', 12, 25, 8, 2, 'portion'],
+    ['bao_porc', 'Bao au porc', 'brioche vapeur', 12, 38, 12, 2, 'bao'], ['takoyaki6', 'Takoyaki ×6', 'poulpe japon', 12, 30, 12, 1, 'portion'],
+    ['okonomiyaki', 'Okonomiyaki', 'crepe japonaise chou', 22, 50, 26, 4, 'pièce'], ['onigiri', 'Onigiri (1)', 'boule de riz', 4, 38, 1, 1, 'pièce'],
+    ['mochi2', 'Mochis ×2', 'patisserie japonaise', 3, 44, 1, 1, 'portion'], ['satay4', 'Satay poulet ×4 brochettes', 'cacahuete', 28, 10, 20, 2, 'portion'],
+    ['nasi_goreng', 'Nasi goreng', 'riz indonesien', 28, 85, 22, 4, 'assiette'], ['laksa', 'Laksa (bol)', 'soupe malaisie', 25, 65, 28, 4, 'bol'],
+    ['tom_yum', 'Tom yum (bol)', 'soupe thai crevettes', 14, 8, 5, 1, 'bol'], ['banh_mi', 'Bánh mì', 'sandwich vietnamien', 22, 65, 20, 4, 'sandwich'],
+    ['riz_blanc_cuit150', 'Riz blanc cuit (150 g)', 'riz', 4, 42, 0.5, 0.5, 'portion'],
+    // Amériques
+    ['burrito_poulet', 'Burrito poulet', 'mexicain tortilla', 35, 85, 26, 9, 'burrito'], ['tacos_mex2', 'Tacos mexicains ×2', 'tortilla', 20, 36, 18, 5, 'portion'],
+    ['quesadilla', 'Quesadilla poulet fromage', 'mexicain', 32, 45, 36, 3, 'quesadilla'], ['fajitas_poulet', 'Fajitas poulet (2 tortillas)', 'mexicain', 36, 60, 20, 6, 'portion'],
+    ['nachos', 'Nachos fromage', 'mexicain chips', 20, 70, 40, 7, 'portion'], ['guacamole50', 'Guacamole (50 g)', 'avocat', 1, 4, 7, 3, 'portion'],
+    ['chili_con_carne', 'Chili con carne (assiette)', 'mexicain haricots', 30, 40, 20, 9, 'assiette'], ['enchiladas2', 'Enchiladas ×2', 'mexicain', 30, 60, 34, 6, 'portion'],
+    ['empanada', 'Empanada', 'chausson argentine', 10, 30, 16, 2, 'pièce'], ['ceviche', 'Ceviche (portion)', 'poisson cru perou', 25, 10, 5, 1, 'portion'],
+    ['arepa', 'Arepa au fromage', 'colombie venezuela', 12, 38, 16, 3, 'pièce'], ['mac_cheese', 'Mac and cheese (portion)', 'macaroni fromage', 20, 60, 25, 3, 'portion'],
+    ['pancakes3', 'Pancakes ×3 avec sirop', 'americain petit dejeuner', 10, 78, 14, 2, 'portion'], ['ribs_bbq', 'Ribs barbecue (portion)', 'cotes porc', 55, 25, 55, 1, 'portion'],
+    // Afrique
+    ['mafe_poulet', 'Mafé poulet et riz', 'arachide senegal', 38, 62, 34, 5, 'assiette'], ['yassa_poulet', 'Poulet yassa et riz', 'senegal oignons', 38, 70, 22, 5, 'assiette'],
+    ['thieboudienne', 'Thieboudienne', 'riz poisson senegal', 36, 85, 28, 8, 'assiette'], ['attieke_poisson', 'Attiéké poisson braisé', 'cote d ivoire', 34, 80, 18, 4, 'assiette'],
+    ['jollof', 'Riz jollof', 'riz nigeria', 12, 80, 14, 3, 'assiette'], ['plantain_frit', 'Plantain frit (alloco)', 'banane', 1, 40, 15, 3, 'portion'],
+    ['fufu_soupe', 'Fufu et soupe', 'afrique', 22, 100, 18, 6, 'assiette'], ['injera_wot', 'Injera et wot', 'ethiopie', 24, 78, 20, 8, 'assiette'],
+    ['poulet_dg', 'Poulet DG (plantain)', 'cameroun', 35, 60, 30, 5, 'assiette'],
+    // Europe centrale et nord
+    ['pierogi6', 'Pierogi ×6', 'pologne raviolis', 14, 55, 10, 4, 'portion'], ['bortsch', 'Bortsch (bol)', 'soupe betterave', 6, 22, 6, 4, 'bol'],
+    ['schnitzel_pdt', 'Schnitzel et pommes de terre', 'escalope panee allemagne', 45, 60, 40, 5, 'assiette'], ['currywurst_frites', 'Currywurst et frites', 'allemagne saucisse', 28, 85, 55, 7, 'assiette'],
+    ['pretzel', 'Bretzel', 'allemagne', 9, 64, 4, 3, 'pièce'], ['smorrebrod', 'Smørrebrød (tartine danoise)', 'danemark', 20, 22, 16, 3, 'tartine'],
+    ['kottbullar8', 'Boulettes suédoises ×8', 'ikea kottbullar', 24, 18, 28, 2, 'portion'], ['welsh', 'Welsh', 'cheddar biere', 40, 40, 60, 3, 'assiette'],
+    ['burger_vegetarien', 'Burger végétarien', 'veggie burger', 18, 52, 22, 6, 'burger'],
+    // plats préparés
+    ['sodebo_pates_poulet', 'Salade pâtes poulet (type Sodebo, 320 g)', 'sodebo salade repas', 22, 48, 25, 4, 'barquette'], ['lasagnes_surgelees', 'Lasagnes surgelées (300 g)', 'plat prepare', 21, 41, 21, 3, 'barquette'],
+    ['hachis_barquette', 'Hachis parmentier (barquette 300 g)', 'plat prepare', 18, 36, 17, 3, 'barquette'], ['quiche_surgelee', 'Quiche lorraine surgelée (part)', 'plat prepare', 9, 17, 18, 1, 'part'],
+  ]);
+
+  /* ---------- desserts et pâtisseries ---------- */
+  W('dessert', [
+    ['tiramisu_part', 'Tiramisu (part)', 'dessert italien', 7, 38, 24, 1, 'part'], ['panna_cotta', 'Panna cotta', 'dessert italien', 4, 28, 20, 0, 'pot'],
+    ['creme_brulee', 'Crème brûlée', 'dessert', 5, 24, 26, 0, 'ramequin'], ['mousse_chocolat', 'Mousse au chocolat', 'dessert', 6, 26, 20, 2, 'portion'],
+    ['profiteroles3', 'Profiteroles ×3', 'choux glace chocolat', 8, 40, 28, 2, 'portion'], ['eclair_chocolat', 'Éclair au chocolat', 'patisserie boulangerie', 5, 32, 12, 1, 'pièce'],
+    ['paris_brest', 'Paris-Brest', 'patisserie', 8, 40, 30, 2, 'pièce'], ['tarte_citron_part', 'Tarte au citron (part)', 'patisserie', 5, 40, 16, 1, 'part'],
+    ['tarte_pommes_part', 'Tarte aux pommes (part)', 'patisserie', 3, 38, 12, 2, 'part'], ['fondant_chocolat', 'Fondant au chocolat', 'moelleux gateau', 6, 34, 22, 2, 'pièce'],
+    ['gateau_chocolat_part', 'Gâteau au chocolat (part)', 'gateau', 5, 40, 20, 2, 'part'], ['millefeuille', 'Mille-feuille', 'patisserie', 5, 38, 22, 1, 'pièce'],
+    ['macaron1', 'Macaron (1)', 'patisserie', 1, 10, 3, 0.5, 'pièce'], ['religieuse', 'Religieuse', 'patisserie', 6, 38, 20, 1, 'pièce'],
+    ['ile_flottante', 'Île flottante', 'dessert', 8, 36, 8, 0, 'portion'], ['riz_au_lait', 'Riz au lait (pot)', 'dessert', 6, 32, 6, 0.5, 'pot'],
+    ['baklava2', 'Baklavas ×2', 'patisserie orientale', 5, 36, 20, 2, 'portion'], ['loukoum3', 'Loukoums ×3', 'confiserie', 0.5, 38, 0, 0, 'portion'],
+    ['magnum', 'Glace Magnum', 'glace baton', 3, 28, 15, 1, 'glace'], ['cornetto', 'Cornetto', 'glace cornet', 3, 28, 10, 1, 'glace'],
+    ['ben_jerrys100', 'Glace Ben & Jerry’s (100 ml)', 'glace', 4, 24, 13, 0.5, 'portion'], ['sorbet2', 'Sorbet (2 boules)', 'glace fruits', 0.5, 38, 0, 1, 'portion'],
+    ['creme_dessert', 'Crème dessert (pot)', 'danette flan', 4, 22, 3, 0, 'pot'], ['yaourt_fruits', 'Yaourt aux fruits', 'yaourt', 4, 16, 2, 0, 'pot'],
+    ['yaourt_nature', 'Yaourt nature', 'yaourt', 5, 7, 2, 0, 'pot'], ['compote_pot', 'Compote (pot 100 g)', 'pomme', 0.4, 17, 0.2, 1.5, 'pot'],
+    ['crumble_pommes', 'Crumble aux pommes', 'dessert', 3, 45, 12, 2, 'portion'], ['beignet_pomme', 'Beignet aux pommes', 'fete foraine', 4, 30, 14, 1, 'pièce'],
+    ['galette_rois_part', 'Galette des rois (part)', 'frangipane', 5, 35, 22, 1, 'part'], ['buche_part', 'Bûche de Noël (part)', 'noel', 4, 38, 18, 1, 'part'],
+    ['panettone_part', 'Panettone (part)', 'noel italie', 4, 38, 10, 1, 'part'], ['cannele', 'Cannelé', 'bordeaux', 2, 18, 5, 0.5, 'pièce'],
+    ['madeleine', 'Madeleine', 'gateau', 1.5, 11, 5, 0.3, 'pièce'], ['pain_raisin', 'Pain aux raisins', 'viennoiserie', 5, 40, 12, 2, 'pièce'],
+    ['chausson_pommes', 'Chausson aux pommes', 'viennoiserie', 4, 36, 15, 2, 'pièce'], ['brioche_tranche', 'Brioche (tranche)', 'petit dejeuner', 3, 22, 5, 1, 'tranche'],
+    ['kouign_amann_part', 'Kouign-amann (part)', 'bretagne', 4, 35, 22, 1, 'part'], ['gaufre_liege', 'Gaufre de Liège', 'belgique', 6, 48, 14, 1, 'pièce'],
+    ['tablette_chocolat_noir', 'Chocolat noir (4 carrés, 20 g)', 'chocolat', 2, 7, 9, 2, 'portion'], ['chocolat_lait20', 'Chocolat au lait (20 g)', 'chocolat', 1.5, 11, 6, 0.3, 'portion'],
+  ]);
+
+  /* ---------- boissons ---------- */
+  W('boisson', [
+    ['coca_zero', 'Coca-Cola Zéro / Light (33 cl)', 'soda sans sucre', 0, 0, 0, 0, 'canette'], ['jus_orange25', 'Jus d’orange (25 cl)', 'jus fruits', 1.5, 25, 0.3, 0.5, 'verre'],
+    ['jus_pomme25', 'Jus de pomme (25 cl)', 'jus fruits', 0.3, 28, 0, 0, 'verre'], ['lait_demi_verre', 'Lait demi-écrémé (verre 25 cl)', 'lait', 8, 12, 4, 0, 'verre'],
+    ['lait_amande25', 'Lait d’amande (25 cl)', 'boisson vegetale', 0.8, 1, 2.5, 0.3, 'verre'], ['lait_avoine25', 'Lait d’avoine (25 cl)', 'boisson vegetale oatly', 0.8, 16, 1.5, 0.5, 'verre'],
+    ['cafe_noir', 'Café noir', 'expresso', 0.2, 0, 0, 0, 'tasse'], ['cafe_lait', 'Café au lait', 'noisette', 3, 4, 3, 0, 'tasse'],
+    ['cappuccino', 'Cappuccino', 'cafe', 5, 7, 4, 0, 'tasse'], ['latte_starbucks', 'Latte (Starbucks, 35 cl)', 'starbucks cafe', 9, 15, 8, 0, 'gobelet'],
+    ['frappuccino', 'Frappuccino (Starbucks)', 'starbucks', 5, 60, 15, 0, 'gobelet'], ['chocolat_chaud', 'Chocolat chaud (tasse)', 'boisson', 7, 24, 7, 1, 'tasse'],
+    ['the_nature', 'Thé ou infusion nature', 'the', 0, 0, 0, 0, 'tasse'], ['redbull25', 'Red Bull (25 cl)', 'energy drink boisson energisante', 0.5, 27, 0, 0, 'canette'],
+    ['monster50', 'Monster (50 cl)', 'energy drink boisson energisante', 0, 53, 0, 0, 'canette'], ['icetea33', 'Ice tea (33 cl)', 'the glace', 0, 25, 0, 0, 'canette'],
+    ['orangina33', 'Orangina / Fanta (33 cl)', 'soda', 0, 31, 0, 0, 'canette'], ['smoothie25', 'Smoothie fruits (25 cl)', 'jus', 1.5, 32, 0.5, 2, 'verre'],
+    ['bubble_tea', 'Bubble tea', 'the perles tapioca', 2, 60, 5, 0.5, 'gobelet'],
+    ['champagne12', 'Champagne (12 cl)', 'alcool', 0.1, 1.5, 0, 0, 'verre', 90], ['mojito', 'Mojito', 'cocktail alcool', 0.2, 20, 0, 0, 'verre', 200],
+    ['whisky4', 'Whisky (4 cl)', 'alcool spiritueux', 0, 0, 0, 0, 'dose', 90], ['vodka4', 'Vodka (4 cl)', 'alcool spiritueux', 0, 0, 0, 0, 'dose', 90],
+    ['pastis', 'Pastis (2 cl + eau)', 'alcool ricard', 0, 0, 0, 0, 'verre', 70], ['sangria', 'Sangria (verre)', 'alcool', 0.2, 14, 0, 0, 'verre', 150],
+    ['gin_tonic', 'Gin tonic', 'cocktail alcool', 0, 14, 0, 0, 'verre', 170], ['biere_pression50', 'Bière pression (50 cl)', 'alcool demi', 1.5, 15, 0, 0, 'verre', 210],
+    ['cidre25', 'Cidre (25 cl)', 'alcool', 0.2, 14, 0, 0, 'verre', 120], ['rhum_coca', 'Rhum-coca', 'cocktail alcool', 0, 20, 0, 0, 'verre', 200],
+    ['aperol_spritz', 'Spritz (Aperol)', 'cocktail alcool', 0.1, 14, 0, 0, 'verre', 140], ['porto5', 'Porto (5 cl)', 'alcool', 0, 6, 0, 0, 'verre', 80],
+  ]);
+
+  /* ---------- snacks et produits du quotidien ---------- */
+  W('snack', [
+    ['corn_flakes30', 'Corn flakes (30 g)', 'cereales petit dejeuner', 2.5, 25, 0.3, 0.8, 'portion'], ['granola50', 'Granola (50 g)', 'cereales', 5, 32, 11, 3, 'portion'],
+    ['muesli50', 'Muesli (50 g)', 'cereales', 5.5, 32, 4, 4, 'portion'], ['chocapic30', 'Céréales chocolatées (30 g)', 'chocapic nesquik cereales', 2.5, 23, 1.5, 1, 'portion'],
+    ['pain_mie_tranche', 'Pain de mie (tranche)', 'toast', 2.5, 13, 1, 0.8, 'tranche'], ['tartine_beurre_confiture', 'Tartine beurre confiture', 'petit dejeuner', 3, 30, 5, 1.5, 'tartine'],
+    ['nutella20', 'Pâte à tartiner chocolat-noisette (20 g)', 'nutella', 1, 11.5, 6.2, 0.5, 'portion'], ['chips30', 'Chips (30 g)', 'apero', 2, 15, 10, 1, 'portion'],
+    ['popcorn30', 'Popcorn (30 g)', 'cinema', 3, 19, 6, 3, 'portion'], ['snickers', 'Snickers (50 g)', 'barre chocolatee', 4, 31, 12, 1, 'barre'],
+    ['kinder_bueno', 'Kinder Bueno', 'barre chocolatee', 3.5, 22, 14, 1, 'barre'], ['twix2', 'Twix (2 barres)', 'barre chocolatee', 2.5, 31, 12, 1, 'portion'],
+    ['mars', 'Mars', 'barre chocolatee', 2.5, 33, 9, 1, 'barre'], ['barre_cereales', 'Barre de céréales', 'snack', 1.5, 17, 3, 1, 'barre'],
+    ['petit_beurre3', 'Petits-beurre ×3', 'biscuits', 1.5, 19, 3, 0.5, 'portion'], ['oreo3', 'Oreo ×3', 'biscuits', 1, 21, 6.5, 0.5, 'portion'],
+    ['bn2', 'BN ×2', 'biscuits', 1.5, 21, 4, 0.5, 'portion'], ['camembert30', 'Camembert (30 g)', 'fromage', 6, 0.3, 7.5, 0, 'portion'],
+    ['saucisson3', 'Saucisson sec (3 tranches)', 'charcuterie apero', 5.5, 0.5, 7, 0, 'portion'], ['chorizo30', 'Chorizo (30 g)', 'charcuterie apero', 7.5, 0.5, 10, 0, 'portion'],
+    ['fruits_secs30', 'Mélange fruits secs et noix (30 g)', 'noix cajou amandes raisins', 4, 11, 12, 2, 'portion'], ['dattes3', 'Dattes ×3', 'fruit sec', 1, 30, 0.3, 3, 'portion'],
+    ['pain_chocolat_barre', 'Barre protéinée chocolat', 'proteine snack', 20, 20, 8, 5, 'barre'], ['cookie_proteine', 'Cookie protéiné', 'proteine snack', 15, 25, 9, 4, 'pièce'],
+  ]);
+
+  /* ---------- catégories (chips de l'écran d'ajout) ---------- */
+  const i = A.CATS.findIndex(c => c[0] === 'ecart');
+  A.CATS.splice(i < 0 ? A.CATS.length : i, 0, ['fast', 'Fast-food'], ['plat', 'Plats du monde'], ['dessert', 'Desserts'], ['boisson', 'Boissons'], ['snack', 'Snacks']);
+
+  /* ---------- recherche dans la base : sert à l'écran d'ajout et au coach (qui ne reçoit que les correspondances) ---------- */
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const MOTS_VIDES = ['j', 'ai', 'mange', 'manger', 'bu', 'pris', 'un', 'une', 'le', 'la', 'les', 'de', 'du', 'des', 'et', 'avec', 'sans', 'ce', 'cet', 'cette', 'midi', 'soir', 'matin', 'hier', 'aujourd', 'hui', 'petit', 'grand', 'dejeuner', 'diner', 'repas', 'dans', 'sur', 'pour', 'en', 'au', 'aux', 'mon', 'ma', 'mes', 'avant', 'apres', 'gr', 'kcal', 'qui', 'que', 'pas', 'quelque', 'chose', 'existe', 'n', 'est', 'sont', 'plat', 'plats', 'tout', 'tous', 'bien', 'trop', 'encore', 'comme', 'fait', 'faire'];
+  function chercherAliments(foods, texte, max) {
+    const toks = Array.from(new Set(norm(texte).split(/[^a-z0-9]+/).filter(t => t.length >= 3 && MOTS_VIDES.indexOf(t) < 0 && !/^\d+$/.test(t))));
+    if (!toks.length) return [];
+    const out = [];
+    Object.keys(foods).forEach(k => {
+      const f = foods[k], hay = ' ' + norm(f.n + ' ' + (f.al || '')) + ' ';
+      let s = 0; toks.forEach(t => { if (hay.indexOf(' ' + t) >= 0) s += 2; else if (t.length >= 5 && hay.indexOf(t) >= 0) s += 1; });
+      if (s > 0) out.push([s, f]);
+    });
+    return out.sort((a, b) => b[0] - a[0] || a[1].n.length - b[1].n.length).slice(0, max || 20).map(x => x[1]);
+  }
+  Object.assign(A, { chercherAliments });
 })();
 
 /* ---- 13-meals-logic.js ---- */
@@ -2126,7 +2356,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
   const [fr, setFr] = useState({ n: '', k: null, p: null, g: null, l: null });
   const [ai, setAi] = useState({ txt: '', busy: false, res: null, err: '' });
   const sample = Store.caps().sample;
-  const list = Object.keys(foods).map(k => foods[k]).filter(f => (!cat || f.c === cat) && (!q || norm(f.n).indexOf(norm(q)) >= 0));
+  const list = Object.keys(foods).map(k => foods[k]).filter(f => (!cat || f.c === cat) && (!q || norm(f.n + ' ' + (f.al || '')).indexOf(norm(q)) >= 0));
   const pick = f => { onAdd({ a: f.id, q: f.d || (f.u ? 1 : 100) }); onClose(); };
   const addFree = () => {
     if (!fr.n.trim() || fr.k == null) return;
@@ -2153,9 +2383,10 @@ function AddSheet({ foods, title, onAdd, onClose }) {
       ${Apex.CATS.map(c => html`<button key=${c[0]} type="button" className="chip" aria-pressed=${cat === c[0]} onClick=${() => setCat(c[0])}>${c[1]}</button>`)}
     </div>
     <div className="lst">
-      ${list.length ? list.map(f => { const x = Apex.mac({ a: f.id, q: f.d || (f.u ? 1 : 100) }, foods); return html`<button key=${f.id} type="button" onClick=${() => pick(f)}>
-        <div><b>${f.n}</b><span>${fq(f.d || (f.u ? 1 : 100))} ${unitOf(f)} · ${macTxt(x)}${f.etq ? ' · à caler sur l’étiquette' : ''}</span></div><em>${f0(x.k)}<small>kcal</small></em></button>`; })
-      : html`<div className="empty" style=${{ padding: 14 }}>Rien dans la base. Utilise la saisie libre ci-dessous.</div>`}
+      ${list.length ? list.slice(0, 120).map(f => { const x = Apex.mac({ a: f.id, q: f.d || (f.u ? 1 : 100) }, foods); return html`<button key=${f.id} type="button" onClick=${() => pick(f)}>
+        <div><b>${f.n}</b><span>${fq(f.d || (f.u ? 1 : 100))} ${unitOf(f)} · ${macTxt(x)}${f.etq ? ' · à caler sur l’étiquette' : f.est ? ' · valeur moyenne' : ''}</span></div><em>${f0(x.k)}<small>kcal</small></em></button>`; })
+      : html`<div className="empty" style=${{ padding: 14 }}>Rien dans la base. Utilise l’estimation par l’IA ou la saisie libre ci-dessous.</div>`}
+      ${list.length > 120 && html`<p className="mut" style=${{ fontSize: 12, padding: '4px 2px' }}>${list.length - 120} autres résultats : précise ta recherche (ex. « kebab », « mcdo », « tajine »).</p>`}
     </div>
     <h3>Saisie libre</h3>
     <div className="form">
@@ -2561,7 +2792,7 @@ function Training({ date, setDate }) {
   const pick = v => { setView(v); lsSet('train:view', v); };
   return html`<div>
     <div className="view-h"><h1>Muscu · ${dMid(date)}</h1><p>${nS} séance${nS > 1 ? 's' : ''} par semaine · ${Apex.types(cfg).join(', ')}.${foc.length ? ' Priorité : ' + foc.join(', ').toLowerCase() + '.' : ''}</p></div>
-    <div className="ttabs" role="tablist" aria-label="Espace muscu">${[['seance', 'Séance', 'dumbbell'], ['prog', 'Programme', 'sliders'], ['suivi', 'Suivi', 'chart']].map(t => html`<button key=${t[0]} type="button" role="tab" aria-selected=${view === t[0]} className="ttab" onClick=${() => pick(t[0])}><${Icon} n=${t[2]} s=${18} />${t[1]}</button>`)}</div>
+    <div className="ttabs" role="tablist" aria-label="Espace muscu">${[['prog', 'Programme', 'sliders'], ['seance', 'Séance', 'dumbbell'], ['suivi', 'Suivi', 'chart']].map(t => html`<button key=${t[0]} type="button" role="tab" aria-selected=${view === t[0]} className="ttab" onClick=${() => pick(t[0])}><${Icon} n=${t[2]} s=${18} />${t[1]}</button>`)}</div>
     ${view === 'seance' && html`<div className="grid">
       <div className="c12"><${WeekBar} date=${date} setDate=${setDate} /></div>
       <${SeanceCard} date=${date} />
@@ -3177,6 +3408,7 @@ function coachRegles(cfg) {
     'Style : français, phrases courtes, chiffres, aucune motivation, aucune formule de politesse. Texte brut, sans Markdown ni tableau. 6 lignes maximum sauf demande de détail.',
     'Dès que l’utilisateur rapporte un repas, un écart, son poids, son sommeil, ses pas, son eau, des séries ou des mensurations : enregistre avec l’outil adapté, sans demander confirmation. N’invente jamais une donnée qu’il n’a pas donnée. Quantité floue : prends une portion standard et dis l’hypothèse en une ligne.',
     'Valeurs nutritionnelles : prends la base de l’app ci-dessous quand l’aliment y figure (poids cru), sinon Ciqual ou les valeurs officielles de l’enseigne. Donne des totaux pour la quantité réellement mangée. Si cru ou cuit n’est pas précisé pour un féculent ou une viande, suppose le poids cuit pour une assiette et dis-le.',
+    'Plat, produit ou enseigne absent de la base (plat du monde, fast-food, marque, recette maison) : ne refuse JAMAIS et ne réponds jamais « aliment non reconnu ». Utilise les valeurs de la liste « correspondant à la demande » si elle contient le plat, sinon estime toi-même les valeurs d’une portion standard (plat équivalent, valeurs officielles de l’enseigne, ou décomposition en ingrédients), enregistre-le avec l’outil et dis en une ligne que c’est une estimation. Pose une question seulement si la demande est vraiment incompréhensible.',
     'Outil ajouter_repas : remplace=true si ce qu’il a mangé REMPLACE le contenu prévu de ce repas, false s’il s’ajoute. mange=false seulement pour un repas à venir.',
     'Après un repas enregistré : total du jour face à la cible, puis le reste à manger en aliments concrets avec grammes. ' + ecart,
     'Jamais sous les planchers. Ni brûleur de graisse ni diurétique. Si l’utilisateur montre restriction extrême, culpabilité, compulsions ou obsession de la balance : arrête les chiffres, réponds avec bienveillance et oriente vers un professionnel de santé. Tu ne remplaces pas un médecin : pour un symptôme, une maladie ou un médicament, renvoie vers un professionnel de santé.',
@@ -3186,7 +3418,7 @@ function coachRegles(cfg) {
 }
 const COACH_SANS_OUTILS = 'Dans cette vue tu ne peux RIEN enregistrer : indique où saisir dans l’app (onglet Jour, Repas ou Training).';
 
-function coachContexte(date) {
+function coachContexte(date, question) {
   const S = Store.get(), cfg = Store.cfg(), foods = Apex.allFoods(cfg), exos = Apex.allExos(cfg), r = Math.round, q = v => (v == null ? '?' : v);
   const j = S.journal[date] || {}, c = Apex.cibleDuJour(cfg, j, date), t = Apex.totJour(j, foods), hier = Apex.addDays(date, -1), jh = S.journal[hier] || {}, th = Apex.totJour(jh, foods).reel;
   const type = Apex.seanceDuJour(cfg, j, date), cons = t.man || t.eat, L = [], p = cfg.profil, auj = Apex.today();
@@ -3214,7 +3446,9 @@ function coachContexte(date) {
     L.push('SÉANCE DU JOUR (' + (se ? (se.type || '') + (se.fin ? ', terminée' : ', en cours') : type + ', pas commencée') + ') :');
     list.forEach(x => { const e = exos[x[0]]; if (!e) return; const h = Apex.histoExo(S.seances, x[0]).filter(z => z.date < date), o = Apex.objectif(e, h.length ? h[h.length - 1] : null), done = x[1].filter(Apex.setFait); L.push('- ' + e.n + ' [id ' + e.id + '] objectif ' + o.txt + (done.length ? ' ; fait ' + setsTxt(done) : '')); });
   }
-  L.push('BASE D’ALIMENTS DE L’APP (kcal/P/G/L pour 100 g, poids cru) : ' + Object.keys(foods).map(k => foods[k]).filter(f => f.c !== 'ecart').map(f => f.n + (f.u ? ' [1 ' + f.u[0] + ' = ' + f.u[1] + ' g]' : '') + ' ' + f.k + '/' + f.p + '/' + f.g + '/' + f.l).join(' ; ') + '.');
+  const parPortion = f => f.est || f.c === 'ecart', base = Object.keys(foods).map(k => foods[k]).filter(f => !parPortion(f)), ext = Apex.chercherAliments(foods, question || '', 14).filter(f => parPortion(f));
+  L.push('BASE D’ALIMENTS DE L’APP (kcal/P/G/L pour 100 g, poids cru) : ' + base.map(f => f.n + (f.u ? ' [1 ' + f.u[0] + ' = ' + f.u[1] + ' g]' : '') + ' ' + f.k + '/' + f.p + '/' + f.g + '/' + f.l).join(' ; ') + '.');
+  if (ext.length) L.push('PLATS ET PRODUITS DE LA BASE CORRESPONDANT À LA DEMANDE (valeurs moyennes pour UNE portion) : ' + ext.map(f => f.n + ' [1 ' + f.u[0] + '] ' + f.k + ' kcal, P ' + f.p + ', G ' + f.g + ', L ' + f.l).join(' ; ') + '.');
   return L.join('\n');
 }
 
@@ -3321,7 +3555,7 @@ function Coach({ date }) {
     const toolsOk = !!(lim && lim.tools), acts = [], hist = msgs.filter(m => m.t).slice(-12); let cur = '';
     setMsgs(msgs.concat({ r: 'u', t: q }, { r: 'a', t: '', a: [], wait: true })); setTxt(''); setErr(''); setBusy(true);
     const upd = done => setMsgs(ms => { const c = ms.slice(), i = c.length - 1; if (i < 0 || c[i].r !== 'a') return ms; c[i] = { r: 'a', t: cur, a: acts.slice(), wait: !done && !cur }; return c; });
-    const turns = [{ role: 'user', content: coachRegles(Store.cfg()) + (toolsOk ? '' : '\n' + COACH_SANS_OUTILS) + '\n\nDONNÉES ACTUELLES DE L’APP\n' + coachContexte(date) }];
+    const turns = [{ role: 'user', content: coachRegles(Store.cfg()) + (toolsOk ? '' : '\n' + COACH_SANS_OUTILS) + '\n\nDONNÉES ACTUELLES DE L’APP\n' + coachContexte(date, q) }];
     hist.forEach(m => turns.push({ role: m.r === 'u' ? 'user' : 'assistant', content: m.t + (m.a && m.a.length ? '\n[Actions enregistrées : ' + m.a.map(a => a.lab + (a.undone ? ' (annulée)' : '')).join(' ; ') + ']' : '') }));
     turns.push({ role: 'user', content: q.slice(0, 4000) });
     if (ctl.current) ctl.current.abort(); ctl.current = new AbortController();
