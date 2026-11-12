@@ -43,6 +43,9 @@ const Apex = (() => {
     focus: null,
     supps: null,
     seanceTypes: null,
+    onboarded: null,
+    q: null,
+    claude: null,
   };
   const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
   const deep = (a, b) => { const o = Object.assign({}, a); for (const k in (b || {})) o[k] = isObj(a[k]) && isObj(b[k]) ? deep(a[k], b[k]) : b[k]; return o; };
@@ -641,6 +644,199 @@ const Apex = (() => {
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 
+/* ---- 11-onboard-logic.js ---- */
+/* ApexHQ — questionnaire : calories précises, programme de séances, plan repas adapté.
+   Étend le moteur Apex (fonctions pures, testées par test-onboard.js). */
+(function () {
+  'use strict';
+  const A = Apex, clamp = (v, a, b) => Math.max(a, Math.min(b, v)), rd = v => Math.round(v / 10) * 10;
+
+  /* ---------- aliments utiles aux régimes végétariens ---------- */
+  const F = (id, n, c, r, k, p, g, l, f, d) => { A.FOODS[id] = { id, n, c, r, k, p, g, l, f, d, u: null, etq: 0 }; };
+  F('tofu', 'Tofu ferme', 'prot', 'P', 140, 15, 2, 8, 1, 150);
+  F('seitan', 'Seitan', 'prot', 'P', 120, 24, 4, 2, 1, 150);
+  F('soja', 'Protéines de soja texturées (sec)', 'prot', 'P', 330, 50, 20, 2, 13, 40);
+  F('pois', 'Pois chiches cuits', 'feck', 'G', 120, 8, 18, 2.5, 5, 150);
+
+  /* ---------- objectifs ---------- */
+  const OBJECTIFS = [['seche', 'Sèche', 'Perdre du gras en gardant le muscle'], ['neutre', 'Maintien', 'Poids stable, recomposition'], ['masse', 'Prise de masse', 'Prendre du muscle avec peu de gras']];
+  const INTENSITES = {
+    seche: [['leger', 'Léger', 0.12, 'Environ −0,3 à −0,5 % du poids par semaine. Facile à tenir, faim modérée.'], ['normal', 'Normal', 0.2, 'Environ −0,5 à −0,7 % par semaine. Le meilleur compromis.'], ['agressif', 'Agressif', 0.28, 'Environ −0,8 à −1 % par semaine. Court terme : faim, fatigue, risque de perdre du muscle.']],
+    masse: [['leger', 'Lean', 0.05, 'Prise lente, très peu de gras.'], ['normal', 'Normal', 0.1, 'Prise régulière, un peu de gras.'], ['agressif', 'Rapide', 0.15, 'Prise rapide, plus de gras à reperdre ensuite.']],
+    neutre: [['normal', 'Maintien', 0, 'Calories égales à ta dépense.']],
+  };
+  const intensites = obj => INTENSITES[obj] || INTENSITES.neutre;
+
+  /* ---------- calories ---------- */
+  function calcPlan(q) {
+    const kg = q.poids, warn = [], n = clamp(Math.round(q.seances || 0), 0, 7);
+    const mg = A.num(q.mg) && q.mg >= 4 && q.mg <= 55 ? q.mg : null;
+    const bmr = mg != null ? 370 + 21.6 * kg * (1 - mg / 100) : 10 * kg + 6.25 * q.taille - 5 * q.age + (q.sexe === 'F' ? -161 : 5);
+    const jobF = { sedentaire: 1.2, debout: 1.3, actif: 1.45 }[q.metier] || 1.3, baseSteps = { sedentaire: 5000, debout: 7500, actif: 10000 }[q.metier] || 7500;
+    const pas = A.num(q.pas) ? q.pas : baseSteps;
+    const stepsK = clamp((pas - baseSteps) * 0.045 * kg / 75, -250, 900);
+    const trainK = n * 4 * kg * ((A.num(q.duree) ? q.duree : 60) / 60) / 7, cardioK = (A.num(q.cardio) ? q.cardio : 0) * 4 * kg / 60 / 7;
+    const tdee = bmr * jobF + stepsK + trainK + cardioK, obj = q.objectif || 'seche';
+    const list = intensites(obj), it = list.find(x => x[0] === q.intensite) || list[0];
+    let delta = obj === 'seche' ? -tdee * it[2] : obj === 'masse' ? tdee * it[2] : 0;
+    if (obj === 'seche') { const cap = 0.01 * kg * 7700 / 7; if (-delta > cap) { delta = -cap; warn.push('Déficit plafonné à 1 % du poids par semaine.'); } }
+    const floor = Math.max(q.sexe === 'F' ? 1200 : 1500, 0.9 * bmr);
+    let avg = tdee + delta;
+    if (avg < floor) { avg = floor; delta = avg - tdee; warn.push('Calories relevées au plancher de sécurité (' + rd(floor) + ' kcal).'); }
+    const gkg = obj === 'seche' ? { leger: 2.0, normal: 2.2, agressif: 2.4 }[it[0]] : obj === 'masse' ? 1.8 : 1.9;
+    const lkg = obj === 'seche' ? (it[0] === 'agressif' ? 0.7 : 0.8) : obj === 'masse' ? 1.0 : 0.9;
+    let P = Math.round(gkg * kg); if (P * 4 > avg * 0.35) P = Math.round(avg * 0.35 / 4);
+    const L = Math.max(Math.round(0.6 * kg), Math.min(Math.round(lkg * kg), Math.round((avg - P * 4) * 0.5 / 9)));
+    let salleK = avg, reposK = avg;
+    if (n > 0 && n < 7) { salleK = avg * 1.05; reposK = (7 * avg - n * salleK) / (7 - n); if (reposK < floor) { reposK = floor; salleK = (7 * avg - (7 - n) * floor) / n; } }
+    const mk = k => { const kk = rd(k); return { kcal: kk, p: P, g: Math.max(0, Math.round((kk - 4 * P - 9 * L) / 4)), l: L }; };
+    const kgSem = delta * 7 / 7700;
+    return {
+      bmr, tdee, delta, avg, n, mg, it, warn, nap: tdee / bmr, kgSem, pctSem: kgSem / kg * 100,
+      salle: mk(salleK), repos: mk(reposK), planchers: { kcal: rd(floor), p: Math.round(P * 0.9 / 5) * 5, l: Math.min(L, Math.max(40, Math.round(0.65 * kg))) },
+      parts: { base: bmr * jobF, steps: stepsK, train: trainK, cardio: cardioK },
+    };
+  }
+  /* Config prête à écrire : profil + cibles issus du questionnaire. */
+  function planToCfg(q, plan) {
+    const pas = clamp(Math.round((q.pas || 8000) / 500) * 500, 6000, 14000), pasMin = q.objectif === 'seche' ? Math.max(10000, pas) : Math.max(7000, pas);
+    return {
+      profil: { sexe: q.sexe === 'F' ? 'F' : 'H', age: q.age, taille: q.taille, poidsDepart: q.poids, dateDepart: A.today(), poidsCible: A.num(q.poidsCible) ? q.poidsCible : q.poids, nap: +plan.nap.toFixed(2) },
+      cibles: { salle: plan.salle, repos: plan.repos, fibres: Math.max(25, Math.round(14 * plan.avg / 1000)), eau: clamp(Math.round(q.poids * 0.035 * 2) / 2, 2, 4.5), pasMin, pasMax: pasMin + 4000, sommeil: 7, planchers: plan.planchers },
+    };
+  }
+
+  /* ---------- points faibles proposés ---------- */
+  const FOCUS_CHOIX = [
+    ['pecH', 'Haut des pectoraux', { n: 'Pectoraux (haut)', m: ['pecH', 'pec'], min: 14, max: 20, freq: 2, sub: { m: 'pecH', n: 'haut', min: 9 } }],
+    ['pec', 'Pectoraux', { n: 'Pectoraux', m: ['pecH', 'pec'], min: 12, max: 18, freq: 2 }],
+    ['bic', 'Biceps', { n: 'Biceps', m: ['bic'], min: 10, max: 14, freq: 2 }],
+    ['tri', 'Triceps', { n: 'Triceps', m: ['tri'], min: 10, max: 14, freq: 2 }],
+    ['dLat', 'Épaules (faisceau latéral)', { n: 'Deltoïdes latéraux', m: ['dLat'], min: 12, max: 18, freq: 3 }],
+    ['dPost', 'Épaules arrière', { n: 'Épaules arrière', m: ['dPost'], min: 8, max: 14, freq: 2 }],
+    ['dos', 'Dos', { n: 'Dos', m: ['dos'], min: 14, max: 20, freq: 2 }],
+    ['quad', 'Cuisses (quadriceps)', { n: 'Quadriceps', m: ['quad'], min: 10, max: 16, freq: 2 }],
+    ['isch', 'Ischios et fessiers', { n: 'Ischios et fessiers', m: ['isch', 'fess'], min: 8, max: 14, freq: 2 }],
+    ['mol', 'Mollets', { n: 'Mollets', m: ['mol'], min: 8, max: 14, freq: 2 }],
+    ['abd', 'Abdos', { n: 'Abdos', m: ['abd'], min: 6, max: 12, freq: 2 }],
+  ];
+  const focusGroupes = keys => { const out = [], seen = {}; (keys || []).forEach(k => { const c = FOCUS_CHOIX.find(x => x[0] === k); if (!c) return; const g = Object.assign({ id: 'f_' + k }, c[2]); const key = g.m.join(); if (seen[key]) return; seen[key] = 1; out.push(g); }); return out; };
+
+  /* ---------- programme de séances ---------- */
+  const SPLITS = { ppl: ['Push / Pull / Legs', ['Push', 'Pull', 'Legs']], ul: ['Haut / Bas', ['Upper', 'Lower']], fb: ['Full body', ['Full body']], ppl_ul: ['PPL + Haut / Bas (5 jours)', ['Push', 'Pull', 'Legs', 'Upper', 'Lower']] };
+  const JOURS_ENT = { 1: [1], 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 5, 6], 6: [1, 2, 3, 4, 5, 6], 7: [1, 2, 3, 4, 5, 6, 0] };
+  const FULL = [['squat', 3], ['dc', 3], ['tractions', 3], ['dm_halt', 2], ['rdl', 2], ['curl_inc', 2], ['tri_corde', 2], ['el_halt', 3]];
+  const ISO = { pecH: 'ec_bh', pec: 'pec_deck', dLat: 'el_halt', dAnt: 'dm_halt', dPost: 'face_pull', bic: 'curl_inc', tri: 'tri_corde', dos: 'tir_horiz', quad: 'leg_ext', isch: 'leg_curl', fess: 'rdl', mol: 'mollets', abd: 'crunch' };
+  const SUBISO = { pecH: 'di_halt' };
+  const splitSuggere = n => (n <= 3 ? (n === 3 ? 'fb' : 'fb') : n === 4 ? 'ul' : n === 5 ? 'ppl_ul' : 'ppl');
+  function genProgramme(q, groupes, cfg) {
+    const ex = A.allExos(cfg), n = clamp(Math.round(q.seances || 0), 0, 7), base = (SPLITS[q.split] || SPLITS.ppl_ul)[1];
+    const planning = { 0: '', 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' };
+    const days = n ? JOURS_ENT[n] : [], seq = days.map((d, i) => base[i % base.length]);
+    days.forEach((d, i) => { planning[d] = seq[i]; });
+    const used = []; seq.forEach(t => { if (used.indexOf(t) < 0) used.push(t); });
+    if (!used.length) base.forEach(t => used.push(t));
+    const occ = {}; seq.forEach(t => { occ[t] = (occ[t] || 0) + 1; }); used.forEach(t => { if (!occ[t]) occ[t] = 1; });
+    const scale = { debutant: 0.75, intermediaire: 1, avance: 1.1 }[q.niveau] || 1, prog = {};
+    used.forEach(t => { const tpl = t === 'Full body' ? FULL : (A.PROG[t] || []); prog[t] = tpl.map(x => ({ e: x[0], n: clamp(Math.round(x[1] * scale), 2, 6) })); });
+    const has = (t, mus) => prog[t].some(x => ex[x.e] && mus.indexOf(ex[x.e].m) >= 0);
+    (groupes || []).forEach(g => {
+      if (g.sub) { // faisceau prioritaire (ex. haut des pecs) : on le sert d'abord avec des exercices dédiés
+        const sm = g.sub.m, sc = () => used.reduce((s, t) => s + occ[t] * prog[t].filter(x => ex[x.e] && ex[x.e].m === sm).reduce((a, x) => a + x.n, 0), 0);
+        for (let guard = 0; guard < 20 && sc() < g.sub.min; guard++) {
+          const cand = []; used.forEach(t => prog[t].forEach(x => { if (ex[x.e] && ex[x.e].m === sm && x.n < 5) cand.push([t, x]); }));
+          if (cand.length) { cand.sort((a, b) => a[1].n - b[1].n || occ[b[0]] - occ[a[0]]); cand[0][1].n++; continue; }
+          const id = SUBISO[sm] || ISO[sm]; if (!id || !ex[id]) break;
+          const tg = used.filter(t => !prog[t].some(x => x.e === id)).sort((a, b) => occ[b] - occ[a])[0]; if (!tg) break; prog[tg].push({ e: id, n: 3 });
+        }
+      }
+      const mus = g.m, cnt = () => used.reduce((s, t) => s + occ[t] * prog[t].filter(x => ex[x.e] && mus.indexOf(ex[x.e].m) >= 0).reduce((a, x) => a + x.n, 0), 0), freq = () => used.filter(t => has(t, mus)).reduce((s, t) => s + occ[t], 0);
+      for (let guard = 0; guard < 30 && (cnt() < g.min || freq() < (g.freq || 1)); guard++) {
+        if (cnt() < g.min && freq() >= (g.freq || 1)) {
+          const cand = []; used.forEach(t => prog[t].forEach(x => { if (ex[x.e] && mus.indexOf(ex[x.e].m) >= 0 && x.n < 5) cand.push([t, x]); }));
+          if (cand.length) { cand.sort((a, b) => a[1].n - b[1].n || occ[b[0]] - occ[a[0]]); cand[0][1].n++; continue; }
+        }
+        const isoId = mus.map(m => ISO[m]).find(id => id && ex[id]); if (!isoId) break;
+        const tg = used.filter(t => !has(t, mus) && !prog[t].some(x => x.e === isoId)).sort((a, b) => occ[b] - occ[a])[0] || used.filter(t => !prog[t].some(x => x.e === isoId)).sort((a, b) => occ[b] - occ[a])[0];
+        if (!tg) break; prog[tg].push({ e: isoId, n: 3 });
+      }
+    });
+    return { seanceTypes: used, programme: prog, planning };
+  }
+  /* Séries directes par semaine pour un groupe, d'après programme + planning. */
+  function volumeGroupe(res, g, cfg) {
+    const ex = A.allExos(cfg), occ = {}; Object.keys(res.planning).forEach(d => { const t = res.planning[d]; if (t) occ[t] = (occ[t] || 0) + 1; });
+    return Object.keys(res.programme).reduce((s, t) => s + (occ[t] || 0) * res.programme[t].filter(x => ex[x.e] && g.m.indexOf(ex[x.e].m) >= 0).reduce((a, x) => a + x.n, 0), 0);
+  }
+  /* Valide la réponse de l'IA : renvoie un programme propre ou null. */
+  function validerProgrammeIA(r, n, cfg) {
+    try {
+      const ex = A.allExos(cfg); if (!r || !Array.isArray(r.seances) || r.seances.length < 1 || r.seances.length > 7 || !r.planning) return null;
+      const names = [], prog = {};
+      for (const s of r.seances) {
+        const nom = String(s.nom || '').trim().slice(0, 24); if (!nom || names.some(x => x.toLowerCase() === nom.toLowerCase()) || !Array.isArray(s.exercices)) return null;
+        const list = s.exercices.map(x => ({ e: String(x.id), n: Math.round(Number(x.series)) })).filter(x => ex[x.e] && x.n >= 1 && x.n <= 8);
+        if (list.length < 3 || list.length > 12) return null; names.push(nom); prog[nom] = list;
+      }
+      const planning = { 0: '', 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' }; let days = 0;
+      for (const d of Object.keys(r.planning)) { const k = Number(d); if (!(k >= 0 && k <= 6)) return null; const v = String(r.planning[d] || '').trim(); if (v) { const m = names.find(x => x.toLowerCase() === v.toLowerCase()); if (!m) return null; planning[k] = m; days++; } }
+      if (days !== n) return null;
+      return { seanceTypes: names, programme: prog, planning };
+    } catch (e) { return null; }
+  }
+
+  /* ---------- régime, exclusions, plan repas ---------- */
+  const norm0 = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const KEYW = {
+    poisson: ['cabillaud', 'saumon', 'thon', 'crevettes'], viande: ['poulet', 'dinde', 'bh5', 'boeuf', 'cheval', 'jambon'], porc: ['jambon'], boeuf: ['bh5', 'boeuf'], volaille: ['poulet', 'dinde'],
+    oeuf: ['oeuf', 'blanc'], oeufs: ['oeuf', 'blanc'], laitage: ['skyr', 'fb0', 'lait', 'emmental', 'vqr'], laitages: ['skyr', 'fb0', 'lait', 'emmental', 'vqr'], lait: ['skyr', 'fb0', 'lait', 'emmental', 'vqr'], lactose: ['skyr', 'fb0', 'lait', 'emmental', 'vqr'],
+    gluten: ['pates', 'pain', 'wrap', 'avoine'], arachide: ['beurrecac'], arachides: ['beurrecac'], noix: ['noix', 'cajou', 'amandes'], 'fruits a coque': ['noix', 'cajou', 'amandes'], crevette: ['crevettes'], 'fruits de mer': ['crevettes'],
+  };
+  function exclusIds(q, foods) {
+    const ex = {}, add = a => a.forEach(i => { ex[i] = 1; }), r = q.regime;
+    if (r === 'vegetarien' || r === 'vegan') { add(KEYW.viande); add(KEYW.poisson); }
+    if (r === 'pescetarien') add(KEYW.viande);
+    if (r === 'vegan') { add(KEYW.oeuf); add(KEYW.laitage); }
+    String(q.exclus || '').split(/[,;\n]/).map(s => norm0(s).trim()).filter(s => s.length > 2).forEach(tok => {
+      if (KEYW[tok]) add(KEYW[tok]); else Object.keys(foods).forEach(id => { if (norm0(foods[id].n).indexOf(tok) >= 0) ex[id] = 1; });
+    });
+    return ex;
+  }
+  const PCAND = ['poulet', 'dinde', 'saumon', 'cabillaud', 'thon', 'oeuf', 'skyr', 'fb0', 'tofu', 'seitan', 'soja'], GCAND = ['riz', 'pdt', 'pates', 'gnocchi', 'patate', 'avoine', 'lentilles', 'pois'], LCAND = ['huile', 'amandes', 'noix', 'avocat', 'beurrecac', 'cajou'];
+  function modelesPour(q, foods) {
+    const ex = exclusIds(q, foods), out = {};
+    ['salle', 'repos'].forEach(st => {
+      out[st] = A.MODELES[st].map(m => {
+        const its = [];
+        m.items.forEach(x => {
+          const id = x[0], f = foods[id]; if (!f) return;
+          const isWhey = id === 'clearwhey' || id === 'wheychoco', role = isWhey ? 'P' : f.r;
+          if (!(ex[id] || (isWhey && !q.whey))) { its.push({ a: id, q: x[1], adj: x[2] ? 1 : 0 }); return; }
+          if (!role) return;
+          const nid = (role === 'P' ? PCAND : role === 'G' ? GCAND : LCAND).find(i => !ex[i] && foods[i] && !its.some(y => y.a === i));
+          if (nid) { const nf = foods[nid]; its.push({ a: nid, q: nf.d || (nf.u ? 1 : 100), adj: 1 }); }
+        });
+        return { id: m.id, nom: m.nom, h: m.h, items: its };
+      });
+    });
+    return out;
+  }
+  /* Aliment « ma whey » : valeurs pour 100 g + dose, remplace les deux whey du plan par défaut. */
+  function wheyAliments(w) {
+    if (!w) return {}; const dose = clamp(Math.round(w.dose || 30), 5, 100), nm = String(w.n || 'Ma whey').slice(0, 60);
+    const f = id => ({ id, n: nm, c: 'supp', r: '', k: w.k || 0, p: w.p || 0, g: w.g || 0, l: w.l || 0, f: w.f || 0, d: 1, u: ['dose ' + dose + ' g', dose], etq: w.verified ? 0 : 1 });
+    return { clearwhey: f('clearwhey'), wheychoco: f('wheychoco') };
+  }
+  const SUPP_CHOIX = [['crea', 'Créatine', 'tous les jours'], ['om3', 'Oméga-3', 'avec un repas'], ['d3', 'Vitamine D3', 'avec un repas gras'], ['mag', 'Magnésium', 'le soir'], ['mv', 'Multivitamines', 'le matin'], ['ash', 'Ashwagandha', 'le soir'], ['caf', 'Caféine', 'avant la séance'], ['cas', 'Caséine', 'le soir'], ['coll', 'Collagène', 'au choix'], ['bcaa', 'EAA / BCAA', 'pendant la séance']];
+  const suppsListe = (keys, autre) => {
+    const l = (keys || []).map(k => SUPP_CHOIX.find(x => x[0] === k)).filter(Boolean).map(x => ({ id: x[0], n: x[1], note: x[2] }));
+    String(autre || '').split(/[,;\n]/).map(s => s.trim().slice(0, 40)).filter(Boolean).slice(0, 6).forEach((s, i) => l.push({ id: 's_o' + i, n: s, note: '' }));
+    return l;
+  };
+
+  Object.assign(A, { OBJECTIFS, INTENSITES, intensites, calcPlan, planToCfg, FOCUS_CHOIX, focusGroupes, SPLITS, splitSuggere, genProgramme, volumeGroupe, validerProgrammeIA, exclusIds, modelesPour, wheyAliments, SUPP_CHOIX, suppsListe });
+})();
+
 /* ---- 15-store.js ---- */
 /* ApexHQ — état : cache localStorage + base privée du compte (capacité db, sous-arbre data/users/<id>/apex).
    Local d'abord : chaque modification est écrite sur l'appareil, puis poussée document par document.
@@ -651,7 +847,7 @@ const Store = (() => {
   const COLLS = ['journal', 'seances', 'mensurations', 'photos'];
   const ID_OK = /^[A-Za-z0-9_\-.~:@+]{1,200}$/;
   let s = { cfg: {}, journal: {}, seances: {}, mensurations: {}, photos: {} };
-  let dirty = {}, seq = 1, ver = 0, cfgMemo = null, cfgVer = -1, base = null, saveT = 0, waitT = 0;
+  let dirty = {}, seq = 1, ver = 0, cfgMemo = null, cfgVer = -1, base = null, saveT = 0, waitT = 0, nativeSample = null;
   const sync = { mode: 'boot', pending: 0, err: null };
   const caps = { user: null, db: null, downloads: null, assets: null, sample: null, dictation: null };
   const ready = {}, subs = new Set(), timers = {}, flight = {}, fails = {};
@@ -755,6 +951,7 @@ const Store = (() => {
     const use = n => { try { const c = window.claude; return c && typeof c.use === 'function' ? Promise.resolve(c.use(n)).catch(() => null) : Promise.resolve(null); } catch (e) { return Promise.resolve(null); } };
     const names = Object.keys(caps), got = await Promise.all(names.map(use));
     names.forEach((n, i) => { caps[n] = got[i] || null; });
+    nativeSample = caps.sample; if (!caps.sample && typeof AI !== 'undefined' && AI.getKey()) caps.sample = AI.makeSample();
     let uid = null; try { uid = caps.user ? await caps.user.id() : null; } catch (e) { uid = null; }
     if (!caps.db || !uid) { sync.mode = 'local'; emit(); return; }
     base = 'data/users/' + uid + '/apex'; sync.mode = 'wait'; emit();
@@ -770,6 +967,8 @@ const Store = (() => {
     } catch (e) { fail(e); }
   }
 
+  /* Après ajout ou retrait d'une clé API : recalcule l'accès à Claude. */
+  const refreshAI = () => { caps.sample = nativeSample || (typeof AI !== 'undefined' && AI.getKey() ? AI.makeSample() : null); emit(); };
   const exportAll = () => ({ app: 'ApexHQ', v: 1, exportedAt: new Date().toISOString(), cfg: s.cfg, journal: s.journal, seances: s.seances, mensurations: s.mensurations, photos: s.photos });
   function importAll(o) {
     if (!isObj(o) || o.app !== 'ApexHQ') throw new Error('Ce fichier n’est pas un export ApexHQ.');
@@ -785,9 +984,74 @@ const Store = (() => {
     ver: () => ver,
     sub: f => { subs.add(f); return () => subs.delete(f); },
     sync: () => sync, caps: () => caps, pendingKeys: () => Object.keys(dirty).length,
-    patch, del, replace, connect, exportAll, importAll,
+    patch, del, replace, connect, refreshAI, exportAll, importAll,
   };
 })();
+
+/* ---- 16-ai.js ---- */
+/* ApexHQ — accès à Claude.
+   - Version Claude : capacité `sample` (compte Claude de la personne, consentement demandé au premier appel).
+   - App autonome : clé API Anthropic collée par la personne, gardée sur l'appareil (jamais exportée ni synchronisée),
+     appels directs depuis le navigateur. Même interface que `sample` pour que le coach et l'assistant ne changent pas. */
+const AI = (() => {
+  'use strict';
+  const KEY = 'apexhq:key';
+  const MODELS = { quick: 'claude-haiku-5-5', default: 'claude-sonnet-5-5', complex: 'claude-opus-5-5' };
+  const getKey = () => { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
+  const setKey = k => { try { if (k) localStorage.setItem(KEY, k); else localStorage.removeItem(KEY); } catch (e) { /* stockage indisponible */ } };
+  const fail = (code, message, text) => { const e = new Error(message); e.code = code; e.text = text; return e; };
+
+  async function call(body, signal) {
+    let r;
+    try {
+      r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-api-key': getKey(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify(body) });
+    } catch (e) { throw (e && e.name === 'AbortError') ? fail('cancelled', 'Annulé') : fail('upstream_error', 'Réseau indisponible'); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw fail(r.status === 401 || r.status === 403 ? 'not_granted' : r.status === 429 ? 'rate_limited' : 'upstream_error', (j.error && j.error.message) || ('HTTP ' + r.status));
+    return j;
+  }
+  function makeSample() {
+    const sample = async (input, o) => {
+      o = o || {};
+      const msgs = typeof input === 'string' ? [{ role: 'user', content: input }] : input.map(m => ({ role: m.role, content: m.content }));
+      const tools = (o.tools || []).map(t => ({ name: t.name, description: t.description, input_schema: t.inputSchema || { type: 'object', properties: {} } }));
+      let text = '';
+      for (let round = 0; round < 6; round++) {
+        const body = { model: MODELS[o.modelTier] || MODELS.default, max_tokens: 2048, messages: msgs }; if (tools.length) body.tools = tools;
+        const j = await call(body, o.signal), parts = j.content || [], tx = parts.filter(p => p.type === 'text').map(p => p.text).join('');
+        if (tx) { text += (text ? '\n\n' : '') + tx; if (o.onText) o.onText({ text, delta: tx }); }
+        const uses = parts.filter(p => p.type === 'tool_use');
+        if (j.stop_reason !== 'tool_use' || !uses.length) return { text, truncated: j.stop_reason === 'max_tokens' };
+        msgs.push({ role: 'assistant', content: parts });
+        const results = [];
+        for (const u of uses) {
+          let out; try { const t = (o.tools || []).find(x => x.name === u.name); out = t ? await t.execute(u.input || {}, { signal: o.signal }) : 'Error: outil inconnu'; if (typeof out !== 'string') out = JSON.stringify(out); } catch (e) { out = 'Error: ' + (e && e.message ? e.message : e); }
+          results.push({ type: 'tool_result', tool_use_id: u.id, content: String(out).slice(0, 30000) });
+        }
+        msgs.push({ role: 'user', content: results });
+      }
+      return { text, truncated: true };
+    };
+    sample.json = async (input, o) => {
+      const r = await sample(input, o), t = r.text;
+      try { return JSON.parse(t); } catch (e) { const m = t.match(/\{[\s\S]*\}|\[[\s\S]*\]/); if (m) { try { return JSON.parse(m[0]); } catch (e2) { /* tombe sur l'erreur ci-dessous */ } } throw fail('invalid_json', 'Réponse illisible', t); }
+    };
+    sample.limits = async () => ({ maxPromptBytes: 262144, tools: { maxCount: 12 }, modelTiers: ['quick', 'default', 'complex'] });
+    return sample;
+  }
+  return { getKey, setKey, makeSample };
+})();
+
+/* Messages d'erreur communs (coach, assistant, estimations). */
+const aiMsg = e => {
+  const c = e && e.code;
+  if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].indexOf(c) >= 0) return AI.getKey() ? 'Clé API refusée ou sans crédit. Vérifie-la dans Réglages, Claude.' : 'Claude n’est pas autorisé dans cette vue.';
+  if (c === 'rate_limited') return 'Limite d’usage atteinte. Réessaie plus tard.';
+  if (c === 'session_expired') return 'Session expirée : reconnecte-toi à Claude.';
+  if (c === 'refused' || c === 'empty_completion' || c === 'invalid_json') return 'Réponse inexploitable. Reformule avec aliments et quantités.';
+  if (c === 'cancelled') return '';
+  return 'Échec de la demande. Réessaie.';
+};
 
 /* ---- 20-ui-core.js ---- */
 /* ApexHQ — socle d'interface : React + htm, icônes, champs, feuilles, jauges, graphiques SVG. */
@@ -1248,12 +1512,7 @@ function Dashboard({ date, go }) {
 const unitOf = f => (f.u ? f.u[0] : 'g');
 const macTxt = m => 'P ' + f0(m.p) + ' · G ' + f0(m.g) + ' · L ' + f0(m.l);
 const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-const aiErr = e => { const c = e && e.code;
-  if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].indexOf(c) >= 0) return 'Claude n’est pas disponible dans cette vue.';
-  if (c === 'rate_limited') return 'Limite d’usage atteinte. Réessaie plus tard.';
-  if (c === 'session_expired') return 'Session expirée : reconnecte-toi à Claude.';
-  if (c === 'refused' || c === 'empty_completion' || c === 'invalid_json') return 'Réponse inexploitable. Reformule avec aliments et quantités.';
-  return 'Échec de la demande. Réessaie.'; };
+const aiErr = e => aiMsg(e);
 const nomRepas = () => { const h = new Date().getHours(); return h < 10 ? 'Petit-déj' : h < 15 ? 'Déjeuner' : h < 18 ? 'Collation' : 'Dîner'; };
 const heure = () => { const d = new Date(); return Apex.pad(d.getHours()) + ':' + Apex.pad(d.getMinutes()); };
 
@@ -1290,7 +1549,7 @@ function MealCard({ m, foods, onToggle, onQty, onSwap, onAdd, onDel }) {
 }
 
 function AddSheet({ foods, title, onAdd, onClose }) {
-  const [q, setQ] = useState(''); const [cat, setCat] = useState('');
+  const [q, setQ] = useState(''); const [cat, setCat] = useState(''); const [scan, setScan] = useState(false);
   const [fr, setFr] = useState({ n: '', k: null, p: null, g: null, l: null });
   const [ai, setAi] = useState({ txt: '', busy: false, res: null, err: '' });
   const sample = Store.caps().sample;
@@ -1314,6 +1573,8 @@ function AddSheet({ foods, title, onAdd, onClose }) {
   };
   return html`<${Sheet} title=${title} onClose=${onClose}>
     <input id="add-q" className="inp" type="search" placeholder="Chercher : poulet, gnocchi, Big Mac…" value=${q} onChange=${e => setQ(e.target.value)} aria-label="Chercher un aliment" />
+    ${CAN_SCAN && html`<button type="button" className="btn" onClick=${() => setScan(true)}><${Icon} n="camera" s=${18} />Scanner un code-barres</button>`}
+    ${scan && html`<${ScanSheet} onClose=${() => setScan(false)} onProduct=${p => { const id = ajouterProduit(p); onAdd({ a: id, q: p.dose ? 1 : 100 }); onClose(); }} />`}
     <div className="chips">
       <button type="button" className="chip" aria-pressed=${cat === ''} onClick=${() => setCat('')}>Tout</button>
       ${Apex.CATS.map(c => html`<button key=${c[0]} type="button" className="chip" aria-pressed=${cat === c[0]} onClick=${() => setCat(c[0])}>${c[1]}</button>`)}
@@ -1866,6 +2127,67 @@ function Analytics({ date }) {
   </div>`;
 }
 
+/* ---- 63-ui-scan.js ---- */
+/* ApexHQ — scan de code-barres (app autonome) : caméra + Open Food Facts.
+   La caméra et l'accès à Open Food Facts ne sont pas permis dans la version Claude (sandbox) : le bouton n'y apparaît pas. */
+const CAN_SCAN = !!window.APEX_STANDALONE;
+const r1 = v => Math.round(v * 10) / 10;
+
+async function offLookup(code) {
+  const c = String(code).replace(/\D/g, ''); if (c.length < 8 || c.length > 14) throw new Error('code');
+  const r = await fetch('https://world.openfoodfacts.org/api/v2/product/' + c + '.json?fields=product_name,brands,nutriments,serving_quantity', { headers: { Accept: 'application/json' } });
+  if (!r.ok) throw new Error('http');
+  const j = await r.json(); if (!j || j.status !== 1 || !j.product) return null;
+  const p = j.product, nu = p.nutriments || {}, g = k => (typeof nu[k + '_100g'] === 'number' ? nu[k + '_100g'] : null);
+  let kcal = g('energy-kcal'); if (kcal == null && g('energy') != null) kcal = g('energy') / 4.184;
+  const name = [p.brands ? String(p.brands).split(',')[0].trim() : '', p.product_name || ''].filter(Boolean).join(' ').slice(0, 60) || 'Produit ' + c, dose = Number(p.serving_quantity);
+  return { n: name, k: kcal == null ? null : Math.round(kcal), p: r1(g('proteins') || 0), g: r1(g('carbohydrates') || 0), l: r1(g('fat') || 0), f: r1(g('fiber') || 0), dose: dose > 0 && dose <= 200 ? Math.round(dose) : null, code: c };
+}
+const roleDe = p => (p.p >= 15 ? 'P' : p.g >= 40 ? 'G' : p.l >= 30 ? 'L' : '');
+/* Produit scanné → aliment de ma base (valeurs pour 100 g, portion si connue). Renvoie son id. */
+function ajouterProduit(p) {
+  const id = 'u_' + Apex.uid(), f = { id, n: p.n, c: 'perso', r: roleDe(p), k: p.k || 0, p: p.p || 0, g: p.g || 0, l: p.l || 0, f: p.f || 0, d: p.dose ? 1 : 100, u: p.dose ? ['portion ' + p.dose + ' g', p.dose] : null, etq: 0 };
+  Store.patch('cfg', null, { aliments: Object.assign({}, Store.cfg().aliments, { [id]: f }) }); return id;
+}
+
+function ScanSheet({ title, onProduct, onClose }) {
+  const vid = useRef(null); const [code, setCode] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [cam, setCam] = useState('');
+  const done = useRef(false);
+  const lookup = async c => {
+    if (done.current) return; setBusy(true); setErr('');
+    try {
+      const p = await offLookup(c);
+      if (!p) { setErr('Produit introuvable dans Open Food Facts. Saisis les valeurs à la main.'); setBusy(false); return; }
+      if (p.k == null) { setErr('Valeurs nutritionnelles absentes pour ce produit. Saisis-les à la main.'); setBusy(false); return; }
+      done.current = true; onProduct(p); onClose();
+    } catch (e) { setErr(e && e.message === 'code' ? 'Code-barres invalide (8 à 14 chiffres).' : 'Recherche impossible : vérifie ta connexion.'); setBusy(false); }
+  };
+  useEffect(() => {
+    if (typeof BarcodeDetector === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setCam('Scan caméra non pris en charge sur cet appareil : saisis le numéro sous le code-barres.'); return undefined; }
+    let stream = null, stop = false, timer = 0;
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+        if (stop) { stream.getTracks().forEach(t => t.stop()); return; }
+        const v = vid.current; v.srcObject = stream; await v.play();
+        const det = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] });
+        const tick = async () => { if (stop) return; try { const r = await det.detect(v); if (r && r[0] && r[0].rawValue) { stop = true; lookup(r[0].rawValue); return; } } catch (e) { /* image pas prête */ } timer = setTimeout(tick, 350); };
+        tick(); setCam('Vise le code-barres, bien éclairé.');
+      } catch (e) { setCam('Caméra refusée ou indisponible : saisis le numéro sous le code-barres.'); }
+    })();
+    return () => { stop = true; clearTimeout(timer); if (stream) stream.getTracks().forEach(t => t.stop()); };
+  }, []);
+  return html`<${Sheet} title=${title || 'Scanner un produit'} onClose=${onClose}>
+    <video ref=${vid} className="scan-v" playsInline muted></video>
+    ${cam && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${cam}</p>`}
+    <label className="fld" htmlFor="scan-code"><span className="fld-l">Ou le numéro du code-barres</span>
+      <input id="scan-code" className="inp" type="text" inputMode="numeric" maxLength="14" placeholder="3017620422003" value=${code} onChange=${e => setCode(e.target.value.replace(/\D/g, ''))} onKeyDown=${e => { if (e.key === 'Enter' && code) lookup(code); }} /></label>
+    <button type="button" className="btn pri wide" disabled=${busy || code.length < 8} onClick=${() => lookup(code)}>${busy ? 'Recherche…' : 'Chercher le produit'}</button>
+    ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
+    <p className="mut" style=${{ fontSize: 12 }}>Recherche dans Open Food Facts (base collaborative) : seul le numéro du code-barres est envoyé. Vérifie les valeurs avec l’étiquette.</p>
+  <//>`;
+}
+
 /* ---- 65-ui-coach.js ---- */
 /* ApexHQ — onglet 5 : coach IA intégré (Claude, via la capacité sample).
    Il lit l'état du jour (envoyé dans chaque demande) et enregistre repas, check-in, séries, pas et
@@ -1894,6 +2216,7 @@ function coachContexte(date) {
   L.push('JOUR AFFICHÉ : ' + dLong(date) + ' (' + date + ')' + (date === auj ? ', aujourd’hui' : ' ; date réelle du jour : ' + auj) + '. Statut : ' + c.statut + (type ? ', séance ' + type : '') + '.');
   L.push('CIBLE DU JOUR : ' + c.kcal + ' kcal, P ' + c.p + ' g, G ' + c.g + ' g, L ' + c.l + ' g. Planchers : ' + cfg.cibles.planchers.kcal + ' kcal, ' + c.pMin + ' g P, ' + c.lMin + ' g L. Standard : salle ' + cfg.cibles.salle.kcal + ' kcal, repos ' + cfg.cibles.repos.kcal + ' kcal.');
   L.push('PROFIL : homme, ' + p.age + ' ans, ' + p.taille + ' cm, départ ' + p.poidsDepart + ' kg le ' + p.dateDepart + ', cible ' + p.poidsCible + ' kg. Rythme visé : −0,5 à −1 % par semaine. Baseline ' + cfg.cibles.pasMin + ' à ' + cfg.cibles.pasMax + ' pas.');
+  if (cfg.q) { const q = cfg.q; L.push('QUESTIONNAIRE : objectif ' + q.objectif + (q.objectif !== 'neutre' ? ' (' + q.intensite + ')' : '') + ', niveau ' + q.niveau + ', ' + q.seances + ' séances/sem, activité ' + q.metier + ', ' + q.pas + ' pas/j, régime ' + q.regime + (q.exclus ? ', à éviter : ' + q.exclus : '') + (q.whey ? ', whey : ' + q.whey.n : ', pas de whey') + '. Compléments : ' + (Apex.supps(cfg).map(x => x.n).join(', ') || 'aucun') + '.'); }
   const meals = j.repas || [];
   L.push('REPAS DU JOUR :' + (meals.length ? '' : ' aucun repas planifié.'));
   meals.forEach(m => { const tm = Apex.totMeal(m, foods); L.push('- ' + m.nom + ' (' + (m.ok ? 'mangé' : 'prévu') + ', ' + r(tm.k) + ' kcal, P ' + r(tm.p) + ') : ' + m.items.map(it => { const f = Apex.foodOf(it, foods); return f ? f.n + ' ' + fq(it.q) + ' ' + unitOf(f) : ''; }).filter(Boolean).join(', ')); });
@@ -2076,6 +2399,206 @@ function Coach({ date }) {
   </div>`;
 }
 
+/* ---- 66-ui-onboard.js ---- */
+/* ApexHQ — assistant de démarrage : questions, calcul précis des calories, programme de séances, lien Claude.
+   S'affiche à la première ouverture (profil vide) ou via Réglages › Refaire le questionnaire. */
+const STEPS = ['intro', 'objectif', 'intensite', 'profil', 'activite', 'training', 'focus', 'alim', 'supps', 'resultat', 'claude'];
+const METIERS = [['sedentaire', 'Sédentaire', 'Bureau, études, télétravail : peu de déplacements.'], ['debout', 'Debout ou mobile', 'Commerce, enseignement, service : tu bouges dans la journée.'], ['actif', 'Physique', 'Manutention, chantier, métier très actif.']];
+const NIVEAUX = [['debutant', 'Débutant', 'Moins d’un an de musculation régulière.'], ['intermediaire', 'Intermédiaire', '1 à 3 ans, tu connais les mouvements de base.'], ['avance', 'Avancé', 'Plus de 3 ans, progression lente.']];
+const REGIMES = [['omnivore', 'Je mange de tout', ''], ['pescetarien', 'Pescétarien', 'Pas de viande, poisson oui.'], ['vegetarien', 'Végétarien', 'Ni viande ni poisson, œufs et laitages oui.'], ['vegan', 'Végan', 'Aucun produit animal.']];
+const WHEY_DEFAUT = { n: 'Ma whey', k: 380, p: 80, g: 6, l: 5, f: 0, dose: 30, verified: false };
+
+function Opts({ items, value, onPick }) {
+  return html`<div className="opts">${items.map(x => html`<button key=${x[0]} type="button" className="opt" aria-pressed=${value === x[0]} onClick=${() => onPick(x[0])}><b>${x[1]}</b>${x[2] && html`<span>${x[2]}</span>`}</button>`)}</div>`;
+}
+function MultiChips({ items, value, onToggle }) {
+  return html`<div className="chips">${items.map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${value.indexOf(x[0]) >= 0} onClick=${() => onToggle(x[0])}>${x[1]}</button>`)}</div>`;
+}
+
+/* Lien avec Claude : compte Claude (version Claude) ou clé API (app autonome). */
+function ClaudeLink({ onChange }) {
+  const st = useStore(), cfg = st.cfg(), caps = st.caps(); const [key, setKey] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('');
+  const on = !!(cfg.claude && cfg.claude.on && caps.sample);
+  const test = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const s = Store.caps().sample; if (!s) throw { code: 'capability_disabled' };
+      const r = await s.json('Réponds uniquement par le JSON {"ok":true}', { modelTier: 'quick', cache: false });
+      if (!r || r.ok !== true) throw { code: 'invalid_json' };
+      Store.patch('cfg', null, { claude: { on: true, mode: STANDALONE ? 'cle' : 'compte', at: new Date().toISOString() } }); setMsg('Claude est connecté.'); if (onChange) onChange(true); setBusy(false); return true;
+    } catch (e) { setMsg(aiMsg(e) || 'Échec de la connexion.'); if (onChange) onChange(false); setBusy(false); return false; }
+  };
+  const linkKey = async () => {
+    const k = key.trim(); if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(k)) { setMsg('Une clé Anthropic commence par « sk-ant- ». Copie-la en entier depuis console.anthropic.com.'); return; }
+    AI.setKey(k); Store.refreshAI(); const good = await test(); if (!good) { AI.setKey(''); Store.refreshAI(); } else setKey('');
+  };
+  const unlink = () => { AI.setKey(''); Store.refreshAI(); Store.patch('cfg', null, { claude: null }); setMsg('Déconnecté.'); if (onChange) onChange(false); };
+  return html`<div className="stack">
+    <div className="row sb"><b>Compte Claude</b><${Pill} st=${on ? 'good' : ''}>${on ? 'Connecté' : 'Non connecté'}<//></div>
+    ${STANDALONE ? html`<div className="stack">
+      <p className="sec" style=${{ fontSize: 13 }}>Pour que Claude gère ta nutrition et optimise tes séances selon tes points faibles, colle ta clé API Anthropic. Elle reste sur ce téléphone : jamais envoyée ailleurs qu’à Anthropic, jamais exportée.</p>
+      ${on ? html`<div className="row"><button type="button" className="btn" disabled=${busy} onClick=${test}>${busy ? 'Test…' : 'Tester la connexion'}</button><${Confirm} label="Déconnecter" sure="Retirer la clé ?" cls="ghost" onYes=${unlink} /></div>`
+      : html`<label className="fld" htmlFor="ai-key"><span className="fld-l">Clé API Anthropic</span><input id="ai-key" className="inp" type="password" autoComplete="off" autoCapitalize="off" spellCheck="false" placeholder="sk-ant-…" value=${key} onChange=${e => setKey(e.target.value)} /></label>
+        <button type="button" className="btn pri wide" disabled=${busy || !key.trim()} onClick=${linkKey}>${busy ? 'Connexion…' : 'Lier Claude'}</button>`}
+      <p className="mut" style=${{ fontSize: 12 }}>Crée la clé sur console.anthropic.com (Settings, API keys). L’usage est facturé par Anthropic, séparément d’un abonnement Claude : règle une limite de dépense mensuelle. Quelques centimes par jour en usage normal.</p>
+    </div>` : html`<div className="stack">
+      <p className="sec" style=${{ fontSize: 13 }}>Tu es connecté avec ton compte Claude : tes données ApexHQ sont liées à ce compte, dans une base privée. Le coach utilise ton abonnement Claude. Au premier test, Claude te demande l’autorisation.</p>
+      <div className="row"><button type="button" className=${cx('btn', !on && 'pri')} disabled=${busy} onClick=${test}>${busy ? 'Test…' : on ? 'Tester la connexion' : 'Autoriser et tester'}</button>
+        ${on && html`<${Confirm} label="Désactiver" sure="Désactiver ?" cls="ghost" onYes=${unlink} />`}</div>
+    </div>`}
+    ${msg && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${msg}</p>`}
+  </div>`;
+}
+
+async function optimiserProgramme(sample, a, groupes, cfg) {
+  const ex = Apex.allExos(cfg), cat = Object.keys(ex).map(k => k + '=' + ex[k].n + ' (' + (Apex.MUSCLES[ex[k].m] || ex[k].m) + ')').join('; '), n = a.seances;
+  const obj = { seche: 'sèche (déficit calorique : garder les charges lourdes, volume modéré)', neutre: 'maintien et recomposition', masse: 'prise de masse' }[a.objectif];
+  const prompt = ['Tu es préparateur physique. Conçois le programme hebdomadaire de musculation de cette personne.',
+    'Profil : ' + (a.sexe === 'F' ? 'femme' : 'homme') + ', ' + a.age + ' ans, ' + a.poids + ' kg, niveau ' + a.niveau + ', objectif ' + obj + '.',
+    'Séances par semaine : ' + n + ' de ' + a.duree + ' minutes. Découpage souhaité : ' + (Apex.SPLITS[a.split] || Apex.SPLITS.ppl_ul)[0] + '.',
+    'Points faibles à prioriser, avec leur cible de séries directes par semaine et leur fréquence : ' + (groupes.length ? groupes.map(g => g.n + ' ' + g.min + ' à ' + g.max + ' séries, ' + g.freq + ' fois par semaine') .join(' ; ') : 'aucun') + '.',
+    'Exercices autorisés (id=nom) : ' + cat + '.',
+    'Règles : 5 à 9 exercices par séance, 2 à 5 séries par exercice, exercices lourds en premier, chaque point faible travaillé au moins aussi souvent que sa fréquence, jours de repos répartis. Utilise uniquement les id autorisés.',
+    'Réponds uniquement par un objet JSON : {"seances":[{"nom":"Haut","exercices":[{"id":"di_halt","series":4}]}],"planning":{"0":"","1":"Haut","2":"","3":"","4":"","5":"","6":""}}. Le planning associe chaque jour (0 = dimanche … 6 = samedi) au nom d’une séance, ou "" pour un repos. Exactement ' + n + ' jours d’entraînement.'].join('\n');
+  const r = await Promise.race([sample.json(prompt, { modelTier: 'default', cache: false }), new Promise((_, ko) => setTimeout(() => ko({ code: 'upstream_error' }), 120000))]);
+  const res = Apex.validerProgrammeIA(r, n, cfg); if (!res) return null;
+  return groupes.every(g => Apex.volumeGroupe(res, g, cfg) >= g.min * 0.8) ? res : null;
+}
+
+function Wizard({ redo, onClose }) {
+  const st = useStore(), cfg = st.cfg(), prev = cfg.q || {};
+  const [a, setA] = useState(() => Object.assign({ objectif: 'seche', intensite: 'normal', sexe: 'H', age: null, taille: null, poids: null, mg: null, poidsCible: null, metier: 'debout', pas: 8000, seances: 4, duree: 60, cardio: 0, niveau: 'intermediaire', split: 'ul', regime: 'omnivore', exclus: '', focus: [], supps: [], suppsAutre: '', whey: null }, prev));
+  const [step, setStep] = useState(0); const [busy, setBusy] = useState(''); const [scan, setScan] = useState(false); const [wmsg, setWmsg] = useState(''); const [wbusy, setWbusy] = useState(false); const [linked, setLinked] = useState(!!(cfg.claude && cfg.claude.on));
+  const set = p => setA(x => Object.assign({}, x, p));
+  const steps = STEPS.filter(s => !(s === 'intensite' && a.objectif === 'neutre')), cur = steps[step] || 'intro', last = step === steps.length - 1;
+  const num = v => typeof v === 'number' && isFinite(v);
+  const valid = cur === 'profil' ? num(a.age) && a.age >= 14 && a.age <= 90 && num(a.taille) && a.taille >= 120 && a.taille <= 230 && num(a.poids) && a.poids >= 35 && a.poids <= 250
+    : cur === 'activite' ? num(a.pas) && num(a.seances) && (a.seances === 0 || (num(a.duree) && a.duree >= 15)) : true;
+  const plan = (cur === 'resultat' || cur === 'claude') && valid ? Apex.calcPlan(a) : null;
+  const sample = st.caps().sample;
+  const go = d => {
+    if (d > 0 && cur === 'profil' && !num(a.poidsCible)) set({ poidsCible: Math.round(a.poids * (a.objectif === 'seche' ? 0.93 : a.objectif === 'masse' ? 1.05 : 1) * 2) / 2 });
+    if (d > 0 && cur === 'activite') set({ split: Apex.splitSuggere(a.seances) });
+    setStep(s => Math.max(0, Math.min(steps.length - 1, s + d)));
+  };
+  const toggle = (k, v) => setA(x => Object.assign({}, x, { [k]: x[k].indexOf(v) >= 0 ? x[k].filter(i => i !== v) : x[k].concat(v) }));
+  const estimerWhey = async () => {
+    const s = Store.caps().sample; if (!s || !a.whey || !a.whey.n.trim()) return; setWbusy(true); setWmsg('');
+    try {
+      const r = await s.json('Donne les valeurs nutritionnelles moyennes de cette protéine en poudre : « ' + a.whey.n.slice(0, 80) + ' ». Réponds uniquement par un JSON {"kcal": pour 100 g, "p": protéines g pour 100 g, "g": glucides g pour 100 g, "l": lipides g pour 100 g, "f": fibres g pour 100 g, "dose_g": portion usuelle en grammes}.', { modelTier: 'quick', cache: false });
+      const k = Number(r.kcal); if (!(k > 100 && k < 600)) throw { code: 'invalid_json' };
+      set({ whey: Object.assign({}, a.whey, { k: Math.round(k), p: r1(+r.p || 0), g: r1(+r.g || 0), l: r1(+r.l || 0), f: r1(+r.f || 0), dose: Math.round(+r.dose_g) > 0 ? Math.round(+r.dose_g) : a.whey.dose, verified: false }) }); setWmsg('Valeurs estimées par Claude : vérifie-les avec l’étiquette.');
+    } catch (e) { setWmsg(aiMsg(e) || 'Estimation impossible.'); }
+    setWbusy(false);
+  };
+  const skip = () => { Store.patch('cfg', null, { onboarded: true }); onClose(); };
+  const finish = async () => {
+    setBusy('Calcul de tes calories…');
+    try {
+      const cfgNow = Store.cfg(), p = Apex.calcPlan(a), base = Apex.planToCfg(a, p), groupes = Apex.focusGroupes(a.focus), foods = Apex.allFoods(Object.assign({}, cfgNow, { aliments: Object.assign({}, cfgNow.aliments, Apex.wheyAliments(a.whey)) }));
+      let prog = Apex.genProgramme(a, groupes, cfgNow), ia = '';
+      if (sample && linked && a.seances > 0) {
+        setBusy('Claude conçoit ton programme selon tes points faibles (≈ 30 s)…');
+        try { const r = await optimiserProgramme(sample, a, groupes, cfgNow); if (r) { prog = r; ia = ' Programme optimisé par Claude.'; } else ia = ' Programme calculé par l’app (la proposition de Claude n’était pas valide).'; } catch (e) { ia = ' Programme calculé par l’app (Claude indisponible).'; }
+      }
+      const q = { objectif: a.objectif, intensite: a.intensite, sexe: a.sexe, age: a.age, taille: a.taille, poids: a.poids, mg: a.mg, poidsCible: a.poidsCible, metier: a.metier, pas: a.pas, seances: a.seances, duree: a.duree, cardio: a.cardio, niveau: a.niveau, split: a.split, regime: a.regime, exclus: a.exclus, focus: a.focus, supps: a.supps, suppsAutre: a.suppsAutre, whey: a.whey, fait: Apex.today() };
+      Store.patch('cfg', null, Object.assign({ onboarded: true, q }, base, {
+        focus: groupes, supps: Apex.suppsListe(a.supps, a.suppsAutre), seanceTypes: prog.seanceTypes, programme: prog.programme, planning: prog.planning, photosJour: 0,
+        repasModeles: Apex.modelesPour(a, foods), aliments: Object.assign({}, cfgNow.aliments, Apex.wheyAliments(a.whey)),
+      }));
+      toast('Ton plan est prêt : ' + p.salle.kcal + ' / ' + p.repos.kcal + ' kcal.' + ia); onClose();
+    } catch (e) { setBusy(''); toast('Erreur : ' + (e && e.message ? e.message : e)); }
+  };
+  const pct = Math.round(step / (steps.length - 1) * 100);
+  const body = {
+    intro: () => html`<h1>Configurons ton ApexHQ</h1>
+      <p className="sec">Quelques questions pour calculer tes calories et tes macros avec précision, bâtir ton programme de séances autour de tes points faibles et adapter ton plan repas. Compte 3 minutes. Tout reste modifiable ensuite dans les réglages.</p>
+      ${(redo || cfg.q) && html`<div className="note"><${Icon} n="alert" /><div><span><b>Refaire le questionnaire remplace</b> tes cibles, ton programme, tes points faibles, tes compléments et ton plan repas type. Tes journées, pesées et séances déjà notées sont conservées.</span></div></div>`}
+      <button type="button" className="btn ghost" onClick=${skip}>Passer, je règle tout à la main</button>`,
+    objectif: () => html`<h1>Ton objectif ?</h1><${Opts} items=${Apex.OBJECTIFS} value=${a.objectif} onPick=${v => set({ objectif: v, intensite: 'normal' })} />`,
+    intensite: () => html`<h1>${a.objectif === 'seche' ? 'Quel déficit ?' : 'Quel surplus ?'}</h1>
+      <p className="sec">${a.objectif === 'seche' ? 'Plus le déficit est fort, plus la perte est rapide, mais plus la faim, la fatigue et le risque de perdre du muscle augmentent. L’app plafonne la perte à 1 % du poids par semaine.' : 'Un surplus plus fort fait prendre plus vite, avec plus de gras.'}</p>
+      <${Opts} items=${Apex.intensites(a.objectif).map(x => [x[0], x[1] + ' · ' + (a.objectif === 'seche' ? '−' : '+') + Math.round(x[2] * 100) + ' %', x[3]])} value=${a.intensite} onPick=${v => set({ intensite: v })} />`,
+    profil: () => html`<h1>Qui es-tu ?</h1>
+      <div className="fld"><span className="fld-l">Sexe</span><${Seg} neutral label="Sexe" value=${a.sexe} onChange=${v => set({ sexe: v })} options=${[['H', 'Homme'], ['F', 'Femme']]} /></div>
+      <div className="form">
+        <${Num} id="w-age" label="Âge" unit="ans" value=${a.age} onChange=${v => set({ age: v })} dec=${0} min=${14} max=${90} />
+        <${Num} id="w-taille" label="Taille" unit="cm" value=${a.taille} onChange=${v => set({ taille: v })} dec=${0} min=${120} max=${230} />
+        <${Num} id="w-poids" label="Poids actuel" unit="kg" value=${a.poids} onChange=${v => set({ poids: v })} dec=${1} min=${35} max=${250} />
+        <${Num} id="w-pcible" label="Poids visé" unit="kg" value=${a.poidsCible} onChange=${v => set({ poidsCible: v })} dec=${1} min=${35} max=${250} />
+        <div className="full"><${Num} id="w-mg" label="% de masse grasse (facultatif)" unit="%" value=${a.mg} onChange=${v => set({ mg: v })} dec=${1} min=${4} max=${55} placeholder="ex. 15" /></div>
+      </div>
+      <p className="mut" style=${{ fontSize: 12 }}>Si tu connais ton % de masse grasse, le calcul de ton métabolisme de base est plus précis. Sinon, laisse vide.</p>`,
+    activite: () => html`<h1>Ton activité</h1>
+      <div className="stack"><span className="fld-l">Ton quotidien (hors sport)</span><${Opts} items=${METIERS} value=${a.metier} onPick=${v => set({ metier: v })} /></div>
+      <div className="form">
+        <${Num} id="w-pas" label="Pas par jour (moyenne)" value=${a.pas} onChange=${v => set({ pas: v })} dec=${0} min=${0} max=${40000} />
+        <${Num} id="w-cardio" label="Cardio par semaine" unit="min" value=${a.cardio} onChange=${v => set({ cardio: v == null ? 0 : v })} dec=${0} min=${0} max=${600} />
+      </div>
+      <div className="stack"><span className="fld-l">Séances de musculation par semaine<b>${a.seances}</b></span>
+        <div className="chips">${[0, 1, 2, 3, 4, 5, 6, 7].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${a.seances === n} onClick=${() => set({ seances: n })}>${n}</button>`)}</div></div>
+      ${a.seances > 0 && html`<${Num} id="w-duree" label="Durée d’une séance" unit="min" value=${a.duree} onChange=${v => set({ duree: v })} dec=${0} min=${15} max=${180} />`}`,
+    training: () => html`<h1>Ton entraînement</h1>
+      <div className="stack"><span className="fld-l">Ton niveau</span><${Opts} items=${NIVEAUX} value=${a.niveau} onPick=${v => set({ niveau: v })} /></div>
+      ${a.seances > 0 ? html`<div className="stack"><span className="fld-l">Découpage des séances</span>
+        <${Opts} items=${Object.keys(Apex.SPLITS).map(k => [k, Apex.SPLITS[k][0], k === Apex.splitSuggere(a.seances) ? 'Conseillé pour ' + a.seances + ' séance' + (a.seances > 1 ? 's' : '') + ' par semaine.' : ''])} value=${a.split} onPick=${v => set({ split: v })} /></div>` : html`<p className="sec">Aucune séance prévue : l’app ne créera pas de planning, tu pourras en ajouter dans Réglages.</p>`}`,
+    focus: () => html`<h1>Tes points faibles</h1>
+      <p className="sec">Les muscles que tu veux faire progresser en priorité. Ils reçoivent plus de volume dans ton programme et des alertes dans l’onglet Training.</p>
+      <${MultiChips} items=${Apex.FOCUS_CHOIX} value=${a.focus} onToggle=${v => toggle('focus', v)} />
+      <p className="mut" style=${{ fontSize: 12 }}>${a.focus.length ? a.focus.length + ' choisi' + (a.focus.length > 1 ? 's' : '') + '. Conseil : 3 maximum pour que ça reste efficace.' : 'Aucun : programme équilibré.'}</p>`,
+    alim: () => html`<h1>Ton alimentation</h1>
+      <div className="stack"><span className="fld-l">Régime</span><${Opts} items=${REGIMES} value=${a.regime} onPick=${v => set({ regime: v })} /></div>
+      <label className="fld" htmlFor="w-excl"><span className="fld-l">Allergies ou aliments à éviter</span><input id="w-excl" className="inp" type="text" maxLength="120" placeholder="ex. arachides, gluten, poisson" value=${a.exclus} onChange=${e => set({ exclus: e.target.value })} /></label>
+      <p className="mut" style=${{ fontSize: 12 }}>Ces aliments sont retirés de ton plan repas et remplacés par des équivalents.</p>`,
+    supps: () => html`<h1>Tes compléments</h1>
+      <p className="sec">Coche ceux que tu prends. Ils apparaîtront dans ta checklist du jour.</p>
+      <${MultiChips} items=${Apex.SUPP_CHOIX.map(x => [x[0], x[1]])} value=${a.supps} onToggle=${v => toggle('supps', v)} />
+      <label className="fld" htmlFor="w-autre"><span className="fld-l">Autres compléments</span><input id="w-autre" className="inp" type="text" maxLength="100" placeholder="ex. zinc, électrolytes" value=${a.suppsAutre} onChange=${e => set({ suppsAutre: e.target.value })} /></label>
+      <div className="stack"><button type="button" className="chip" style=${{ justifySelf: 'start' }} aria-pressed=${!!a.whey} onClick=${() => set({ whey: a.whey ? null : Object.assign({}, WHEY_DEFAUT) })}>Je prends une whey ou une protéine en poudre</button>
+        ${a.whey && html`<div className="note acc"><${Icon} n="bolt" /><div>
+          <span><b>Laquelle précisément ?</b> Donne le nom, puis scanne le code-barres${STANDALONE ? '' : ' (dans l’app installée)'} ou fais estimer les valeurs.</span>
+          <label className="fld" htmlFor="w-wn"><span className="fld-l">Marque et produit</span><input id="w-wn" className="inp" type="text" maxLength="60" placeholder="ex. Prozis Clear Whey Isolate" value=${a.whey.n} onChange=${e => set({ whey: Object.assign({}, a.whey, { n: e.target.value, verified: false }) })} /></label>
+          <div className="row">${CAN_SCAN && html`<button type="button" className="btn sm" onClick=${() => setScan(true)}><${Icon} n="camera" s=${16} />Scanner le code-barres</button>`}
+            ${sample && html`<button type="button" className="btn sm" disabled=${wbusy || !a.whey.n.trim()} onClick=${estimerWhey}><${Icon} n="sparkles" s=${16} />${wbusy ? 'Estimation…' : 'Estimer avec Claude'}</button>`}</div>
+          <div className="form f4">
+            <${Num} id="w-wk" label="kcal / 100 g" value=${a.whey.k} onChange=${v => set({ whey: Object.assign({}, a.whey, { k: v == null ? 0 : v, verified: true }) })} dec=${0} min=${0} max=${600} />
+            <${Num} id="w-wp" label="Prot. / 100 g" value=${a.whey.p} onChange=${v => set({ whey: Object.assign({}, a.whey, { p: v == null ? 0 : v, verified: true }) })} dec=${1} min=${0} max=${100} />
+            <${Num} id="w-wg" label="Gluc. / 100 g" value=${a.whey.g} onChange=${v => set({ whey: Object.assign({}, a.whey, { g: v == null ? 0 : v, verified: true }) })} dec=${1} min=${0} max=${100} />
+            <${Num} id="w-wl" label="Lip. / 100 g" value=${a.whey.l} onChange=${v => set({ whey: Object.assign({}, a.whey, { l: v == null ? 0 : v, verified: true }) })} dec=${1} min=${0} max=${100} />
+          </div>
+          <${Num} id="w-wd" label="Dose d’une prise" unit="g" value=${a.whey.dose} onChange=${v => set({ whey: Object.assign({}, a.whey, { dose: v == null ? 30 : v }) })} dec=${0} min=${5} max=${100} />
+          ${wmsg && html`<span className="sec">${wmsg}</span>`}
+          <span className="mut">Valeurs par défaut d’une whey isolate. Corrige-les avec l’étiquette pour plus de précision.</span>
+        </div></div>`}</div>`,
+    resultat: () => !plan ? html`<p className="sec">Complète les étapes précédentes.</p>` : html`<h1>Ton plan calorique</h1>
+      <div className="tiles">
+        <div className="tile"><span>Métabolisme de base</span><b>${f0(plan.bmr)}<small>kcal</small></b><em>${plan.mg != null ? 'Katch-McArdle' : 'Mifflin-St Jeor'}</em></div>
+        <div className="tile"><span>Dépense totale</span><b>${f0(plan.tdee)}<small>kcal/j</small></b><em>NAP ${f2(plan.nap)}</em></div>
+        <div className="tile"><span>Cible moyenne</span><b>${f0(plan.avg)}<small>kcal/j</small></b><em>${a.objectif === 'neutre' ? 'maintien' : sgn(plan.delta, f0) + ' kcal/j'}</em></div>
+        <div className="tile"><span>Rythme estimé</span><b>${a.objectif === 'neutre' ? '0' : sgn(plan.kgSem, f2)}<small>kg/sem</small></b><em>${a.objectif === 'neutre' ? 'poids stable' : sgn(plan.pctSem, f1) + ' % du poids'}</em></div>
+      </div>
+      <div className="tw"><table className="dt"><thead><tr><th scope="col">Jour</th><th scope="col">kcal</th><th scope="col">Prot.</th><th scope="col">Gluc.</th><th scope="col">Lip.</th></tr></thead>
+        <tbody><tr><td>Salle${plan.n ? ' (' + plan.n + '/sem)' : ''}</td><td>${f0(plan.salle.kcal)}</td><td>${plan.salle.p} g</td><td>${plan.salle.g} g</td><td>${plan.salle.l} g</td></tr>
+        <tr><td>Repos</td><td>${f0(plan.repos.kcal)}</td><td>${plan.repos.p} g</td><td>${plan.repos.g} g</td><td>${plan.repos.l} g</td></tr></tbody></table></div>
+      ${a.objectif !== 'neutre' && html`<div className="fld"><span className="fld-l">Ajuster l’intensité</span><${Seg} neutral label="Intensité" value=${a.intensite} onChange=${v => set({ intensite: v })} options=${Apex.intensites(a.objectif).map(x => [x[0], x[1]])} /></div>`}
+      ${plan.warn.map((w, i) => html`<div key=${i} className="note"><${Icon} n="alert" /><div><span>${w}</span></div></div>`)}
+      <div className="note"><${Icon} n="info" /><div><span><b>Comment c’est calculé.</b> Base ${f0(plan.parts.base)} kcal (métabolisme × activité quotidienne), ${sgn(plan.parts.steps, f0)} pour tes pas, +${f0(plan.parts.train)} pour tes séances, +${f0(plan.parts.cardio)} pour le cardio. Protéines ${f1(plan.salle.p / a.poids)} g/kg, lipides ${f1(plan.salle.l / a.poids)} g/kg, glucides pour le reste. Plancher de sécurité ${f0(plan.planchers.kcal)} kcal. Les jours de salle sont un peu plus riches, les jours de repos plus légers, pour la même moyenne.</span></div></div>`,
+    claude: () => html`<h1>Lie Claude à ton compte</h1>
+      <p className="sec">Avec Claude connecté, ton coach enregistre tes repas et tes séances quand tu lui parles, recale ta journée après un écart, et optimise ton programme selon tes points faibles. Sans lui, l’app fonctionne avec ses calculs.</p>
+      <${ClaudeLink} onChange=${setLinked} />
+      ${busy ? html`<div className="note acc"><${Icon} n="sparkles" /><div><span>${busy}</span></div></div>` : html`<button type="button" className="btn pri wide" onClick=${finish}><${Icon} n="check" s=${18} />${linked ? 'Créer mon plan avec Claude' : 'Créer mon plan sans Claude'}</button>`}`,
+  };
+  return ReactDOM.createPortal(html`<div className="wiz" role="dialog" aria-modal="true" aria-label="Configuration">
+    <div className="wiz-top"><div className="wiz-bar" role="progressbar" aria-valuenow=${pct} aria-valuemin="0" aria-valuemax="100"><i style=${{ width: pct + '%' }}></i></div><span className="mut" style=${{ fontSize: 12 }}>${step + 1}/${steps.length}</span>
+      ${(redo || cfg.q || step > 0) && html`<button type="button" className="ib sm" aria-label="Quitter" onClick=${() => { if (redo || cfg.q) { Store.patch('cfg', null, { onboarded: true }); onClose(); } else skip(); }}><${Icon} n="x" s=${18} /></button>`}</div>
+    <div className="wiz-body"><div className="wiz-in">${(body[cur] || body.intro)()}</div></div>
+    <div className="wiz-foot"><div className="wiz-in" style=${{ gridTemplateColumns: 'auto 1fr', display: 'grid', gap: 10 }}>
+      <button type="button" className="btn" disabled=${step === 0 || !!busy} onClick=${() => go(-1)}>Retour</button>
+      ${!last ? html`<button type="button" className="btn pri" disabled=${!valid || cur === 'intro' && false} onClick=${() => go(1)}>${cur === 'intro' ? 'Commencer' : 'Suivant'}</button>` : html`<span></span>`}</div></div>
+    ${scan && html`<${ScanSheet} title="Scanner ta whey" onClose=${() => setScan(false)} onProduct=${p => { set({ whey: { n: p.n, k: p.k, p: p.p, g: p.g, l: p.l, f: p.f, dose: p.dose || (a.whey && a.whey.dose) || 30, verified: true } }); setWmsg('Produit trouvé dans Open Food Facts. Vérifie la dose.'); }} />`}
+  </div>`, document.body);
+}
+
 /* ---- 68-ui-custom.js ---- */
 /* ApexHQ — personnalisation : séances, exercices, points faibles, compléments, aliments perso.
    Tout est stocké dans la config (cfg.seanceTypes, cfg.programme, cfg.exos, cfg.focus, cfg.supps, cfg.aliments). */
@@ -2222,7 +2745,7 @@ function SuppEditor() {
 
 /* ---------- aliments perso ---------- */
 function FoodsEditor() {
-  const st = useStore(), cfg = st.cfg(); const [f, setF] = useState({ n: '', k: null, p: null, g: null, l: null, f: null, r: '' });
+  const st = useStore(), cfg = st.cfg(); const [scan, setScan] = useState(false); const [f, setF] = useState({ n: '', k: null, p: null, g: null, l: null, f: null, r: '' });
   const mine = Object.keys(cfg.aliments || {}).filter(k => k.indexOf('u_') === 0).map(k => cfg.aliments[k]);
   const ok = f.n.trim() && f.k != null;
   const add = () => {
@@ -2233,6 +2756,8 @@ function FoodsEditor() {
   const del = id => { const a = Object.assign({}, cfg.aliments); delete a[id]; Store.patch('cfg', null, { aliments: a }); };
   return html`<div className="stack">
     <h3>Mes aliments (pour 100 g)</h3>
+    ${CAN_SCAN && html`<button type="button" className="btn" onClick=${() => setScan(true)}><${Icon} n="camera" s=${18} />Scanner un produit</button>`}
+    ${scan && html`<${ScanSheet} onClose=${() => setScan(false)} onProduct=${p => { ajouterProduit(p); toast('Produit ajouté à ta base'); }} />`}
     ${mine.map(x => html`<div key=${x.id} className="mini"><span><b style=${{ color: 'var(--ink)', fontWeight: 500 }}>${x.n}</b><br />${f0(x.k)} kcal · P ${fq(x.p)} · G ${fq(x.g)} · L ${fq(x.l)}${x.u ? ' · par portion' : ''}</span><span></span>
       <${Confirm} label="Retirer" sure="Retirer ?" cls="ghost" onYes=${() => del(x.id)} /></div>`)}
     ${!mine.length && html`<p className="mut" style=${{ fontSize: 13 }}>Aucun aliment perso. Ajoute ceux que tu manges souvent : ils apparaissent dans la recherche d’aliments.</p>`}
@@ -2253,8 +2778,7 @@ function FoodsEditor() {
 /* ApexHQ — coque : en-tête (jour + statut), onglets, réglages et données, démarrage. */
 const STANDALONE = !!window.APEX_STANDALONE;
 const TABS_ALL = [['dashboard', 'Jour', 'home'], ['repas', 'Repas', 'utensils'], ['training', 'Training', 'dumbbell'], ['coach', 'Coach', 'chat'], ['analytics', 'Analyse', 'chart']];
-const TABS = TABS_ALL.filter(t => !(STANDALONE && t[0] === 'coach'));
-const tabOf = () => { let h = ''; try { h = (location.hash || '').replace('#', ''); } catch (e) { h = ''; } return TABS.some(t => t[0] === h) ? h : 'dashboard'; };
+const tabOf = () => { let h = ''; try { h = (location.hash || '').replace('#', ''); } catch (e) { h = ''; } return TABS_ALL.some(t => t[0] === h) ? h : 'dashboard'; };
 const SYNC = { boot: ['', 'Connexion…'], wait: ['pend', 'Connexion…'], local: ['', 'Sur cet appareil'], ok: ['ok', 'Synchronisé'], stale: ['pend', 'Hors ligne'], err: ['err', 'Synchro en erreur'] };
 const JOURS = [[1, 'Lundi'], [2, 'Mardi'], [3, 'Mercredi'], [4, 'Jeudi'], [5, 'Vendredi'], [6, 'Samedi'], [0, 'Dimanche']];
 
@@ -2277,10 +2801,11 @@ function SettingsSheet({ onClose }) {
     <${Num} id=${'c-' + s + '-l'} label="Lipides" unit="g" value=${cfg.cibles[s].l} onChange=${setC(s, 'l')} dec=${0} min=${cfg.cibles.planchers.l} max=${200} />
     <div className="fld"><span className="fld-l">Glucides</span><div className="inp" style=${{ display: 'grid', alignItems: 'center' }}>${cfg.cibles[s].g} g</div></div>
   </div>`;
-  const SECS = [['profil', 'Profil'], ['seances', 'Séances'], ['focus', 'Points faibles'], ['repas', 'Repas'], ['data', 'Données']];
+  const SECS = [['profil', 'Profil'], ['seances', 'Séances'], ['focus', 'Points faibles'], ['repas', 'Repas'], ['claude', 'Claude'], ['data', 'Données']];
   return html`<${Sheet} title="Réglages et données" onClose=${onClose}>
     <div className="chips" role="group" aria-label="Sections">${SECS.map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${sec === x[0]} onClick=${() => setSec(x[0])}>${x[1]}</button>`)}</div>
     ${sec === 'profil' && html`<${React.Fragment}>
+    <button type="button" className="btn wide" onClick=${() => { Store.patch('cfg', null, { onboarded: false }); onClose(); }}><${Icon} n="sparkles" s=${18} />Refaire le questionnaire de démarrage</button>
     <h3>Profil</h3>
     <div className="form">
       <${Num} id="p-taille" label="Taille" unit="cm" value=${cfg.profil.taille} onChange=${setP('taille')} dec=${1} min=${120} max=${230} />
@@ -2316,6 +2841,7 @@ function SettingsSheet({ onClose }) {
         <${Num} id=${id + '-d'} label="Dose g" value=${f.u[1]} onChange=${setFood(id, 'dose')} dec=${0} min=${5} max=${100} />
       </div></div>`; })}
     <//>`}
+    ${sec === 'claude' && html`<${ClaudeLink} />`}
     ${sec === 'data' && html`<${React.Fragment}>
     <h3>Données</h3>
     <p className="mut" style=${{ fontSize: 12 }}>Version : ${window.APEX_VERSION ? 'app autonome ' + window.APEX_VERSION : 'version Claude'}</p>
@@ -2354,6 +2880,8 @@ function App() {
   const go = t => { setTab(t); try { if (location.hash !== '#' + t) location.hash = t; } catch (e) { /* hash indisponible */ } try { window.scrollTo(0, 0); } catch (e) { /* sans effet */ } };
   const setStatut = v => { if (v === statut) return; if (v === 'repos') Store.patch('journal', date, { date, statut: 'repos' }); else Store.patch('journal', date, { date, statut: 'salle', seance: j.seance || cfg.planning[Apex.dow(date)] || Apex.prochaineSeance(S.seances, cfg, date) }); };
   const sc = sy.pending > 0 ? ['pend', 'Enregistrement…'] : (SYNC[sy.mode] || SYNC.local);
+  const tabs = TABS_ALL.filter(t => t[0] !== 'coach' || !STANDALONE || st.caps().sample);
+  const wiz = cfg.onboarded === false || (cfg.onboarded == null && (sy.mode === 'ok' || sy.mode === 'local') && !Object.keys(S.journal).length && !Object.keys(S.seances).length);
   const View = tab === 'repas' ? Repas : tab === 'training' ? Training : tab === 'analytics' ? Analytics : tab === 'coach' ? Coach : Dashboard;
   return html`<div>
     <header className="top"><div className="wrap top-in">
@@ -2372,8 +2900,9 @@ function App() {
       </div>
     </div></header>
     <main className="wrap"><${Boundary} key=${tab}><${View} date=${date} setDate=${setDate} go=${go} /><//></main>
-    <nav className="tabs" aria-label="Sections" style=${{ gridTemplateColumns: 'repeat(' + TABS.length + ', 1fr)' }}>${TABS.map(t => html`<button key=${t[0]} type="button" aria-current=${tab === t[0] ? 'page' : undefined} onClick=${() => go(t[0])}><${Icon} n=${t[2]} s=${22} />${t[1]}</button>`)}</nav>
+    <nav className="tabs" aria-label="Sections" style=${{ gridTemplateColumns: 'repeat(' + tabs.length + ', 1fr)' }}>${tabs.map(t => html`<button key=${t[0]} type="button" aria-current=${tab === t[0] ? 'page' : undefined} onClick=${() => go(t[0])}><${Icon} n=${t[2]} s=${22} />${t[1]}</button>`)}</nav>
     ${open && html`<${SettingsSheet} onClose=${() => setOpen(false)} />`}
+    ${wiz && html`<${Wizard} redo=${cfg.onboarded === false} onClose=${() => {}} />`}
     <${Toasts} />
   </div>`;
 }
