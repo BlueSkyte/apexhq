@@ -708,26 +708,47 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   }
 
   /* ---------- points faibles proposés ---------- */
+  /* Un point faible = un muscle (pas de groupes). [clé du muscle, libellé, réglage par défaut] */
   const FOCUS_CHOIX = [
-    ['pecH', 'Haut des pectoraux', { n: 'Pectoraux (haut)', m: ['pecH', 'pec'], min: 14, max: 20, freq: 2, sub: { m: 'pecH', n: 'haut', min: 9 } }],
-    ['pec', 'Pectoraux', { n: 'Pectoraux', m: ['pecH', 'pec'], min: 12, max: 18, freq: 2 }],
+    ['pecH', 'Haut des pectoraux', { n: 'Pecs haut', m: ['pecH'], min: 8, max: 14, freq: 2 }],
+    ['pec', 'Pectoraux', { n: 'Pecs', m: ['pec'], min: 10, max: 16, freq: 2 }],
+    ['dLat', 'Deltoïdes latéraux', { n: 'Deltoïdes latéraux', m: ['dLat'], min: 12, max: 18, freq: 3 }],
+    ['dAnt', 'Deltoïdes antérieurs', { n: 'Deltoïdes antérieurs', m: ['dAnt'], min: 6, max: 10, freq: 2 }],
+    ['dPost', 'Deltoïdes postérieurs', { n: 'Deltoïdes postérieurs', m: ['dPost'], min: 8, max: 14, freq: 2 }],
     ['bic', 'Biceps', { n: 'Biceps', m: ['bic'], min: 10, max: 14, freq: 2 }],
     ['tri', 'Triceps', { n: 'Triceps', m: ['tri'], min: 10, max: 14, freq: 2 }],
-    ['dLat', 'Épaules (faisceau latéral)', { n: 'Deltoïdes latéraux', m: ['dLat'], min: 12, max: 18, freq: 3 }],
-    ['dAnt', 'Épaules (faisceau avant)', { n: 'Épaules avant', m: ['dAnt'], min: 8, max: 12, freq: 2 }],
-    ['dPost', 'Épaules arrière', { n: 'Épaules arrière', m: ['dPost'], min: 8, max: 14, freq: 2 }],
-    ['epaules', 'Épaules complètes', { n: 'Épaules (complètes)', m: ['dLat', 'dAnt', 'dPost'], min: 18, max: 26, freq: 3 }],
-    ['bras', 'Bras complets (biceps + triceps)', { n: 'Bras', m: ['bic', 'tri'], min: 18, max: 26, freq: 2 }],
     ['dos', 'Dos', { n: 'Dos', m: ['dos'], min: 14, max: 20, freq: 2 }],
-    ['quad', 'Cuisses (quadriceps)', { n: 'Quadriceps', m: ['quad'], min: 10, max: 16, freq: 2 }],
-    ['isch', 'Ischios et fessiers', { n: 'Ischios et fessiers', m: ['isch', 'fess'], min: 8, max: 14, freq: 2 }],
-    ['ischO', 'Ischio-jambiers', { n: 'Ischio-jambiers', m: ['isch'], min: 8, max: 12, freq: 2 }],
+    ['quad', 'Quadriceps', { n: 'Quadriceps', m: ['quad'], min: 10, max: 16, freq: 2 }],
+    ['isch', 'Ischio-jambiers', { n: 'Ischios', m: ['isch'], min: 8, max: 12, freq: 2 }],
     ['fess', 'Fessiers', { n: 'Fessiers', m: ['fess'], min: 8, max: 14, freq: 2 }],
-    ['jambes', 'Jambes complètes', { n: 'Jambes', m: ['quad', 'isch', 'fess'], min: 20, max: 30, freq: 2 }],
     ['mol', 'Mollets', { n: 'Mollets', m: ['mol'], min: 8, max: 14, freq: 2 }],
     ['abd', 'Abdos', { n: 'Abdos', m: ['abd'], min: 6, max: 12, freq: 2 }],
   ];
-  const focusGroupes = keys => { const out = [], seen = {}; (keys || []).forEach(k => { const c = FOCUS_CHOIX.find(x => x[0] === k); if (!c) return; const g = Object.assign({ id: 'f_' + k }, c[2]); const key = g.m.join(); if (seen[key]) return; seen[key] = 1; out.push(g); }); return out; };
+  /* Anciens choix groupés : plus proposés, mais d'anciennes réponses restent lisibles. */
+  const FOCUS_ANCIENS = [
+    ['epaules', '', { n: 'Épaules (complètes)', m: ['dLat', 'dAnt', 'dPost'], min: 18, max: 26, freq: 3 }],
+    ['bras', '', { n: 'Bras', m: ['bic', 'tri'], min: 18, max: 26, freq: 2 }],
+    ['jambes', '', { n: 'Jambes', m: ['quad', 'isch', 'fess'], min: 20, max: 30, freq: 2 }],
+    ['ischO', '', { n: 'Ischio-jambiers', m: ['isch'], min: 8, max: 12, freq: 2 }],
+  ];
+  const focusGroupes = keys => { const out = [], seen = {}; (keys || []).forEach(k => { const c = FOCUS_CHOIX.find(x => x[0] === k) || FOCUS_ANCIENS.find(x => x[0] === k); if (!c) return; const g = Object.assign({ id: 'f_' + k }, c[2]); const key = g.m.join(); if (seen[key]) return; seen[key] = 1; out.push(g); }); return out; };
+  /* Éclate les groupes de muscles (anciennes listes) en un point faible par muscle. */
+  const focusEclate = arr => {
+    const out = [], seen = {};
+    (arr || []).forEach(g => {
+      if (!g || !Array.isArray(g.m)) return;
+      const n = g.m.length;
+      g.m.forEach(m => {
+        if (seen[m] || !A.MUSCLES[m]) return; seen[m] = 1;
+        const c = FOCUS_CHOIX.find(x => x[0] === m), def = c ? c[2] : { min: 8, max: 14, freq: 2 };
+        const sub = g.sub && g.sub.m === m ? g.sub.min : 0;
+        const min = n === 1 ? g.min : (sub || Math.min(def.min, Math.max(4, Math.round(g.min / n))));
+        const max = n === 1 ? g.max : Math.max(min, def.max);
+        out.push({ id: n === 1 ? g.id : 'f_' + m, n: A.MUSCLES[m], m: [m], min, max, freq: g.freq || def.freq });
+      });
+    });
+    return out;
+  };
 
   /* ---------- programme de séances ---------- */
   const P3 = ['Push', 'Pull', 'Legs'];
@@ -918,7 +939,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return { obj, objTxt: OBJ_TXT[obj], sexe, rythme, focus, ligne: sexe + ', ' + p.age + ' ans, ' + p.taille + ' cm, départ ' + p.poidsDepart + ' kg le ' + p.dateDepart + ', cible ' + p.poidsCible + ' kg' };
   }
 
-  Object.assign(A, { SPLIT_CHOIX, SPLIT_N, splitNorm, iaProfil, completerProgramme, ajusterDuree, OBJECTIFS, INTENSITES, intensites, calcPlan, planToCfg, FOCUS_CHOIX, focusGroupes, SPLITS, SPLIT_TYPES, splitBase, splitSuggere, genProgramme, volumeGroupe, validerProgrammeIA, exclusIds, modelesPour, wheyAliments, SUPP_CHOIX, suppsListe });
+  Object.assign(A, { SPLIT_CHOIX, SPLIT_N, splitNorm, iaProfil, completerProgramme, ajusterDuree, OBJECTIFS, INTENSITES, intensites, calcPlan, planToCfg, FOCUS_CHOIX, focusGroupes, focusEclate, SPLITS, SPLIT_TYPES, splitBase, splitSuggere, genProgramme, volumeGroupe, validerProgrammeIA, exclusIds, modelesPour, wheyAliments, SUPP_CHOIX, suppsListe });
 })();
 
 /* ---- 12-adapt-logic.js ---- */
@@ -4508,34 +4529,35 @@ function SeancesEditor() {
   </div>`;
 }
 
-/* ---------- points faibles ---------- */
-const PRESETS = [['Dos', ['dos'], 14, 20, 2], ['Jambes', ['quad', 'isch', 'fess'], 12, 20, 2], ['Triceps', ['tri'], 10, 14, 2], ['Épaules arrière', ['dPost'], 8, 14, 2], ['Mollets', ['mol'], 8, 14, 2], ['Abdos', ['abd'], 6, 12, 2], ['Épaules avant', ['dAnt'], 6, 10, 2]];
+/* ---------- points faibles : un muscle = un point faible (pas de groupes) ---------- */
 function FocusEditor() {
-  const st = useStore(), cfg = st.cfg(), GR = Apex.groupes(cfg), arr = Object.keys(GR).map(k => GR[k]);
+  const st = useStore(), cfg = st.cfg(), GR = Apex.groupes(cfg);
+  /* liste normalisée : un point faible par muscle (les anciens groupes sont éclatés) */
+  const arr = Apex.focusEclate(Object.keys(GR).map(k => GR[k]));
   const put = a => Store.patch('cfg', null, { focus: a });
-  const upd = (id, f) => put(arr.map(g => (g.id === id ? Object.assign({}, g, f) : g)));
-  const togM = (g, m) => { const has = g.m.indexOf(m) >= 0; if (has && g.m.length === 1) return; upd(g.id, { m: has ? g.m.filter(x => x !== m) : g.m.concat(m) }); };
-  const setMin = (g, v) => { if (v == null) return; const mn = Math.max(1, Math.round(v)); upd(g.id, { min: mn, max: Math.max(g.max, mn) }); };
-  const setMax = (g, v) => { if (v == null) return; upd(g.id, { max: Math.max(g.min, Math.round(v)) }); };
-  const have = arr.map(g => g.n.toLowerCase());
+  const upd = (m, f) => put(arr.map(g => (g.m[0] === m ? Object.assign({}, g, f) : g)));
+  const setMin = (g, v) => { if (v == null) return; const mn = Math.max(1, Math.round(v)); upd(g.m[0], { min: mn, max: Math.max(g.max, mn) }); };
+  const setMax = (g, v) => { if (v == null) return; upd(g.m[0], { max: Math.max(g.min, Math.round(v)) }); };
+  const has = m => arr.some(g => g.m[0] === m);
+  const toggle = m => {
+    if (has(m)) { put(arr.filter(g => g.m[0] !== m)); return; }
+    const c = Apex.FOCUS_CHOIX.find(x => x[0] === m), d = c ? c[2] : { n: Apex.MUSCLES[m], m: [m], min: 8, max: 14, freq: 2 };
+    put(arr.concat({ id: 'f_' + m, n: Apex.MUSCLES[m], m: [m], min: d.min, max: d.max, freq: d.freq }));
+  };
   return html`<div className="stack">
-    <p className="mut" style=${{ fontSize: 12 }}>Tes muscles prioritaires. L’app compte les séries directes de la semaine pour chacun, prévient si le volume projeté ou la fréquence sont sous ta cible, et suit la force de son exercice le plus noté.</p>
-    ${arr.map(g => html`<article key=${g.id} className="meal"><div className="its" style=${{ borderTop: 0, padding: '12px 14px', display: 'grid', gap: 12 }}>
-      <div className="row sb"><div className="grow"><${Txt} id=${'fn-' + g.id} label="Nom" value=${g.n} max=${30} onCommit=${v => upd(g.id, { n: v })} /></div>
-        <${Confirm} label="Retirer" sure="Retirer ?" cls="ghost" onYes=${() => put(arr.filter(x => x.id !== g.id))} /></div>
-      <div className="stack"><span className="fld-l">Muscles comptés</span>
-        <div className="chips">${Object.keys(Apex.MUSCLES).map(m => html`<button key=${m} type="button" className="chip" aria-pressed=${g.m.indexOf(m) >= 0} onClick=${() => togM(g, m)}>${Apex.MUSCLES[m]}</button>`)}</div></div>
-      <div className="form f4">
-        <${Num} id=${'fmin-' + g.id} label="Séries min" value=${g.min} onChange=${v => setMin(g, v)} dec=${0} min=${1} max=${60} />
-        <${Num} id=${'fmax-' + g.id} label="Séries max" value=${g.max} onChange=${v => setMax(g, v)} dec=${0} min=${1} max=${80} />
-        <${Num} id=${'ffq-' + g.id} label="Fois / sem." value=${g.freq} onChange=${v => { if (v != null) upd(g.id, { freq: Math.max(1, Math.min(7, Math.round(v))) }); }} dec=${0} min=${1} max=${7} />
-        ${g.sub && html`<${Num} id=${'fsub-' + g.id} label=${'Min. « ' + g.sub.n + ' »'} value=${g.sub.min} onChange=${v => { if (v != null) upd(g.id, { sub: Object.assign({}, g.sub, { min: Math.max(1, Math.round(v)) }) }); }} dec=${0} min=${1} max=${40} />`}
+    <p className="mut" style=${{ fontSize: 12 }}>Choisis les muscles à faire progresser en priorité (un par un, sans groupe). L’app compte les séries directes de la semaine pour chacun, prévient si le volume projeté ou la fréquence sont sous ta cible, et suit la force de son exercice le plus noté.</p>
+    <div className="stack"><span className="fld-l">Muscles prioritaires<b>${arr.length} / ${Apex.FOCUS_CHOIX.length}</b></span>
+      <div className="chips">${Apex.FOCUS_CHOIX.map(c => html`<button key=${c[0]} type="button" className="chip" aria-pressed=${has(c[0])} onClick=${() => toggle(c[0])}>${c[1]}</button>`)}</div></div>
+    ${arr.map(g => html`<article key=${g.m[0]} className="meal"><div className="its" style=${{ borderTop: 0, padding: '12px 14px', display: 'grid', gap: 12 }}>
+      <div className="row sb"><b>${Apex.MUSCLES[g.m[0]]}</b>
+        <${Confirm} label="Retirer" sure="Retirer ?" cls="ghost" onYes=${() => toggle(g.m[0])} /></div>
+      <div className="form f3">
+        <${Num} id=${'fmin-' + g.m[0]} label="Séries min" value=${g.min} onChange=${v => setMin(g, v)} dec=${0} min=${1} max=${60} />
+        <${Num} id=${'fmax-' + g.m[0]} label="Séries max" value=${g.max} onChange=${v => setMax(g, v)} dec=${0} min=${1} max=${80} />
+        <${Num} id=${'ffq-' + g.m[0]} label="Fois / sem." value=${g.freq} onChange=${v => { if (v != null) upd(g.m[0], { freq: Math.max(1, Math.min(7, Math.round(v))) }); }} dec=${0} min=${1} max=${7} />
       </div>
     </div></article>`)}
-    ${!arr.length && html`<div className="empty"><span><b>Aucun point faible.</b> Ajoutes-en : l’onglet Training affichera leur volume et leurs alertes.</span></div>`}
-    ${arr.length < 8 && html`<div className="stack"><span className="fld-l">Ajouter un groupe</span><div className="chips">
-      ${PRESETS.filter(p => have.indexOf(p[0].toLowerCase()) < 0).map(p => html`<button key=${p[0]} type="button" className="chip" onClick=${() => put(arr.concat({ id: 'g_' + Apex.uid(), n: p[0], m: p[1], min: p[2], max: p[3], freq: p[4] }))}><${Icon} n="plus" s=${14} />${p[0]}</button>`)}
-      <button type="button" className="chip" onClick=${() => put(arr.concat({ id: 'g_' + Apex.uid(), n: 'Nouveau groupe', m: ['pec'], min: 10, max: 16, freq: 2 }))}><${Icon} n="plus" s=${14} />Autre…</button></div></div>`}
+    ${!arr.length && html`<div className="empty"><span><b>Aucun point faible.</b> Touche un muscle ci-dessus : l’onglet Training affichera son volume et ses alertes.</span></div>`}
     <div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${cfg.focus ? 'Liste personnalisée' : 'Liste par défaut : pectoraux, biceps, deltoïdes latéraux'}</span>
       ${cfg.focus && html`<${Confirm} label="Rétablir" sure="Rétablir la liste ?" cls="ghost" onYes=${() => Store.patch('cfg', null, { focus: null })} />`}</div>
   </div>`;
