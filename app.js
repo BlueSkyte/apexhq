@@ -2589,33 +2589,68 @@ function Icon({ n, s = 20, w = 1.75 }) {
 }
 
 /* ---------- glisser-déposer au doigt (ou à la souris) ----------
-   Une poignée <Grip> dans chaque ligne marquée data-sort ; les lignes sont les enfants directs d'un même conteneur.
-   Pendant le glissement la ligne suit le doigt, les autres s'écartent, le conteneur défile près des bords. */
-function dragSort(e, idx, onMove) {
-  if (e.button != null && e.button > 0) return;
-  const h = e.currentTarget, row = h.closest('[data-sort]'); if (!row) return;
+   Deux façons : la poignée (<Grip>, glisser tout de suite) et la LISTE ENTIÈRE (<SortList> : appui long sur une ligne, puis on la
+   fait glisser ; un petit mouvement avant l'appui long garde le défilement normal). Les lignes sont les enfants directs de la liste,
+   marqués data-sort. Pendant le glissement la ligne suit le doigt, les autres s'écartent, la page défile près des bords. */
+function sortSession(row, idx, onMove) {
   const box = row.parentElement, items = Array.prototype.filter.call(box.children, x => x.hasAttribute('data-sort'));
-  e.preventDefault();
-  try { h.setPointerCapture(e.pointerId); } catch (x) { /* capture indisponible : le glissement marche quand même */ }
-  const sy0 = window.scrollY, y0 = e.clientY, tops = items.map(x => { const r = x.getBoundingClientRect(); return { t: r.top + sy0, h: r.height }; }), me = tops[idx];
-  let to = idx, last = e, raf = 0;
+  const sy0 = window.scrollY, tops = items.map(x => { const r = x.getBoundingClientRect(); return { t: r.top + sy0, h: r.height }; }), me = tops[idx];
+  let to = idx, y0 = 0, last = 0, raf = 0, vivant = true;
   row.classList.add('dragging'); document.body.classList.add('dragging-sort');
   items.forEach(x => { if (x !== row) x.style.transition = 'transform .15s ease'; });
   const place = () => {
-    const dy = last.clientY - y0 + (window.scrollY - sy0), mid = me.t + me.h / 2 + dy; to = idx;
+    const dy = last - y0 + (window.scrollY - sy0), mid = me.t + me.h / 2 + dy; to = idx;
     row.style.transform = 'translateY(' + dy + 'px)';
     tops.forEach((r, i) => { if (mid >= r.t && mid < r.t + r.h) to = i; });
     items.forEach((x, i) => { if (i === idx) return; const s = idx < to && i > idx && i <= to ? -me.h : idx > to && i < idx && i >= to ? me.h : 0; x.style.transform = s ? 'translateY(' + s + 'px)' : ''; });
   };
-  const tick = () => { if (last.clientY < 90) window.scrollBy(0, -10); else if (last.clientY > window.innerHeight - 90) window.scrollBy(0, 10); place(); raf = requestAnimationFrame(tick); };
-  const move = ev => { last = ev; place(); };
-  const end = ev => {
-    last = ev; place(); cancelAnimationFrame(raf); h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', end); h.removeEventListener('pointercancel', end);
-    items.forEach(x => { x.style.transform = ''; x.style.transition = ''; }); row.classList.remove('dragging'); document.body.classList.remove('dragging-sort');
-    if (ev.type === 'pointerup' && to !== idx) onMove(idx, to);
+  const tick = () => { if (!vivant) return; if (last < 90) window.scrollBy(0, -10); else if (last > window.innerHeight - 90) window.scrollBy(0, 10); place(); raf = requestAnimationFrame(tick); };
+  return {
+    start(y) { y0 = y; last = y; raf = requestAnimationFrame(tick); },
+    move(y) { last = y; place(); },
+    end(valider) {
+      vivant = false; cancelAnimationFrame(raf);
+      items.forEach(x => { x.style.transform = ''; x.style.transition = ''; }); row.classList.remove('dragging'); document.body.classList.remove('dragging-sort');
+      if (valider && to !== idx) onMove(idx, to);
+    },
   };
+}
+function dragSort(e, idx, onMove) {
+  if (e.button != null && e.button > 0) return;
+  const h = e.currentTarget, row = h.closest('[data-sort]'); if (!row) return;
+  e.preventDefault();
+  try { h.setPointerCapture(e.pointerId); } catch (x) { /* capture indisponible : le glissement marche quand même */ }
+  const ctl = sortSession(row, Array.prototype.filter.call(row.parentElement.children, x => x.hasAttribute('data-sort')).indexOf(row), onMove);
+  ctl.start(e.clientY);
+  const move = ev => ctl.move(ev.clientY);
+  const end = ev => { h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', end); h.removeEventListener('pointercancel', end); ctl.move(ev.clientY); ctl.end(ev.type === 'pointerup'); };
   h.addEventListener('pointermove', move); h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
-  raf = requestAnimationFrame(tick);
+}
+/* Liste dont chaque ligne (data-sort) se déplace en la faisant glisser après un appui long (doigt) ou un clic maintenu (souris).
+   Une ligne peut limiter la zone sensible avec un enfant data-sort-zone ; les champs et boutons de déplacement ne déclenchent rien. */
+function SortList({ onMove, className, children }) {
+  const ref = useRef(null), mv = useRef(onMove); mv.current = onMove;
+  useEffect(() => {
+    const box = ref.current; if (!box) return;
+    const NON = 'input, textarea, select, .grip, .mv, [data-nosort]'; let st = null, finDrag = 0;
+    const lignes = () => Array.prototype.filter.call(box.children, x => x.hasAttribute('data-sort'));
+    const ligneDe = t => { const r = t.closest && t.closest('[data-sort]'); return r && r.parentElement === box ? r : null; };
+    const zoneOk = (row, t) => { const z = row.querySelector('[data-sort-zone]'); return !z || z.contains(t); };
+    const demarrer = y => { st.ctl = sortSession(st.row, lignes().indexOf(st.row), (a, b) => mv.current(a, b)); st.ctl.start(y); st.on = true; try { if (navigator.vibrate) navigator.vibrate(12); } catch (x) { /* pas de vibration */ } };
+    const stop = valider => { if (!st) return; clearTimeout(st.timer); if (st.on) { st.ctl.end(valider); finDrag = Date.now(); } st = null; };
+    const ts = e => { if (e.touches.length !== 1) return; const t = e.target, row = ligneDe(t); if (!row || t.closest(NON) || !zoneOk(row, t)) return; const p = e.touches[0]; st = { row, x: p.clientX, y: p.clientY, on: false }; st.timer = setTimeout(() => demarrer(st.y), 320); };
+    const tm = e => { if (!st) return; const p = e.touches[0]; if (!st.on) { if (Math.abs(p.clientX - st.x) > 9 || Math.abs(p.clientY - st.y) > 9) { clearTimeout(st.timer); st = null; } return; } e.preventDefault(); st.ctl.move(p.clientY); };
+    const te = e => stop(e.type === 'touchend');
+    const md = e => { if (e.button !== 0) return; const t = e.target, row = ligneDe(t); if (!row || t.closest(NON) || !zoneOk(row, t)) return; st = { row, x: e.clientX, y: e.clientY, on: false }; window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu); };
+    const mm = e => { if (!st) return; if (!st.on) { if (Math.abs(e.clientY - st.y) > 6) demarrer(e.clientY); return; } st.ctl.move(e.clientY); };
+    const mu = () => { window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); stop(true); };
+    const clic = e => { if (Date.now() - finDrag < 450) { e.stopPropagation(); e.preventDefault(); } };
+    const menu = e => { if (st && st.on) e.preventDefault(); };
+    box.addEventListener('touchstart', ts, { passive: true }); box.addEventListener('touchmove', tm, { passive: false });
+    box.addEventListener('touchend', te); box.addEventListener('touchcancel', te); box.addEventListener('mousedown', md); box.addEventListener('click', clic, true); box.addEventListener('contextmenu', menu);
+    return () => { box.removeEventListener('touchstart', ts); box.removeEventListener('touchmove', tm); box.removeEventListener('touchend', te); box.removeEventListener('touchcancel', te); box.removeEventListener('mousedown', md); box.removeEventListener('click', clic, true); box.removeEventListener('contextmenu', menu); window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); };
+  }, []);
+  return html`<div ref=${ref} className=${className}>${children}</div>`;
 }
 function Grip({ i, n, onMove, label }) {
   return html`<button type="button" className="grip" aria-label=${'Déplacer ' + (label || 'cet exercice') + ' : glisse avec le doigt, ou flèches haut et bas'}
@@ -3467,10 +3502,10 @@ function ExoBlock({ ex, exos, seances, date, onSets, onSwap, onDel, onOk, onRest
   const [ouvert, setOuvert] = useState(false), replie = !!ex.ok && !ouvert;
   const setAt = (i, k, v) => { if (k === 'r' && v > 0 && !(ex.sets[i] && ex.sets[i].r > 0)) chronoApresSerie(rest); onSets(ex.sets.map((s, n) => (n === i ? cleanSet(Object.assign({}, s, { [k]: v })) : s))); };
   return html`<div className=${cx('exo', ex.ok && 'valide')} data-sort="1">
-    <div className="exo-h has-grip">
+    <div className="exo-h has-grip" data-sort-zone="1">
       <${Mover} i=${pos} n=${total} label=${e.n} onMove=${onMove} />
       <span className="mfig-box"><${MuscleFig} m=${e.m} s=${e.s} h=${62} /></span>
-      <div className="exo-t"><button type="button" className="exo-tt" aria-expanded=${!replie} onClick=${() => ex.ok && setOuvert(!ouvert)}><h3>${e.n}${fl(e) && html`<span className="badge">${fl(e)}</span>`}${e.uni && html`<span className="badge uni">1 côté</span>`}</h3></button>
+      <div className="exo-t"><button type="button" className="exo-tt" aria-expanded=${!replie} onClick=${() => ex.ok && setOuvert(!ouvert)}><h3>${e.n}<span className="badge">${Apex.MUSCLES[e.m] || ''}</span>${e.uni && html`<span className="badge uni">1 côté</span>`}</h3></button>
         <div className="exo-m">
           ${replie ? html`<span><b>${faites.length}</b> série${faites.length > 1 ? 's' : ''} faite${faites.length > 1 ? 's' : ''}${faites.length ? html` · <b>${setsTxt(faites)}</b>` : ''}</span>` : html`
           <span>${last ? html`Dernier <b>${setsTxt(last.sets)}</b>` : 'Première fois'}</span>
@@ -3548,12 +3583,12 @@ function SeanceCard({ date }) {
     ${(se.exos || []).length > 0 && html`<div className="exo-prog" role="img" aria-label=${(se.exos || []).filter(x => x.ok).length + ' exercices validés sur ' + (se.exos || []).length}>
       <div className="exo-prog-l"><span>Exercices validés</span><b>${(se.exos || []).filter(x => x.ok).length} / ${(se.exos || []).length}</b></div>
       <div className="exo-prog-b"><i style=${{ width: (se.exos || []).filter(x => x.ok).length / (se.exos || []).length * 100 + '%' }}></i></div></div>`}
-    <div>${(se.exos || []).map((ex, i) => html`<${ExoBlock} key=${ex.e + '-' + i} ex=${ex} exos=${exos} seances=${S.seances} date=${date} i=${i} n=${(se.exos || []).length} onMove=${(a, b) => putExos(moveIn(se.exos, a, b))}
+    <${SortList} onMove=${(a, b) => putExos(moveIn(se.exos, a, b))}>${(se.exos || []).map((ex, i) => html`<${ExoBlock} key=${ex.e + '-' + i} ex=${ex} exos=${exos} seances=${S.seances} date=${date} i=${i} n=${(se.exos || []).length} onMove=${(a, b) => putExos(moveIn(se.exos, a, b))}
       onSets=${sets => putExos(se.exos.map((x, n) => (n === i ? Object.assign({}, x, { sets }) : x)))}
       onSwap=${() => setSheet({ t: 'swap', i })}
       onOk=${v => putExos(se.exos.map((x, n) => (n === i ? Object.assign({}, x, { ok: v ? true : null }) : x)))}
       onRest=${v => putExos(se.exos.map((x, n) => (n === i ? Object.assign({}, x, { rest: v }) : x)))}
-      onDel=${() => putExos(se.exos.filter((_, n) => n !== i))} />`)}</div>
+      onDel=${() => putExos(se.exos.filter((_, n) => n !== i))} />`)}<//>
     <button type="button" className="btn wide" onClick=${() => setSheet({ t: 'add' })}><${Icon} n="plus" s=${18} />Exercice</button>
     <div className="tiles">
       <div className="tile"><span>Séries faites</span><b>${r.sets}</b></div>
@@ -3566,6 +3601,22 @@ function SeanceCard({ date }) {
     </div>
     ${sheet && sheet.t === 'add' && html`<${ExoSheet} exos=${exos} title="Ajouter un exercice" onClose=${() => setSheet(null)} onPick=${id => putExos((se.exos || []).concat({ e: id, sets: [{}, {}, {}] }))} />`}
     ${swEx && html`<${ExoSheet} exos=${exos} title=${'Remplacer · ' + ((exos[swEx.e] || {}).n || '')} muscle=${(exos[swEx.e] || {}).m} onClose=${() => setSheet(null)} onPick=${id => putExos(se.exos.map((x, n) => (n === sheet.i ? Object.assign({}, x, { e: id }) : x)))} />`}
+  <//>`;
+}
+
+/* Muscles travaillés par la séance du jour : le bonhomme allumé, et le nombre de séries par muscle. */
+function MusclesSeance({ date }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), j = S.journal[date] || {}, se = S.seances[date], type = Apex.seanceDuJour(cfg, j, date);
+  const list = se ? (se.exos || []).map(x => ({ e: x.e, n: (x.sets || []).length }))
+    : Array.isArray(j.plan) ? j.plan.map(x => ({ e: x.e, n: x.n })) : (Apex.progOf(cfg)[type] || []).map(x => ({ e: x[0], n: x[1] }));
+  const dir = {}, ind = {};
+  list.forEach(x => { const e = exos[x.e]; if (!e) return; dir[e.m] = (dir[e.m] || 0) + x.n; (e.s || []).forEach(k => { ind[k] = (ind[k] || 0) + x.n * 0.5; }); });
+  const prim = Object.keys(dir).sort((a, b) => dir[b] - dir[a]), sec = Object.keys(ind).filter(k => !dir[k]).sort((a, b) => ind[b] - ind[a]), top = Math.max.apply(null, prim.map(k => dir[k]).concat(1));
+  if (!prim.length) return html`<${Card} title="Muscles de la séance" sub=${se ? se.type : type}><div className="empty"><span>Aucun exercice dans cette séance.</span></div><//>`;
+  return html`<${Card} title="Muscles de la séance" sub=${(se ? se.type : type || 'Séance libre') + ' · ' + prim.length + ' muscle' + (prim.length > 1 ? 's' : '')}>
+    <div className="mfig-lg"><${MuscleFig} m=${prim} s=${sec} h=${210} both /><span><i style=${{ background: 'var(--acc-hi)' }}></i>Travaillés${sec.length ? html` · <i style=${{ background: 'color-mix(in oklab, var(--acc-hi) 48%, #0a0b0d)' }}></i>Sollicités en aide` : ''}</span></div>
+    <div className="msc">${prim.map(k => html`<div key=${k} className="msc-r"><span>${Apex.MUSCLES[k] || k}</span><b>${dir[k]} série${dir[k] > 1 ? 's' : ''}</b><div className="msc-b" aria-hidden="true"><i style=${{ width: dir[k] / top * 100 + '%' }}></i></div></div>`)}</div>
+    ${sec.length > 0 && html`<p className="mut" style=${{ fontSize: 12 }}>En aide : ${sec.map(k => Apex.MUSCLES[k] || k).join(', ').toLowerCase()}.</p>`}
   <//>`;
 }
 
@@ -3641,15 +3692,15 @@ function Training({ date, setDate }) {
   const [view, setView] = useState(() => { const v = lsGet('train:view', 'seance'); return ['seance', 'prog', 'suivi'].indexOf(v) >= 0 ? v : 'seance'; });
   const pick = v => { setView(v); lsSet('train:view', v); };
   return html`<div>
-    <div className="view-h"><h1>Muscu · ${dMid(date)}</h1><p>${nS} séance${nS > 1 ? 's' : ''} par semaine · ${Apex.types(cfg).join(', ')}.${foc.length ? ' Priorité : ' + foc.join(', ').toLowerCase() + '.' : ''}</p><${ChronoBtn} /></div>
+    <div className="view-h"><h1>Muscu · ${dMid(date)}</h1><p>${nS} séance${nS > 1 ? 's' : ''} par semaine · ${Apex.types(cfg).join(', ')}.</p><${ChronoBtn} /></div>
     <div className="ttabs" role="tablist" aria-label="Espace muscu">${[['prog', 'Programme', 'sliders'], ['seance', 'Séance', 'dumbbell'], ['suivi', 'Suivi', 'chart']].map(t => html`<button key=${t[0]} type="button" role="tab" aria-selected=${view === t[0]} className="ttab" onClick=${() => pick(t[0])}><${Icon} n=${t[2]} s=${18} />${t[1]}</button>`)}</div>
     ${view === 'seance' && html`<div className="grid">
       <div className="c12"><${WeekBar} date=${date} setDate=${setDate} /></div>
       <${SeanceCard} date=${date} />
-      <div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}><${FocusCard} date=${date} /></div>
+      <div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}><${MusclesSeance} date=${date} /></div>
     </div>`}
     ${view === 'prog' && html`<${ProgrammeTab} />`}
-    ${view === 'suivi' && html`<div className="grid"><div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}><${FatigueCard} date=${date} /></div><${HistoCard} /></div>`}
+    ${view === 'suivi' && html`<div className="grid"><div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}><${FatigueCard} date=${date} /><${FocusCard} date=${date} /></div><${HistoCard} /></div>`}
     <${Chrono} />
   </div>`;
 }
@@ -3759,13 +3810,13 @@ function SeanceProg({ type, items, exos, cfg, open, onToggle, onParams, onAdd })
       <${Icon} n=${open ? 'up' : 'down'} s=${18} /></button>
     ${open && html`<div className="sp-b">
       ${nbJours === 0 && html`<p className="mut" style=${{ fontSize: 12 }}>Pas placée dans la semaine : elle n’est pas comptée dans le volume.</p>`}
-      <div className="pr-list">${list.map((x, i) => { const e = exos[x.e] || { n: x.e, m: '', lo: 8, hi: 12 }, p = Apex.paramsDe(e, x), foc = Apex.focusLabel(cfg, e.m); return html`<div key=${x.e + '-' + i} className="pr" data-sort="1">
+      <${SortList} className="pr-list" onMove=${(a, b) => upd(it => Apex.deplacerExo(it, type, a, b))}>${list.map((x, i) => { const e = exos[x.e] || { n: x.e, m: '', lo: 8, hi: 12 }, p = Apex.paramsDe(e, x), foc = Apex.focusLabel(cfg, e.m); return html`<div key=${x.e + '-' + i} className="pr" data-sort="1">
         <span className="mfig-box"><${MuscleFig} m=${e.m} s=${e.s} h=${64} /></span>
         <button type="button" className="pr-n" onClick=${() => onParams(i)} aria-label=${'Régler ' + e.n}>
           <b className="pr-nom">${e.n}</b>
           <span className="pr-tags">${foc && html`<span className="badge">${foc}</span>`}${e.uni && html`<span className="badge uni">1 côté</span>`}</span>
           <span className="pr-met"><b>${p.n} × ${p.lo}–${p.hi}</b><i>RIR ${p.rir}</i><i>⏱ ${Apex.restTxt(p.rest)}</i></span></button>
-        <${Mover} i=${i} n=${list.length} label=${e.n} onMove=${(a, b) => upd(it => Apex.deplacerExo(it, type, a, b))} /></div>`; })}</div>
+        <${Mover} i=${i} n=${list.length} label=${e.n} onMove=${(a, b) => upd(it => Apex.deplacerExo(it, type, a, b))} /></div>`; })}<//>
       ${!list.length && html`<div className="empty" style=${{ padding: '8px 0' }}><span>Aucun exercice. Ajoute-en depuis la bibliothèque ci-dessous ou avec le bouton.</span></div>`}
       <div className="row sb"><button type="button" className="btn sm" onClick=${onAdd}><${Icon} n="plus" s=${16} />Exercice</button><span className="mut" style=${{ fontSize: 12 }}>Touche un exercice pour régler séries, répétitions et RIR.</span></div>
     </div>`}
@@ -3906,69 +3957,56 @@ function Chrono() {
 }
 
 /* ---- 54-ui-figure.js ---- */
-/* Alvora — le « bonhomme » : planche d'anatomie de face et de dos, muscles dessinés un par un.
-   Muscle principal = couleur pleine avec halo, muscles qui aident = couleur claire, le reste en gris.
-   Tout est dessiné pour la moitié gauche (x < 50) puis reflété : un seul tracé par muscle. */
-const FIG_SIL = {
-  centre: ['M45 22 L45 34 Q50 37 55 34 L55 22 Z',
-    'M44 32 Q34 33 27 38 Q22 42 22 52 L25 66 Q27 80 30 94 Q31 102 31 110 L69 110 Q69 102 70 94 Q73 80 75 66 L78 52 Q78 42 73 38 Q66 33 56 32 Z',
-    'M31 108 Q30 116 34 122 L66 122 Q70 116 69 108 Z'],
-  gauche: ['M24 40 Q15 42 12 56 Q10 68 12 80 Q15 84 21 82 Q24 70 25 56 Q26 46 28 42 Z', 'M12 80 Q8 94 9 106 Q10 114 14 118 Q18 116 19 108 Q22 96 22 82 Q17 84 12 80 Z',
-    'M34 120 Q29 138 30 158 Q34 163 47 160 Q50 140 50 120 Z', 'M31 160 Q29 178 32 196 Q36 199 43 197 Q47 178 46 160 Q39 164 31 160 Z'],
+/* Alvora — le « bonhomme » : silhouette noire de face et de dos, muscles dessinés en facettes séparées par des traits gris-vert,
+   le muscle travaillé s'allume en couleur (planche d'anatomie). Tout est dessiné pour la moitié gauche (x < 50) puis reflété. */
+const FIG_BASE = {
+  centre: ['M44 3 L56 3 L58 12 L56 22 L50 26 L44 22 L42 12 Z', 'M45 24 L55 24 L57 32 L43 32 Z', 'M31 36 L69 36 L74 48 L71 68 L68 98 L50 110 L32 98 L29 68 L26 48 Z'],
+  gauche: ['M27 38 L20 41 L14 60 L10 82 L19 84 L24 64 L29 44 Z', 'M10 82 L19 84 L16 104 L9 120 L3 124 L5 104 Z', 'M3 124 L9 120 L13 130 L9 138 L3 136 Z',
+    'M34 100 L50 108 L50 150 L44 162 L35 158 L32 130 Z', 'M35 160 L45 162 L46 180 L43 194 L35 194 L34 178 Z', 'M34 194 L44 194 L47 200 L32 200 Z'],
 };
 const FIG_FACE = {
-  trap: ['M45 25 Q38 29 28 38 Q36 39 44 35 Z'],
-  dAnt: ['M28 40 Q22 39 19 45 Q17 53 20 60 Q26 58 29 52 Q31 46 28 40 Z'],
-  dLat: ['M19 45 Q13 48 13 56 Q14 62 19 62 Q17 54 19 45 Z'],
-  pecH: ['M50 38 Q40 36 30 41 Q29 47 32 50 Q42 51 50 49 Z'],
-  pec: ['M32 50 Q27 57 31 62 Q40 67 50 63 L50 49 Q42 51 32 50 Z'],
-  bic: ['M21 61 Q16 66 15 76 Q16 81 20 81 Q24 74 25 64 Z'],
-  avb: ['M13 84 Q9 96 10 108 Q12 114 15 112 Q19 100 21 86 Z'],
-  abd: ['M45 66 h5 v7 h-5 Z', 'M45 75 h5 v7 h-5 Z', 'M45 84 h5 v8 h-5 Z', 'M46 94 h4 v7 h-4 Z', 'M35 66 Q31 82 35 102 L43 100 Q41 82 43 67 Z'],
-  quad: ['M35 123 Q31 138 33 158 Q40 161 47 158 Q50 140 49 124 Z'],
-  mol: ['M34 164 Q32 176 35 190 Q39 193 43 191 Q46 176 45 165 Z'],
+  trap: ['M43 30 L34 36 L30 40 L38 40 L44 34 Z'],
+  dAnt: ['M30 40 L27 40 L22 46 L21 56 L27 56 L32 49 Z'],
+  dLat: ['M27 40 L21 42 L17 52 L18 60 L21 56 L22 46 Z'],
+  pecH: ['M50 37 L40 37 L32 41 L33 48 L41 48 L50 46 Z'],
+  pec: ['M33 48 L32 55 L38 61 L50 62 L50 46 L41 48 Z'],
+  bic: ['M21 57 L27 57 L26 70 L21 80 L16 80 L17 66 Z'],
+  avb: ['M16 84 L20 86 L18 102 L12 116 L7 120 L8 104 Z'],
+  abd: ['M33 60 L42 64 L43 98 L36 98 L32 80 Z', 'M45 64 L50 64 L50 72 L45 72 Z', 'M45 74 L50 74 L50 83 L45 83 Z', 'M45 85 L50 85 L50 95 L45 95 Z', 'M46 97 L50 97 L50 107 L46 107 Z'],
+  quad: ['M36 112 L50 112 L49 148 L44 160 L36 156 L33 130 Z'],
+  mol: ['M36 163 L44 163 L45 178 L42 192 L36 192 L35 178 Z'],
 };
 const FIG_DOS = {
-  trap: ['M45 25 Q38 30 28 39 Q40 50 50 78 L50 25 Z'],
-  dPost: ['M28 41 Q22 40 19 46 Q18 54 21 61 Q26 59 29 52 Q31 46 28 41 Z'],
-  dLat: ['M19 46 Q13 49 13 57 Q14 63 19 63 Q17 55 19 46 Z'],
-  lats: ['M30 54 Q27 60 28 68 Q30 84 37 100 Q43 98 47 92 Q45 74 48 62 Q40 60 30 54 Z'],
-  dosH: ['M36 46 Q33 52 36 59 Q42 62 48 60 L49 47 Q42 48 36 46 Z'],
-  lomb: ['M44 84 Q42 96 44 110 L50 110 L50 84 Z'],
-  tri: ['M21 61 Q16 66 15 76 Q16 81 20 81 Q24 74 25 64 Z'],
-  avb: ['M13 84 Q9 96 10 108 Q12 114 15 112 Q19 100 21 86 Z'],
-  fess: ['M34 110 Q30 118 34 126 Q42 130 50 124 L50 110 Z'],
-  isch: ['M34 128 Q31 142 33 158 Q40 161 47 158 Q50 142 50 128 Q42 132 34 128 Z'],
-  mol: ['M34 163 Q31 174 34 186 Q39 190 44 186 Q47 174 45 163 Z'],
-};
-/* traits fins : clavicules, sternum, ligne blanche, colonne, rotules */
-const FIG_TRAITS = {
-  face: ['M44 33 Q38 35 31 38', 'M50 38 L50 100', 'M40 160 m-4 0 a4 3 0 1 0 8 0 a4 3 0 1 0 -8 0'],
-  dos: ['M50 26 L50 112', 'M36 46 Q40 54 36 60'],
+  trap: ['M50 24 L44 28 L31 38 L38 48 L50 78 Z'],
+  dPost: ['M31 39 L27 40 L22 46 L21 56 L27 56 L32 49 Z'],
+  dLat: ['M27 40 L21 42 L17 52 L18 60 L21 56 L22 46 Z'],
+  lats: ['M32 54 L30 64 L34 84 L40 100 L48 96 L49 66 L40 62 Z'],
+  dosH: ['M40 46 L37 54 L41 62 L49 64 L50 56 L50 46 Z'],
+  lomb: ['M44 80 L50 78 L50 108 L45 106 Z'],
+  tri: ['M21 57 L27 57 L26 70 L21 80 L16 80 L17 66 Z'],
+  avb: ['M16 84 L20 86 L18 102 L12 116 L7 120 L8 104 Z'],
+  fess: ['M34 102 L50 106 L50 128 L40 130 L33 116 Z'],
+  isch: ['M36 132 L50 130 L49 150 L44 160 L36 156 L34 142 Z'],
+  mol: ['M36 163 L44 163 L46 178 L42 192 L36 192 L35 178 Z'],
 };
 function FigMiroir({ children }) { return html`<${React.Fragment}>${children}<g transform="translate(100 0) scale(-1 1)">${children}</g><//>`; }
+/* m = muscle principal ou liste de muscles principaux ; s = muscles qui aident */
 function FigBody({ vue, m, s, x }) {
-  const spec = vue === 'face' ? FIG_FACE : FIG_DOS, role = k => (k === m ? 'mf-p' : (s || []).indexOf(k) >= 0 ? 'mf-s' : 'mf-o');
+  const spec = vue === 'face' ? FIG_FACE : FIG_DOS, prim = Array.isArray(m) ? m : [m], role = k => (prim.indexOf(k) >= 0 ? 'mf-p' : (s || []).indexOf(k) >= 0 ? 'mf-s' : 'mf-o');
   const ordre = Object.keys(spec).sort((a, b) => (role(a) === 'mf-p') - (role(b) === 'mf-p') || (role(a) === 'mf-s') - (role(b) === 'mf-s'));
   return html`<g transform=${'translate(' + x + ' 0)'}>
-    <ellipse className="mf-b" cx="50" cy="12.5" rx="9" ry="11" />
-    ${FIG_SIL.centre.map((d, i) => html`<path key=${'c' + i} className="mf-b" d=${d} />`)}
-    <${FigMiroir}>${FIG_SIL.gauche.map((d, i) => html`<path key=${'g' + i} className="mf-b" d=${d} />`)}<//>
+    ${FIG_BASE.centre.map((d, i) => html`<path key=${'c' + i} className="mf-b" d=${d} />`)}
+    <${FigMiroir}>${FIG_BASE.gauche.map((d, i) => html`<path key=${'g' + i} className="mf-b" d=${d} />`)}<//>
     <${FigMiroir}>${ordre.map(k => spec[k].map((d, i) => html`<path key=${k + i} className=${role(k)} d=${d} />`))}<//>
-    <${FigMiroir}>${FIG_TRAITS[vue].map((d, i) => html`<path key=${'t' + i} className="mf-l" d=${d} />`)}<//>
   </g>`;
 }
 /* h = hauteur en pixels. both = face et dos côte à côte (grand format) ; sinon seule la vue qui montre le muscle. */
 function MuscleFig({ m, s, h = 52, both }) {
-  const sec = s || [], backOnly = !FIG_FACE[m] && !!FIG_DOS[m], showF = both || !backOnly, showD = both || backOnly;
-  const w = both ? 212 : 100, label = (Apex.MUSCLES[m] || '') + (sec.length ? ' (aide : ' + sec.map(k => Apex.MUSCLES[k] || k).join(', ') + ')' : '');
+  const sec = s || [], prim = Array.isArray(m) ? m : [m], backOnly = prim.every(k => !FIG_FACE[k] && !!FIG_DOS[k]), showF = both || !backOnly, showD = both || backOnly;
+  const w = both ? 212 : 100, noms = k => Apex.MUSCLES[k] || k, label = prim.map(noms).join(', ') + (sec.length ? ' (aide : ' + sec.map(noms).join(', ') + ')' : '');
   return html`<svg className=${cx('mfig', both && 'both')} viewBox=${'0 0 ' + w + ' 200'} height=${h} width=${Math.round(h * w / 200)} role="img" aria-label=${'Muscles travaillés : ' + label}>
-    <defs>
-      <linearGradient id="mfB" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style=${{ stopColor: '#3d424e' }} /><stop offset="1" style=${{ stopColor: '#23262d' }} /></linearGradient>
-      <linearGradient id="mfP" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style=${{ stopColor: 'var(--acc-hi)' }} /><stop offset="1" style=${{ stopColor: 'color-mix(in oklab, var(--acc-hi) 65%, #000)' }} /></linearGradient>
-    </defs>
-    ${showF && html`<${FigBody} vue="face" m=${m} s=${sec} x=${0} />`}
-    ${showD && html`<${FigBody} vue="dos" m=${m} s=${sec} x=${both ? 112 : 0} />`}
+    ${showF && html`<${FigBody} vue="face" m=${prim} s=${sec} x=${0} />`}
+    ${showD && html`<${FigBody} vue="dos" m=${prim} s=${sec} x=${both ? 112 : 0} />`}
   </svg>`;
 }
 
@@ -4340,18 +4378,18 @@ function DayPlan({ date }) {
     ${nb && html`<div className="note acc"><${Icon} n="sparkles" /><div>
       <div className="row sb"><b>${nb.src === 'ia' ? 'Conseils de l’IA' : 'Séance adaptée'}</b><${Confirm} label="Programme d’origine" sure="Revenir ?" cls="ghost sm" onYes=${() => Store.patch('journal', date, { date, plan: null, planNote: null })} /></div>
       ${(nb.notes || []).map((n, i) => html`<span key=${i}>${n}</span>`)}</div></div>`}
-    ${plan.length ? html`<div className="dp">${plan.map((x, i) => { const e0 = exos[x.e] || { n: x.e, m: '', lo: 8, hi: 12, inc: 2.5 }, e = Object.assign({}, e0, { rir: Apex.rirDefaut(e0) }, Apex.ovOf(x)), h = Apex.histoExo(S.seances, x.e).filter(q => q.date < date), o = Apex.objectif(e, h.length ? h[h.length - 1] : null);
+    ${plan.length ? html`<${SortList} className="dp" onMove=${(a, b) => put(moveIn(plan, a, b))}>${plan.map((x, i) => { const e0 = exos[x.e] || { n: x.e, m: '', lo: 8, hi: 12, inc: 2.5 }, e = Object.assign({}, e0, { rir: Apex.rirDefaut(e0) }, Apex.ovOf(x)), h = Apex.histoExo(S.seances, x.e).filter(q => q.date < date), o = Apex.objectif(e, h.length ? h[h.length - 1] : null);
       return html`<div key=${x.e + '-' + i} className="dp-row" data-sort="1">
         <${Mover} i=${i} n=${plan.length} label=${e.n} onMove=${(a, b) => put(moveIn(plan, a, b))} />
         <span className="mfig-box"><${MuscleFig} m=${e.m} s=${e.s} h=${46} /></span>
-        <div className="dp-n"><b>${e.n}${fl(e) && html`<span className="badge">${fl(e)}</span>`}${e.uni && html`<span className="badge uni">1 côté</span>`}</b><span>${o.txt} · ⏱ ${Apex.restTxt(Apex.restDe(e0, x))}</span></div>
+        <div className="dp-n"><b>${e.n}<span className="badge">${Apex.MUSCLES[e.m] || ''}</span>${e.uni && html`<span className="badge uni">1 côté</span>`}</b><span>${o.txt} · ⏱ ${Apex.restTxt(Apex.restDe(e0, x))}</span></div>
         <div className="dp-c">
           <button type="button" className="ib sm" aria-label=${'Moins de séries : ' + e.n} onClick=${() => upd(i, { n: Math.max(1, x.n - 1) })}><${Icon} n="minus" s=${16} /></button>
           <b className="num">${x.n}</b>
           <button type="button" className="ib sm" aria-label=${'Plus de séries : ' + e.n} onClick=${() => upd(i, { n: Math.min(10, x.n + 1) })}><${Icon} n="plus" s=${16} /></button>
           <button type="button" className="ib sm" aria-label=${'Remplacer : ' + e.n} onClick=${() => setSheet({ t: 'swap', i })}><${Icon} n="swap" s=${16} /></button>
           <button type="button" className="ib sm" aria-label=${'Retirer : ' + e.n} onClick=${() => put(plan.filter((_, k) => k !== i))}><${Icon} n="x" s=${16} /></button>
-        </div></div>`; })}</div>` : html`<div className="empty"><span><b>Séance vide.</b> Ajoute des exercices, ou laisse l’IA te proposer une séance.</span></div>`}
+        </div></div>`; })}<//>` : html`<div className="empty"><span><b>Séance vide.</b> Ajoute des exercices, ou laisse l’IA te proposer une séance.</span></div>`}
     <div className="tiles"><div className="tile"><span>Durée estimée</span><b>${dur}<small>min</small></b></div><div className="tile"><span>Séries</span><b>${sets}</b></div><div className="tile"><span>Exercices</span><b>${plan.length}</b></div></div>
     <div className="row"><button type="button" className="btn grow" onClick=${() => setSheet({ t: 'add' })}><${Icon} n="plus" s=${18} />Exercice</button>
       <button type="button" className="btn grow" onClick=${() => setSheet({ t: 'adapt' })}><${Icon} n="sparkles" s=${18} />${st.caps().sample ? 'Optimiser avec l’IA' : 'Adapter'}</button></div>
@@ -4402,7 +4440,7 @@ function WeekSheet({ onClose }) {
       <p className="sec" style=${{ fontSize: 13 }}>Tu peux encore tout changer avant d’appliquer : déplace, retire, ajoute un exercice ou règle les séries.</p>
       <div className="stack">${res.seanceTypes.map(t => { const exs = Apex.allExos(cfg), L = res.programme[t] || [], setL = fn => setRes(r => Object.assign({}, r, { programme: Object.assign({}, r.programme, { [t]: fn(r.programme[t] || []) }) }));
         return html`<div key=${t} className="wk-d"><h3>${t}<small>${L.length} exercice${L.length > 1 ? 's' : ''} · ${L.reduce((s, x) => s + x.n, 0)} séries</small></h3>
-          ${L.map((x, i) => { const e = exs[x.e], p = e ? Apex.paramsDe(e, x) : null; return html`<div key=${x.e + '-' + i} className="wk-x" data-sort="1">
+          <${SortList} onMove=${(a, b) => setL(l => moveIn(l, a, b))}>${L.map((x, i) => { const e = exs[x.e], p = e ? Apex.paramsDe(e, x) : null; return html`<div key=${x.e + '-' + i} className="wk-x" data-sort="1">
             <${Mover} i=${i} n=${L.length} label=${e ? e.n : x.e} onMove=${(a, b) => setL(l => moveIn(l, a, b))} />
             <span className="mfig-box"><${MuscleFig} m=${e ? e.m : ''} s=${e ? e.s : []} h=${40} /></span>
             <div className="wk-xn"><b>${e ? e.n : x.e}</b><span>${p ? p.n + ' × ' + p.lo + '–' + p.hi + ' · RIR ' + p.rir + ' · ⏱ ' + Apex.restTxt(p.rest) : x.n + ' séries'}</span></div>
@@ -4410,7 +4448,7 @@ function WeekSheet({ onClose }) {
               <button type="button" className="ib sm" aria-label=${'Moins de séries : ' + (e ? e.n : x.e)} onClick=${() => setL(l => l.map((y, k) => (k === i ? Object.assign({}, y, { n: Math.max(1, y.n - 1) }) : y)))}><${Icon} n="minus" s=${15} /></button>
               <b className="num">${x.n}</b>
               <button type="button" className="ib sm" aria-label=${'Plus de séries : ' + (e ? e.n : x.e)} onClick=${() => setL(l => l.map((y, k) => (k === i ? Object.assign({}, y, { n: Math.min(10, y.n + 1) }) : y)))}><${Icon} n="plus" s=${15} /></button>
-              <button type="button" className="ib sm" aria-label=${'Retirer ' + (e ? e.n : x.e)} onClick=${() => setL(l => l.filter((_, k) => k !== i))}><${Icon} n="x" s=${15} /></button></div></div>`; })}
+              <button type="button" className="ib sm" aria-label=${'Retirer ' + (e ? e.n : x.e)} onClick=${() => setL(l => l.filter((_, k) => k !== i))}><${Icon} n="x" s=${15} /></button></div></div>`; })}<//>
           <button type="button" className="btn sm ghost" onClick=${() => setAddT(t)}><${Icon} n="plus" s=${16} />Exercice</button></div>`; })}</div>
       <div className="row"><button type="button" className="btn pri grow" onClick=${apply}><${Icon} n="check" s=${18} />Appliquer</button><button type="button" className="btn" onClick=${() => setRes(null)}>Retour</button></div>
       ${addT && html`<${ExoSheet} exos=${Apex.allExos(cfg)} title=${'Ajouter à ' + addT} onClose=${() => setAddT('')} onPick=${id => setRes(r => Object.assign({}, r, { programme: Object.assign({}, r.programme, { [addT]: (r.programme[addT] || []).concat({ e: id, n: 3 }) }) }))} />`}
@@ -5017,14 +5055,14 @@ function SeancesEditor() {
         <div className="meal-t"><b>${t}</b><span>${list.length} exercice${list.length > 1 ? 's' : ''} · ${list.reduce((s, x) => s + x[1], 0)} séries</span></div><${Icon} n=${on ? 'up' : 'down'} s=${18} /></button>
       ${on && html`<div className="its">
         <div style=${{ padding: '10px 14px' }}><${Txt} id=${'tn-' + t} label="Nom de la séance" value=${t} max=${24} onCommit=${v => rename(t, v)} /></div>
-        ${list.map((x, i) => { const e = exos[x[0]]; return html`<div key=${x[0] + '-' + i} className="it sortable" data-sort="1"><${Mover} i=${i} n=${list.length} label=${e ? e.n : x[0]} onMove=${(a, b) => upd(t, arr => moveIn(arr, a, b))} />${e && html`<span className="mfig-box"><${MuscleFig} m=${e.m} s=${e.s} h=${42} /></span>`}
+        <${SortList} className="sort-contents" onMove=${(a, b) => upd(t, arr => moveIn(arr, a, b))}>${list.map((x, i) => { const e = exos[x[0]]; return html`<div key=${x[0] + '-' + i} className="it sortable" data-sort="1"><${Mover} i=${i} n=${list.length} label=${e ? e.n : x[0]} onMove=${(a, b) => upd(t, arr => moveIn(arr, a, b))} />${e && html`<span className="mfig-box"><${MuscleFig} m=${e.m} s=${e.s} h=${42} /></span>`}
           <div className="it-n"><b>${e ? e.n : x[0]}</b><span>${e ? (Apex.MUSCLES[e.m] || e.m) + ' · ' + e.lo + '–' + e.hi + ' rép.' : 'exercice supprimé'}</span></div>
           <div className="row" style=${{ gap: 0, flexWrap: 'nowrap' }}>
             <button type="button" className="ib sm" aria-label=${'Moins de séries : ' + (e ? e.n : x[0])} onClick=${() => upd(t, a => a.map((y, k) => (k === i ? Object.assign({}, y, { n: Math.max(1, y.n - 1) }) : y)))}><${Icon} n="minus" s=${16} /></button>
             <b className="num" style=${{ minWidth: 22, textAlign: 'center', fontSize: 17 }}>${x[1]}</b>
             <button type="button" className="ib sm" aria-label=${'Plus de séries : ' + (e ? e.n : x[0])} onClick=${() => upd(t, a => a.map((y, k) => (k === i ? Object.assign({}, y, { n: Math.min(10, y.n + 1) }) : y)))}><${Icon} n="plus" s=${16} /></button>
             <button type="button" className="ib sm" aria-label="Retirer de la séance" onClick=${() => upd(t, a => a.filter((_, k) => k !== i))}><${Icon} n="x" s=${16} /></button>
-          </div></div>`; })}
+          </div></div>`; })}<//>
         ${!list.length && html`<div className="empty" style=${{ padding: '10px 14px' }}><span>Séance vide. Ajoute des exercices.</span></div>`}
         <div className="meal-f"><button type="button" className="btn sm ghost" onClick=${() => setSheet({ t })}><${Icon} n="plus" s=${16} />Exercice</button>
           <${Confirm} label="Supprimer la séance" sure="Supprimer ?" cls="ghost" onYes=${() => delType(t)} /></div>
