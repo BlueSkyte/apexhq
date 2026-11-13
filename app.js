@@ -1772,7 +1772,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   function planDuJour(cfg, statut, cible, date) {
     const foods = A.allFoods(cfg), tpl = modeleDuJour(cfg, statut, date);
     const meals = tpl.map(m => ({ id: m.id, nom: m.nom, h: m.h, ok: false, items: m.items.map(x => itemDe(x, foods)).filter(Boolean) }));
-    return A.ajuster(meals, cible, foods, { tous: true });
+    const aj = A.ajuster(meals, cible, foods, { tous: true });
+    return cfg.repasMode === 'perso' ? optimiserJour(aj, cible, foods) : aj;
   }
   /* Copie un programme dans « ma semaine » (7 menus modifiables jour par jour). */
   function semaineDepuis(cfg, progId) {
@@ -1894,6 +1895,50 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     } catch (e) { return null; }
   }
   /* Recale les quantités de chaque jour sur ses cibles (kcal, protéines, glucides, lipides) : l'IA choisit, l'app calcule. */
+  /* Optimiseur d'un jour : ajuste finement les quantités (descente de coordonnées) pour coller aux 4 cibles (kcal, P, G, L)
+     tout en gardant les gros repas au déjeuner et au dîner et les autres repas légers. Les plats libres et les légumes ne bougent pas. */
+  const PART_MAX = { pdj: 0.2, pre: 0.14, post: 0.15, col: 0.12 };
+  function optimiserJour(meals, c, foods) {
+    const ms = meals.map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0).map(i => Object.assign({}, i)) }));
+    const vars = [];
+    ms.forEach((m, mi) => { if (m.ok) return; m.items.forEach(it => { const f = it.x ? null : foods[it.a]; if (!f || f.c === 'leg') return; const hi = f.id === WHEY ? 2 : Math.min(it.q * 2.4, f.u ? 8 : f.l > 40 ? 40 : 700), lo = f.id === WHEY ? 0 : Math.max(f.u ? 0.5 : 5, it.q * 0.4); vars.push({ it, f, mi, q0: it.q, lo, hi: Math.max(hi, lo) }); }); });
+    if (!vars.length || !(c.kcal > 0)) return ms;
+    const kind = ms.map(m => SLOT(m.nom));
+    const J = () => {
+      let T = A.Z(); const mk = ms.map(m => { let s = A.Z(); m.items.forEach(it => { s = A.add(s, A.mac(it, foods)); }); T = A.add(T, s); return s.k; });
+      const e = (v, t) => (t > 0 ? ((v - t) / t) * ((v - t) / t) : 0);
+      let j = 5 * e(T.k, c.kcal) + (T.p < c.p ? 4 : 0.5) * e(T.p, c.p) + 4 * e(T.g, c.g) + 3 * e(T.l, c.l);
+      if (c.pMin && T.p < c.pMin) j += 50 * e(T.p, c.pMin);
+      ms.forEach((m, i) => { const sh = mk[i] / c.kcal, cap = PART_MAX[kind[i]]; if (cap && sh > cap) j += 40 * (sh - cap) * (sh - cap); if (kind[i] === 'main' && sh < 0.27) j += 15 * (0.27 - sh) * (0.27 - sh); });
+      vars.forEach(v => { const r = v.it.q / v.q0 - 1; j += 0.002 * r * r; });
+      return j;
+    };
+    let best = J();
+    for (let pass = 0; pass < 80; pass++) {
+      let moved = false;
+      vars.forEach(v => {
+        [1, -1].forEach(dir => {
+          for (let k = 0; k < 3; k++) {
+            const q = v.it.q, st = A.pas(v.f, q) * (v.f.id === WHEY ? 1 : 1), nq = Math.round((q + dir * st) * 100) / 100;
+            if (nq < v.lo - 1e-9 || nq > v.hi + 1e-9) return;
+            v.it.q = nq; const j = J();
+            if (j < best - 1e-9) { best = j; moved = true; } else { v.it.q = q; return; }
+          }
+        });
+      });
+      /* échanges : un aliment monte pendant qu'un autre descend (sort des minima locaux) */
+      vars.forEach(a => vars.forEach(b => {
+        if (a === b) return;
+        const qa = a.it.q, qb = b.it.q, sa = A.pas(a.f, qa), sb = A.pas(b.f, qb), na = Math.round((qa + sa) * 100) / 100, nb = Math.round((qb - sb) * 100) / 100;
+        if (na > a.hi + 1e-9 || nb < b.lo - 1e-9) return;
+        a.it.q = na; b.it.q = nb; const j = J();
+        if (j < best - 1e-9) { best = j; moved = true; } else { a.it.q = qa; b.it.q = qb; }
+      }));
+      if (!moved) break;
+    }
+    ms.forEach(m => { m.items = m.items.filter(it => it.x || it.q > 0); });
+    return ms.filter(m => m.items.length);
+  }
   function etalonnerSemaine(cfg, semaine) {
     const foods = A.allFoods(cfg), lun = A.lundi(A.today()), res = {}, totaux = {};
     SEMAINE.forEach((d, i) => {
@@ -1912,12 +1957,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
         cible.items = cible.items.concat({ id: A.uid(), a: b[0], q: b[1], adj: b[2] && foods[b[0]].r ? 1 : 0 });
         aj = calc(meals); t = somme(aj);
       }
+      aj = optimiserJour(aj, c, foods); t = somme(aj);
       res[d] = repasEnModele(aj, foods); totaux[d] = { k: Math.round(t.k), p: Math.round(t.p), g: Math.round(t.g), l: Math.round(t.l), cible: c };
     });
     return { semaine: res, totaux };
   }
 
-  Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine });
+  Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine, optimiserJour });
 })();
 
 /* ---- 14-program-logic.js ---- */
