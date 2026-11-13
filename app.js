@@ -1795,27 +1795,29 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 
   /* ---------- règles par type de repas (appliquées par l'app, pas seulement demandées à l'IA) ---------- */
   const SLOT = nom => { const s = String(nom || '').toLowerCase(); if (/post/.test(s)) return 'post'; if (/pr[ée][-\s]?(s[ée]ance|entra|workout)/.test(s)) return 'pre'; if (/petit|matin|breakfast/.test(s)) return 'pdj'; if (/collation|snack|go[uû]ter|encas/.test(s)) return 'col'; return 'main'; };
-  const WHEY = 'clearwhey', PROT_RAPIDES = [WHEY, 'skyr', 'fb0', 'poulet', 'dinde', 'jambon', 'blanc', 'crevettes', 'cabillaud', 'seitan'], GLUC_RAPIDES = ['banane', 'riz', 'galette', 'miel', 'pdt', 'patate'];
-  const POST_NON = ['thon', 'pates', 'gnocchi', 'lentilles', 'pois', 'avoine', 'pain', 'wrap', 'soja'], PRE_NON = ['thon', 'lentilles', 'pois', 'soja'];
-  const okPost = f => !!f && !(f.l > 6) && f.c !== 'leg' && POST_NON.indexOf(f.id) < 0;
-  const okPre = f => !!f && !(f.l > 8) && f.c !== 'leg' && PRE_NON.indexOf(f.id) < 0;
+  const WHEY = 'clearwhey', PROT_RAPIDES = [WHEY, 'skyr', 'fb0'], GLUC_RAPIDES = ['banane', 'galette', 'miel'];
+  /* Les vrais gros repas sont le déjeuner et le dîner. Petit-déj, pré-séance, post-séance et collation restent légers :
+     ni viande ni poisson (sauf œufs et jambon au petit-déj), ni féculent cuit (riz, pâtes, pommes de terre…), pas de légumes ni de matières grasses en pré/post. */
+  const LOURDS = ['riz', 'pates', 'gnocchi', 'pdt', 'patate', 'lentilles', 'pois', 'wrap'], PDJ_PROT = ['oeuf', 'blanc', 'jambon'];
+  const okPost = f => !!f && !(f.l > 6) && f.c !== 'leg' && f.c !== 'prot' && LOURDS.indexOf(f.id) < 0 && ['avoine', 'pain', 'soja'].indexOf(f.id) < 0;
+  const okPre = f => !!f && !(f.l > 8) && f.c !== 'leg' && f.c !== 'prot' && LOURDS.indexOf(f.id) < 0;
+  const okLeger = f => !!f && LOURDS.indexOf(f.id) < 0 && !(f.c === 'prot' && PDJ_PROT.indexOf(f.id) < 0);
   const estGluc = f => !!f && (f.r === 'G' || f.c === 'fruit' || f.id === 'miel');
-  /* [id, quantité, ajustable] — post : protéines rapides + glucides rapides, très peu de lipides ; pré : glucides digestes, peu de fibres et de lipides. */
+  /* [id, quantité, ajustable] — post : shake léger (protéine rapide + glucides rapides, presque sans lipides) ; pré : glucides digestes, peu de fibres et de lipides. */
   const POST_T = [
     [[WHEY, 1, 0], ['banane', 1, 1], ['galette', 3, 1], ['miel', 10, 0]],
     [['skyr', 250, 1], ['banane', 1, 1], ['galette', 2, 1], ['miel', 15, 0]],
-    [['poulet', 120, 1], ['riz', 70, 1], ['banane', 1, 1]],
-    [[WHEY, 1, 0], ['riz', 60, 1], ['fruitsrouges', 100, 0]],
     [['fb0', 250, 1], ['banane', 1, 1], ['miel', 15, 0], ['galette', 2, 1]],
-    [['dinde', 120, 1], ['pdt', 250, 1], ['kiwi', 1, 0]],
-    [['seitan', 100, 1], ['riz', 70, 1], ['banane', 1, 1]],
+    [[WHEY, 1, 0], ['fruitsrouges', 100, 0], ['galette', 3, 1], ['miel', 10, 0]],
+    [[WHEY, 1, 0], ['pomme', 1, 1], ['galette', 3, 1], ['miel', 10, 0]],
+    [['banane', 1, 1], ['galette', 3, 1], ['miel', 15, 0]],
   ];
   const PRE_T = [
     [['avoine', 50, 1], ['banane', 1, 1], ['skyr', 150, 0]],
     [['galette', 3, 1], ['miel', 15, 0], ['skyr', 200, 1]],
     [['pain', 2, 1], ['miel', 15, 0], ['fb0', 200, 1]],
-    [['riz', 80, 1], ['lait', 200, 0], ['miel', 10, 0]],
     [['banane', 1, 1], ['galette', 2, 1], [WHEY, 1, 0]],
+    [['banane', 1, 1], ['galette', 3, 1], ['miel', 15, 0]],
   ];
   const LEGUMES = ['haricots', 'brocoli', 'courgette', 'epinards', 'poelee', 'poivron', 'champignons', 'salade'];
   function corrigerMenu(sem, cfg) {
@@ -1838,6 +1840,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
           items = items.filter(it => okPre(foods[it.a]));
           if (!items.some(it => estGluc(foods[it.a]))) items = modele(PRE_T, di) || items;
         } else if (kind === 'pdj' || kind === 'col') {
+          const leger = items.filter(it => okLeger(foods[it.a])); if (leger.length) items = leger;
           if (!has(f => f.r === 'P' || f.id === WHEY)) { const p = ['skyr', 'fb0', 'oeuf', 'jambon'].find(dispo); if (p) items.push(item(p, p === 'oeuf' ? 3 : p === 'jambon' ? 80 : 200, 1)); }
         } else if (kind === 'main') {
           if (!has(f => f.c === 'leg')) { const l = LEGUMES.map((_, k) => LEGUMES[(di + k) % LEGUMES.length]).find(dispo); if (l) items.push(item(l, 200, 0)); }
@@ -1856,7 +1859,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       'Profil : ' + ip.ligne + ', objectif ' + ip.objTxt + (q.regime && q.regime !== 'omnivore' ? ', régime ' + q.regime : '') + (q.exclus ? ', aliments à éviter : ' + q.exclus : '') + '.',
       'Cibles par jour (clé du JSON = numéro du jour, 0 = dimanche) :\n' + cibles.join('\n'),
       'Nombre de repas par jour : ' + n + '. Structure par défaut : ' + structureRepas(n) + ' Si les contraintes de la personne décrivent les repas voulus (leur nombre, leurs noms, par exemple « petit-déj, midi, pré-séance, post-séance, dîner »), suis-les à la lettre tous les jours. Chaque repas a une heure "h" au format HH:MM (pré-séance 1 h 30 à 2 h avant la séance, post-séance dans l’heure qui suit, dîner 1 h à 1 h 30 après).',
-      'RÈGLES DE DIÉTÉTIQUE SPORTIVE PAR REPAS (impératives, un menu qui ne les respecte pas est refusé) :\n- Petit-déj : une source de protéines (skyr, fromage blanc, œufs, whey) + un glucide complexe (flocons d’avoine, pain complet) + un fruit.\n- Déjeuner et Dîner : une protéine maigre + un féculent + des légumes à chaque repas + un peu de bonne matière grasse. Varie les protéines d’un jour à l’autre (volaille, poisson, bœuf maigre, œufs, légumineuses).\n- Pré-séance : glucides faciles à digérer + protéines légères, PEU de lipides et de fibres (ex. flocons d’avoine + banane + skyr ; galettes de riz + miel + fromage blanc ; pain + miel + fromage blanc ; riz + lait + miel). Jamais de légumes, de fruits à coque, de viande grasse ni d’œufs.\n- Post-séance : protéines à absorption rapide + glucides rapides, quasiment SANS lipides ni fibres. Exemples : whey + banane + galettes de riz + miel ; skyr ou fromage blanc + banane + miel ; blanc de poulet + riz + fruit. Jamais de thon, de poisson gras, d’œufs entiers, de pâtes, de légumes, de fruits à coque ni de fromage.\n- Collation : protéines (skyr, fromage blanc, whey) + un fruit ou un féculent léger.\n- Les protéines sont réparties sur tous les repas (25 à 45 g chacun) et la cible protéines du jour doit être atteinte ; la whey est un vrai outil (1 dose en pré ou post-séance, ou au petit-déj).',
+      'RÈGLES DE DIÉTÉTIQUE SPORTIVE PAR REPAS (impératives, un menu qui ne les respecte pas est corrigé par l’app) :\n- Les VRAIS GROS REPAS sont le déjeuner et le dîner : viande ou poisson, féculent (riz, pâtes, pommes de terre…), légumes et un peu de bonne matière grasse, en grosses portions (chacun environ 30 à 35 % des calories du jour). Varie les protéines d’un jour à l’autre (volaille, poisson, bœuf maigre, œufs, légumineuses).\n- Les autres repas sont LÉGERS (environ 8 à 15 % des calories chacun) : jamais de plat cuisiné, de viande ni de féculent cuit.\n- Petit-déj léger : protéine (skyr, fromage blanc, œufs, whey) + flocons d’avoine ou pain complet + un fruit.\n- Pré-séance légère : glucides faciles à digérer + un peu de protéines, très peu de lipides et de fibres (ex. flocons d’avoine + banane + skyr ; galettes de riz + miel + fromage blanc ; pain + miel + fromage blanc). Jamais de légumes, de fruits à coque, de viande ni d’œufs.\n- Post-séance légère : un shake ou une collation rapide à digérer : whey (ou skyr / fromage blanc) + banane ou fruit + galettes de riz + miel. Jamais de viande, de poisson, d’œufs, de riz cuit, de pâtes, de légumes ni de fruits à coque : le vrai repas vient ensuite, au dîner.\n- Collation : skyr, fromage blanc ou whey + un fruit.\n- Les protéines sont réparties sur tous les repas et la cible protéines du jour doit être atteinte ; la whey est un vrai outil (1 dose en pré ou post-séance, ou au petit-déj). Donne des quantités indicatives qui respectent ces proportions : l’app recale ensuite le total sur les macros.',
       o.contraintes ? 'CONTRAINTES DE LA PERSONNE, à respecter strictement (horaires des repas, lieux, cantine, matériel, budget, temps de préparation, goûts) : « ' + String(o.contraintes).slice(0, 600) + ' ». Adapte les repas et leurs horaires en conséquence ; si une contrainte l’impose, propose une solution (par exemple un repas déplacé, plus léger ou à emporter).' : 'Aucune contrainte particulière.',
       'Aliments de référence (id=nom ; quantité en g ou en unité indiquée ; kcal/P/G/L pour 100 g) :\n' + base.join('\n'),
       'Règles : chaque repas contient 2 à 8 éléments sous la forme ["id", quantité]. Pour un plat qui n’est pas dans la liste (cantine, restaurant, plat maison), utilise un objet {"n":"nom","k":kcal,"p":protéines,"g":glucides,"l":lipides} pour la portion entière, avec une estimation honnête. Les quantités seront recalées par l’app sur les cibles : concentre-toi sur le choix des aliments, la variété (pas le même menu tous les jours), les horaires et la faisabilité. Protéines réparties sur les repas, féculents autour de l’entraînement.',
