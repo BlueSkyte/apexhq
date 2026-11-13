@@ -434,7 +434,7 @@ const Apex = (() => {
   }
 
   /* ================= training ================= */
-  const MUSCLES = { pecH: 'Pecs haut', pec: 'Pecs', dLat: 'Deltoïdes latéraux', dAnt: 'Deltoïdes antérieurs', dPost: 'Deltoïdes postérieurs', bic: 'Biceps', tri: 'Triceps', dos: 'Dos', quad: 'Quadriceps', isch: 'Ischios', fess: 'Fessiers', mol: 'Mollets', abd: 'Abdos' };
+  const MUSCLES = { pecH: 'Pecs haut', pec: 'Pecs', dLat: 'Deltoïdes latéraux', dAnt: 'Deltoïdes antérieurs', dPost: 'Deltoïdes postérieurs', bic: 'Biceps', tri: 'Triceps', avb: 'Avant-bras', lats: 'Grand dorsal (lats)', dosH: 'Haut du dos', trap: 'Trapèzes', lomb: 'Lombaires', quad: 'Quadriceps', isch: 'Ischios', fess: 'Fessiers', mol: 'Mollets', abd: 'Abdos' };
   const EXOS = {};
   const X = (id, n, m, s, lo, hi, inc) => { EXOS[id] = { id, n, m, s: s || [], lo, hi, inc }; };
   X('di_halt', 'Développé incliné haltères 30°', 'pecH', ['dAnt', 'tri'], 6, 10, 2);
@@ -444,9 +444,9 @@ const Apex = (() => {
   X('dm_halt', 'Développé militaire haltères', 'dAnt', ['tri', 'dLat'], 8, 12, 2);
   X('tri_corde', 'Extension triceps corde', 'tri', [], 10, 15, 2.5);
   X('tri_oh', 'Extension triceps au-dessus de la tête', 'tri', [], 10, 15, 2.5);
-  X('tractions', 'Tractions / tirage vertical', 'dos', ['bic'], 6, 10, 2.5);
-  X('row_barre', 'Rowing barre / T-bar', 'dos', ['bic', 'dPost'], 8, 12, 2.5);
-  X('tir_horiz', 'Tirage horizontal poulie', 'dos', ['bic'], 10, 12, 2.5);
+  X('tractions', 'Tractions / tirage vertical', 'lats', ['bic', 'avb'], 6, 10, 2.5);
+  X('row_barre', 'Rowing barre / T-bar', 'dosH', ['bic', 'dPost', 'lats'], 8, 12, 2.5);
+  X('tir_horiz', 'Tirage horizontal poulie', 'dosH', ['bic', 'lats'], 10, 12, 2.5);
   X('curl_inc', 'Curl incliné haltères', 'bic', [], 8, 12, 1);
   X('curl_pup', 'Curl pupitre (EZ ou machine)', 'bic', [], 10, 12, 2.5);
   X('el_poulie', 'Élévations latérales poulie', 'dLat', [], 12, 15, 1.25);
@@ -459,12 +459,12 @@ const Apex = (() => {
   X('mollets', 'Mollets debout', 'mol', [], 10, 15, 5);
   X('crunch', 'Crunch poulie', 'abd', [], 12, 15, 2.5);
   X('di_smith', 'Développé incliné Smith 30°', 'pecH', ['dAnt', 'tri'], 6, 10, 2.5);
-  X('tir_neutre', 'Tirage vertical prise neutre', 'dos', ['bic'], 8, 12, 2.5);
+  X('tir_neutre', 'Tirage vertical prise neutre', 'lats', ['bic'], 8, 12, 2.5);
   X('pec_deck', 'Pec deck / écarté machine', 'pec', [], 10, 15, 2.5);
-  X('row_uni', 'Rowing unilatéral', 'dos', ['bic', 'dPost'], 8, 12, 2);
+  X('row_uni', 'Rowing unilatéral', 'dosH', ['bic', 'dPost', 'lats'], 8, 12, 2);
   X('el_mach', 'Élévations latérales machine', 'dLat', [], 12, 20, 2.5);
   X('curl_bay', 'Curl bayésien poulie', 'bic', [], 10, 15, 1.25);
-  X('curl_mart', 'Curl marteau', 'bic', [], 8, 12, 1);
+  X('curl_mart', 'Curl marteau', 'bic', ['avb'], 8, 12, 1);
   X('barre_front', 'Barre au front EZ', 'tri', [], 10, 12, 2.5);
   X('hack', 'Hack squat', 'quad', ['fess'], 8, 12, 5);
   X('fentes', 'Fentes bulgares', 'quad', ['fess'], 8, 12, 2);
@@ -484,7 +484,15 @@ const Apex = (() => {
     { id: 'delts', n: 'Deltoïdes latéraux', m: ['dLat'], min: 12, max: 18, freq: 3 },
   ];
   const GROUPES = (() => { const o = {}; GROUPES_DEF.forEach(g => { o[g.id] = g; }); return o; })();
-  const allExos = cfg => Object.assign({}, EXOS, (cfg && cfg.exos) || {});
+  /* Ancien muscle « dos » : remplacé par grand dorsal, haut du dos, trapèzes et lombaires. */
+  const MIGR = { dos: ['lats', 'dosH'] };
+  const migrM = m => (MIGR[m] ? MIGR[m][0] : m);
+  const migrList = a => { const o = []; (a || []).forEach(m => (MIGR[m] || [m]).forEach(x => { if (o.indexOf(x) < 0) o.push(x); })); return o; };
+  const allExos = cfg => {
+    const c = (cfg && cfg.exos) || {}, o = Object.assign({}, EXOS);
+    Object.keys(c).forEach(k => { const e = c[k]; o[k] = e && (MIGR[e.m] || (e.s || []).some(m => MIGR[m])) ? Object.assign({}, e, { m: migrM(e.m), s: migrList(e.s) }) : e; });
+    return o;
+  };
   const progOf = cfg => {
     const p = cfg && cfg.programme; if (!isObj(p)) return PROG;
     const o = {}; Object.keys(p).forEach(t => { o[t] = (Array.isArray(p[t]) ? p[t] : []).map(x => (Array.isArray(x) ? x : (x.lo != null || x.hi != null || x.rir != null ? [x.e, x.n, { lo: x.lo, hi: x.hi, rir: x.rir }] : [x.e, x.n]))).filter(x => x[0]); });
@@ -492,7 +500,7 @@ const Apex = (() => {
   };
   const SUPPS_DEF = [{ id: 'crea', n: 'Créatine 3–5 g', note: 'tous les jours' }, { id: 'om3', n: 'Oméga-3', note: 'avec un repas' }, { id: 'd3', n: 'Vitamine D3', note: 'avec un repas gras' }, { id: 'ash', n: 'Ashwagandha', note: 'le soir' }];
   const supps = cfg => (cfg && Array.isArray(cfg.supps) ? cfg.supps : SUPPS_DEF);
-  const groupes = cfg => { const a = cfg && Array.isArray(cfg.focus) ? cfg.focus : GROUPES_DEF, o = {}; a.forEach(g => { if (g && g.id && Array.isArray(g.m)) o[g.id] = g; }); return o; };
+  const groupes = cfg => { const a = cfg && Array.isArray(cfg.focus) ? cfg.focus : GROUPES_DEF, o = {}; a.forEach(g => { if (g && g.id && Array.isArray(g.m)) o[g.id] = g.m.some(m => MIGR[m]) ? Object.assign({}, g, { m: migrList(g.m) }) : g; }); return o; };
   const focusLabel = (cfg, muscle) => { const g = groupes(cfg); for (const k in g) if (g[k].m.indexOf(muscle) >= 0) return g[k].n; return ''; };
 
   const setFait = s => !!s && s.r > 0;
@@ -635,7 +643,7 @@ const Apex = (() => {
 
   return {
     pad, iso, parse, today, addDays, dow, diffDays, range, lundi, uid, num, fx, sg, kgTxt,
-    TYPES, types, SUPPS_DEF, supps, groupes, GROUPES_DEF, focusLabel, DEFAULT_CFG, mergeCfg, seanceDuJour, statutDuJour, cibleDuJour, mifflin, bilanTheorique,
+    TYPES, types, SUPPS_DEF, supps, groupes, MIGR, migrList, GROUPES_DEF, focusLabel, DEFAULT_CFG, mergeCfg, seanceDuJour, statutDuJour, cibleDuJour, mifflin, bilanTheorique,
     FOODS, CATS, allFoods, foodOf, grams, mac, totMeal, totJour, Z, add,
     MODELES, pas, arrondi, ajuster, planDuJour, swapOptions, boucler, lissage,
     serie, mm7, serieMM7, pente, tendance, verdictRythme, eta, tdee, adherence, navy, lecture,
@@ -717,7 +725,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ['dPost', 'Deltoïdes postérieurs', { n: 'Deltoïdes postérieurs', m: ['dPost'], min: 8, max: 14, freq: 2 }],
     ['bic', 'Biceps', { n: 'Biceps', m: ['bic'], min: 10, max: 14, freq: 2 }],
     ['tri', 'Triceps', { n: 'Triceps', m: ['tri'], min: 10, max: 14, freq: 2 }],
-    ['dos', 'Dos', { n: 'Dos', m: ['dos'], min: 14, max: 20, freq: 2 }],
+    ['avb', 'Avant-bras', { n: 'Avant-bras', m: ['avb'], min: 6, max: 12, freq: 2 }],
+    ['lats', 'Grand dorsal (largeur du dos)', { n: 'Grand dorsal (lats)', m: ['lats'], min: 10, max: 16, freq: 2 }],
+    ['dosH', 'Haut du dos (épaisseur)', { n: 'Haut du dos', m: ['dosH'], min: 10, max: 16, freq: 2 }],
+    ['trap', 'Trapèzes', { n: 'Trapèzes', m: ['trap'], min: 6, max: 12, freq: 2 }],
+    ['lomb', 'Lombaires', { n: 'Lombaires', m: ['lomb'], min: 4, max: 10, freq: 2 }],
     ['quad', 'Quadriceps', { n: 'Quadriceps', m: ['quad'], min: 10, max: 16, freq: 2 }],
     ['isch', 'Ischio-jambiers', { n: 'Ischios', m: ['isch'], min: 8, max: 12, freq: 2 }],
     ['fess', 'Fessiers', { n: 'Fessiers', m: ['fess'], min: 8, max: 14, freq: 2 }],
@@ -726,6 +738,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   ];
   /* Anciens choix groupés : plus proposés, mais d'anciennes réponses restent lisibles. */
   const FOCUS_ANCIENS = [
+    ['dos', '', { n: 'Dos', m: ['lats', 'dosH'], min: 14, max: 20, freq: 2 }],
     ['epaules', '', { n: 'Épaules (complètes)', m: ['dLat', 'dAnt', 'dPost'], min: 18, max: 26, freq: 3 }],
     ['bras', '', { n: 'Bras', m: ['bic', 'tri'], min: 18, max: 26, freq: 2 }],
     ['jambes', '', { n: 'Jambes', m: ['quad', 'isch', 'fess'], min: 20, max: 30, freq: 2 }],
@@ -769,7 +782,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   const splitBase = q => { const p = q.split === 'perso' && Array.isArray(q.splitPerso) ? q.splitPerso.filter(t => SPLIT_TYPES.indexOf(t) >= 0) : []; return p.length ? p : ((SPLITS[q.split] || SPLITS.ppl_ul)[1].length ? (SPLITS[q.split] || SPLITS.ppl_ul)[1] : SPLITS.ppl_ul[1]); };
   const JOURS_ENT = { 1: [1], 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 5, 6], 6: [1, 2, 3, 4, 5, 6], 7: [1, 2, 3, 4, 5, 6, 0] };
   const FULL = [['squat', 3], ['dc', 3], ['tractions', 3], ['dm_halt', 2], ['rdl', 2], ['curl_inc', 2], ['tri_corde', 2], ['el_halt', 3]];
-  const ISO = { pecH: 'ec_bh', pec: 'pec_deck', dLat: 'el_halt', dAnt: 'dm_halt', dPost: 'face_pull', bic: 'curl_inc', tri: 'tri_corde', dos: 'tir_horiz', quad: 'leg_ext', isch: 'leg_curl', fess: 'rdl', mol: 'mollets', abd: 'crunch' };
+  const ISO = { pecH: 'ec_bh', pec: 'pec_deck', dLat: 'el_halt', dAnt: 'dm_halt', dPost: 'face_pull', bic: 'curl_inc', tri: 'tri_corde', lats: 'tir_neutre', dosH: 'tir_horiz', trap: 'shrug', lomb: 'lombaires', avb: 'curl_poignets', quad: 'leg_ext', isch: 'leg_curl', fess: 'rdl', mol: 'mollets', abd: 'crunch' };
   const SUBISO = { pecH: 'di_halt' };
   const splitSuggere = n => (n <= 0 ? 'aucun' : n <= 3 ? 'fb' : n === 4 ? 'ulul' : n === 5 ? 'ppl_ul' : n === 7 ? 'ulppl' : 'pplppl');
   function genProgramme(q, groupes, cfg) {
@@ -955,7 +968,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   X('pompes_pieds', 'Pompes pieds surélevés', 'pecH', ['dAnt', 'tri'], 8, 15, 2.5);
   X('pompes_pike', 'Pompes en V (épaules)', 'dAnt', ['tri'], 6, 15, 2.5);
   X('pompes_diamant', 'Pompes diamant', 'tri', ['pec'], 8, 15, 2.5);
-  X('rowing_inv', 'Rowing inversé (table ou barre basse)', 'dos', ['bic'], 8, 15, 2.5);
+  X('rowing_inv', 'Rowing inversé (table ou barre basse)', 'dosH', ['bic', 'lats'], 8, 15, 2.5);
   X('squat_pdc', 'Squat poids du corps', 'quad', ['fess'], 15, 30, 2.5);
   X('fentes_pdc', 'Fentes marchées', 'quad', ['fess'], 12, 24, 2.5);
   X('pont_fessier', 'Pont fessier', 'fess', ['isch'], 12, 25, 2.5);
@@ -976,7 +989,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     // pectoraux
     ['dc_halt', 'Développé couché haltères', 'pec', ['dAnt', 'tri'], 8, 12, 2, 'halteres'], ['dc_machine', 'Développé machine convergente', 'pec', ['dAnt', 'tri'], 8, 12, 2.5, 'machine'],
     ['ec_halt', 'Écarté haltères', 'pec', [], 10, 15, 1, 'halteres'], ['ec_poulie', 'Écarté poulie vis-à-vis', 'pec', [], 12, 15, 1.25, 'poulie'],
-    ['dips_pec', 'Dips penché (pecs)', 'pec', ['tri', 'dAnt'], 6, 12, 2.5, 'barrefixe'], ['pullover_halt', 'Pull-over haltère', 'pec', ['dos'], 10, 15, 2, 'halteres'],
+    ['dips_pec', 'Dips penché (pecs)', 'pec', ['tri', 'dAnt'], 6, 12, 2.5, 'barrefixe'], ['pullover_halt', 'Pull-over haltère', 'pec', ['lats'], 10, 15, 2, 'halteres'],
     ['di_barre', 'Développé incliné barre', 'pecH', ['dAnt', 'tri'], 6, 10, 2.5, 'barre'], ['ec_inc_halt', 'Écarté incliné haltères', 'pecH', [], 10, 15, 1, 'halteres'],
     ['di_machine', 'Développé incliné machine', 'pecH', ['dAnt', 'tri'], 8, 12, 2.5, 'machine'], ['ec_poulie_bas', 'Écarté poulie basse unilatéral', 'pecH', [], 12, 15, 1.25, 'poulie'],
     // épaules
@@ -991,16 +1004,33 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ['curl_conc', 'Curl concentré', 'bic', [], 10, 15, 1, 'halteres'], ['curl_spider', 'Curl spider haltères', 'bic', [], 10, 15, 1, 'halteres'],
     ['dips_tri', 'Dips triceps (buste droit)', 'tri', ['pec'], 6, 12, 2.5, 'barrefixe'], ['tri_barre', 'Extension poulie barre droite', 'tri', [], 10, 15, 2.5, 'poulie'],
     ['kickback', 'Kickback haltère', 'tri', [], 12, 15, 1, 'halteres'], ['dc_serre', 'Développé couché prise serrée', 'tri', ['pec', 'dAnt'], 6, 10, 2.5, 'barre'],
-    // dos
-    ['row_machine', 'Rowing machine assis', 'dos', ['bic', 'dPost'], 8, 12, 2.5, 'machine'], ['tirage_large', 'Tirage vertical prise large', 'dos', ['bic'], 8, 12, 2.5, 'poulie'],
-    ['pullover_poulie', 'Pull-over poulie', 'dos', [], 10, 15, 2.5, 'poulie'], ['row_poulie_unil', 'Rowing poulie unilatéral', 'dos', ['bic'], 10, 15, 2.5, 'poulie'],
-    ['shrug', 'Haussements d’épaules', 'dos', [], 10, 15, 2.5, 'halteres'], ['souleve', 'Soulevé de terre', 'dos', ['isch', 'fess'], 4, 6, 5, 'barre'],
-    ['lombaires', 'Extension lombaires', 'dos', ['isch', 'fess'], 10, 15, 2.5, 'machine'],
+    // grand dorsal (lats)
+    ['tirage_large', 'Tirage vertical prise large', 'lats', ['bic'], 8, 12, 2.5, 'poulie'], ['pullover_poulie', 'Pull-over poulie', 'lats', [], 10, 15, 2.5, 'poulie'],
+    ['tirage_unil_haut', 'Tirage vertical unilatéral poulie', 'lats', ['bic'], 10, 15, 1.25, 'poulie'], ['tirage_bras_tendus', 'Tirage bras tendus poulie haute', 'lats', [], 12, 15, 2.5, 'poulie'],
+    ['tractions_neutres', 'Tractions prise neutre', 'lats', ['bic', 'avb'], 6, 10, 2.5, 'barrefixe'],
+    // haut du dos (rhomboïdes, trapèzes moyens)
+    ['row_machine', 'Rowing machine assis', 'dosH', ['bic', 'dPost', 'lats'], 8, 12, 2.5, 'machine'], ['row_poulie_unil', 'Rowing poulie unilatéral', 'dosH', ['bic', 'lats'], 10, 15, 1.25, 'poulie'],
+    ['row_halt_unil', 'Rowing haltère un bras (banc)', 'dosH', ['lats', 'bic'], 8, 12, 2, 'halteres'], ['row_poulie_large', 'Tirage horizontal prise large', 'dosH', ['dPost', 'bic'], 10, 15, 2.5, 'poulie'],
+    ['row_appui', 'Rowing buste appuyé machine', 'dosH', ['bic', 'dPost'], 8, 12, 2.5, 'machine'], ['row_pendlay', 'Rowing Pendlay', 'dosH', ['lats', 'bic'], 5, 8, 2.5, 'barre'],
+    // trapèzes
+    ['shrug', 'Haussements d’épaules haltères', 'trap', ['avb'], 10, 15, 2.5, 'halteres'], ['shrug_barre', 'Haussements d’épaules barre ou Smith', 'trap', ['avb'], 8, 12, 5, 'barre'],
+    ['shrug_machine', 'Haussements d’épaules machine', 'trap', [], 10, 15, 5, 'machine'], ['shrug_poulie', 'Haussements poulie basse', 'trap', [], 10, 15, 2.5, 'poulie'],
+    // lombaires
+    ['souleve', 'Soulevé de terre', 'lomb', ['isch', 'fess', 'trap'], 4, 6, 5, 'barre'], ['lombaires', 'Extension lombaires machine', 'lomb', ['isch', 'fess'], 10, 15, 2.5, 'machine'],
+    ['hyperext', 'Hyperextension banc à 45°', 'lomb', ['isch', 'fess'], 10, 15, 2.5, 'corps'], ['superman', 'Extension lombaires au sol (superman)', 'lomb', [], 12, 20, 2.5, 'corps'],
+    // avant-bras
+    ['curl_poignets', 'Curl poignets (flexion)', 'avb', [], 12, 20, 1, 'halteres'], ['ext_poignets', 'Extension poignets (dos de la main)', 'avb', [], 12, 20, 1, 'halteres'],
+    ['curl_inverse', 'Curl inversé barre EZ', 'avb', ['bic'], 10, 15, 2.5, 'barre'], ['farmer', 'Marche du fermier (m)', 'avb', ['trap'], 20, 40, 2.5, 'halteres'],
+    ['suspension', 'Suspension à la barre (s)', 'avb', [], 20, 45, 2.5, 'barrefixe'],
+    // unilatéraux supplémentaires
+    ['dm_unil', 'Développé épaules haltère un bras', 'dAnt', ['tri', 'dLat'], 8, 12, 2, 'halteres'], ['tri_unil_poulie', 'Extension triceps unilatérale poulie', 'tri', [], 10, 15, 1.25, 'poulie'],
+    ['curl_unil_poulie', 'Curl unilatéral poulie', 'bic', [], 10, 15, 1.25, 'poulie'], ['dc_unil', 'Développé couché haltère un bras', 'pec', ['dAnt', 'tri'], 8, 12, 2, 'halteres'],
+    ['leg_ext_unil', 'Leg extension unilatérale', 'quad', [], 10, 15, 2.5, 'machine'], ['hip_thrust_unil', 'Hip thrust unilatéral', 'fess', ['isch'], 8, 12, 2.5, 'corps'],
     // jambes
     ['sq_goblet', 'Squat goblet', 'quad', ['fess'], 10, 15, 2, 'halteres'], ['sq_smith', 'Squat Smith', 'quad', ['fess'], 8, 12, 5, 'machine'],
     ['sq_front', 'Squat avant', 'quad', ['fess'], 6, 10, 2.5, 'barre'], ['presse_unil', 'Presse à cuisses unilatérale', 'quad', ['fess'], 10, 15, 5, 'machine'],
     ['step_up', 'Step-up haltères', 'quad', ['fess'], 8, 12, 2, 'halteres'],
-    ['sdt_tendues', 'Soulevé de terre jambes tendues', 'isch', ['fess', 'dos'], 8, 12, 5, 'barre'], ['good_morning', 'Good morning', 'isch', ['dos', 'fess'], 8, 12, 2.5, 'barre'],
+    ['sdt_tendues', 'Soulevé de terre jambes tendues', 'isch', ['fess', 'lomb'], 8, 12, 5, 'barre'], ['good_morning', 'Good morning', 'isch', ['lomb', 'fess'], 8, 12, 2.5, 'barre'],
     ['rdl_halt', 'Soulevé roumain haltères', 'isch', ['fess'], 8, 12, 2, 'halteres'], ['leg_curl_debout', 'Leg curl unilatéral debout', 'isch', [], 10, 15, 2.5, 'machine'],
     ['nordic', 'Nordic curl', 'isch', [], 4, 10, 2.5, 'corps'],
     ['hip_thrust', 'Hip thrust barre', 'fess', ['isch'], 8, 12, 5, 'barre'], ['hip_thrust_mach', 'Hip thrust machine', 'fess', ['isch'], 8, 12, 5, 'machine'],
@@ -1013,6 +1043,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ['crunch_machine', 'Crunch machine', 'abd', [], 10, 15, 2.5, 'machine'],
   ];
   NEW.forEach(x => { X(x[0], x[1], x[2], x[3], x[4], x[5], x[6]); A.EXOS[x[0]].eq = x[7]; });
+  /* Exercices unilatéraux (un côté après l'autre) : case « Unilatéral » dans la recherche d'exercices. */
+  const UNI = ['row_uni', 'row_poulie_unil', 'row_halt_unil', 'tirage_unil_haut', 'el_unil_poulie', 'ec_poulie_bas', 'curl_conc', 'curl_spider', 'kickback', 'presse_unil', 'step_up', 'leg_curl_debout', 'mollets_unil', 'fente_arriere', 'fentes', 'fentes_pdc', 'kickback_poulie',
+    'dm_unil', 'tri_unil_poulie', 'curl_unil_poulie', 'dc_unil', 'leg_ext_unil', 'hip_thrust_unil', 'curl_bay', 'curl_halt'];
+  UNI.forEach(id => { if (A.EXOS[id]) A.EXOS[id].uni = 1; });
 
   const EQUIP = [['salle', 'Salle complète', 'Barres, machines, poulies, haltères.'], ['limite', 'Salle limitée', 'Haltères, poulie, barre de traction.'], ['maison', 'Maison avec haltères', 'Haltères et ton poids du corps.'], ['zero', 'Sans matériel', 'Poids du corps seulement.']];
   const EQMODES = { salle: ['barre', 'halteres', 'poulie', 'machine', 'barrefixe', 'corps'], limite: ['halteres', 'poulie', 'corps', 'barrefixe'], maison: ['halteres', 'corps'], zero: ['corps'] };
@@ -1024,7 +1058,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 
   /* ---------- zones sensibles ---------- */
   const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  const ZONES = [['epaule', ['dAnt', 'dLat', 'dPost']], ['coude', ['tri', 'bic']], ['poignet', ['tri', 'bic']], ['genou', ['quad']], ['hanche', ['fess']], ['dos', ['dos']], ['lombaire', ['isch']], ['pec', ['pec', 'pecH']]];
+  const ZONES = [['epaule', ['dAnt', 'dLat', 'dPost']], ['coude', ['tri', 'bic']], ['poignet', ['tri', 'bic', 'avb']], ['genou', ['quad']], ['hanche', ['fess']], ['dos', ['lats', 'dosH', 'trap']], ['lombaire', ['isch', 'lomb']], ['pec', ['pec', 'pecH']]];
   const zonesSensibles = txt => { const t = norm(txt), m = []; ZONES.forEach(z => { if (t.indexOf(z[0]) >= 0) z[1].forEach(x => { if (m.indexOf(x) < 0) m.push(x); }); }); return m; };
 
   /* Adapte un plan [{e, n}] aux contraintes. Renvoie { plan, duree, notes }. */
@@ -1041,7 +1075,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       const alt = Object.keys(ex).find(id => ex[id].m === e0.m && ok(id) && evite.indexOf(ex[id].m) < 0 && !used().includes(id) && !(o.plan || []).some(p => p.e === id));
       if (alt) { plan.push({ e: alt, n: x.n }); notes.push(e0.n + ' remplacé par ' + ex[alt].n + ' (matériel).'); } else notes.push(e0.n + ' retiré : pas de matériel adapté.');
     });
-    const muscles = ['pec', 'dos', 'quad', 'isch', 'dAnt', 'bic', 'tri', 'abd', 'fess'];
+    const muscles = ['pec', 'lats', 'dosH', 'quad', 'isch', 'dAnt', 'bic', 'tri', 'abd', 'fess'];
     const ajouter = (mus, n) => { const id = Object.keys(ex).find(i => mus.indexOf(ex[i].m) >= 0 && ok(i) && evite.indexOf(ex[i].m) < 0 && !used().includes(i)); if (id) { plan.push({ e: id, n }); return id; } return null; };
     if (focusMus.length) { const manque = focusMus.filter(m => !plan.some(p => ex[p.e].m === m)); if (manque.length) { const id = ajouter(manque, 3); if (id) notes.push(ex[id].n + ' ajouté pour ta priorité du jour.'); } }
     for (let i = 0; plan.length < 4 && i < muscles.length; i++) ajouter([muscles[i]], 3);
@@ -1972,7 +2006,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 (function () {
   'use strict';
   const A = Apex, clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const ORDRE_MUSCLES = ['pecH', 'pec', 'dLat', 'dAnt', 'dPost', 'bic', 'tri', 'dos', 'quad', 'isch', 'fess', 'mol', 'abd'];
+  const ORDRE_MUSCLES = ['pecH', 'pec', 'dLat', 'dAnt', 'dPost', 'bic', 'tri', 'avb', 'lats', 'dosH', 'trap', 'lomb', 'quad', 'isch', 'fess', 'mol', 'abd'];
   const OV = ['lo', 'hi', 'rir'];
 
   /* Réglages propres à un exercice d'une séance : {e, n, lo?, hi?, rir?}. */
@@ -1991,7 +2025,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   }
   const majExo = (items, type, i, patch) => { const o = Object.assign({}, items); o[type] = (items[type] || []).map((x, k) => (k === i ? Object.assign({}, x, patch) : x)); return o; };
   const retirerExo = (items, type, i) => { const o = Object.assign({}, items); o[type] = (items[type] || []).filter((_, k) => k !== i); return o; };
-  const deplacerExo = (items, type, i, k) => { const a = (items[type] || []).slice(); if (k < 0 || k >= a.length) return items; const x = a[i]; a[i] = a[k]; a[k] = x; return Object.assign({}, items, { [type]: a }); };
+  /* Déplace l'exercice i à la position k (les autres glissent d'un cran) : un cran en haut ou en bas, ou glisser-déposer. */
+  const deplacerExo = (items, type, i, k) => { const a = (items[type] || []).slice(); if (k < 0 || k >= a.length || i < 0 || i >= a.length || i === k) return items; a.splice(k, 0, a.splice(i, 1)[0]); return Object.assign({}, items, { [type]: a }); };
   const ajouterExo = (items, type, id, params) => { const p = params || {}, it = Object.assign({ e: id, n: clamp(Math.round(p.n || 3), 1, 10) }, ovOf(p)); return Object.assign({}, items, { [type]: (items[type] || []).concat(it) }); };
 
   /* Tous les exercices disponibles, regroupés par muscle (points faibles d'abord). */
@@ -1999,7 +2034,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     const exos = A.allExos(cfg), items = progItems(cfg), foc = {}, G = A.groupes(cfg);
     Object.keys(G).forEach(k => G[k].m.forEach(m => { foc[m] = G[k].n; }));
     const used = {}; Object.keys(items).forEach(t => items[t].forEach(x => { (used[x.e] = used[x.e] || []).push(t); }));
-    const by = {}; Object.keys(exos).forEach(id => { const e = exos[id]; (by[e.m] = by[e.m] || []).push({ id, n: e.n, lo: e.lo, hi: e.hi, inc: e.inc, perso: String(id).indexOf('c_') === 0, types: used[id] || [], indirect: e.s || [] }); });
+    const by = {}; Object.keys(exos).forEach(id => { const e = exos[id]; (by[e.m] = by[e.m] || []).push({ id, n: e.n, lo: e.lo, hi: e.hi, inc: e.inc, perso: String(id).indexOf('c_') === 0, uni: !!e.uni, types: used[id] || [], indirect: e.s || [] }); });
     const ms = Object.keys(by).sort((a, b) => ((foc[b] ? 1 : 0) - (foc[a] ? 1 : 0)) || (ORDRE_MUSCLES.indexOf(a) - ORDRE_MUSCLES.indexOf(b)));
     return ms.map(m => ({ m, nom: A.MUSCLES[m] || m, focus: foc[m] || '', exos: by[m].sort((a, b) => (b.types.length - a.types.length) || a.n.localeCompare(b.n, 'fr')) }));
   }
@@ -2448,12 +2483,52 @@ const IC = {
   chat: ['M4 5h16v11H9l-5 4z', 'M8 9.5h8', 'M8 12.5h5'],
   up: ['M6 14.5l6-6 6 6'],
   down: ['M6 9.5l6 6 6-6'],
+  grip: [[9, 6, 1.1], [15, 6, 1.1], [9, 12, 1.1], [15, 12, 1.1], [9, 18, 1.1], [15, 18, 1.1]],
+  play: ['M8 5.5v13l11-6.5z'],
+  pause: ['M8.5 5v14', 'M15.5 5v14'],
+  timer: [[12, 13.5, 7.5], 'M12 13.5V9.5', 'M9.5 3.5h5', 'M18 6l1.5 1.5'],
 };
 function Icon({ n, s = 20, w = 1.75 }) {
   return html`<svg className="ic" width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth=${w} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     ${(IC[n] || []).map((p, i) => (typeof p === 'string' ? html`<path key=${i} d=${p} />` : html`<circle key=${i} cx=${p[0]} cy=${p[1]} r=${p[2]} />`))}
   </svg>`;
 }
+
+/* ---------- glisser-déposer au doigt (ou à la souris) ----------
+   Une poignée <Grip> dans chaque ligne marquée data-sort ; les lignes sont les enfants directs d'un même conteneur.
+   Pendant le glissement la ligne suit le doigt, les autres s'écartent, le conteneur défile près des bords. */
+function dragSort(e, idx, onMove) {
+  if (e.button != null && e.button > 0) return;
+  const h = e.currentTarget, row = h.closest('[data-sort]'); if (!row) return;
+  const box = row.parentElement, items = Array.prototype.filter.call(box.children, x => x.hasAttribute('data-sort'));
+  e.preventDefault();
+  try { h.setPointerCapture(e.pointerId); } catch (x) { /* capture indisponible : le glissement marche quand même */ }
+  const sy0 = window.scrollY, y0 = e.clientY, tops = items.map(x => { const r = x.getBoundingClientRect(); return { t: r.top + sy0, h: r.height }; }), me = tops[idx];
+  let to = idx, last = e, raf = 0;
+  row.classList.add('dragging'); document.body.classList.add('dragging-sort');
+  items.forEach(x => { if (x !== row) x.style.transition = 'transform .15s ease'; });
+  const place = () => {
+    const dy = last.clientY - y0 + (window.scrollY - sy0), mid = me.t + me.h / 2 + dy; to = idx;
+    row.style.transform = 'translateY(' + dy + 'px)';
+    tops.forEach((r, i) => { if (mid >= r.t && mid < r.t + r.h) to = i; });
+    items.forEach((x, i) => { if (i === idx) return; const s = idx < to && i > idx && i <= to ? -me.h : idx > to && i < idx && i >= to ? me.h : 0; x.style.transform = s ? 'translateY(' + s + 'px)' : ''; });
+  };
+  const tick = () => { if (last.clientY < 90) window.scrollBy(0, -10); else if (last.clientY > window.innerHeight - 90) window.scrollBy(0, 10); place(); raf = requestAnimationFrame(tick); };
+  const move = ev => { last = ev; place(); };
+  const end = ev => {
+    last = ev; place(); cancelAnimationFrame(raf); h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', end); h.removeEventListener('pointercancel', end);
+    items.forEach(x => { x.style.transform = ''; x.style.transition = ''; }); row.classList.remove('dragging'); document.body.classList.remove('dragging-sort');
+    if (ev.type === 'pointerup' && to !== idx) onMove(idx, to);
+  };
+  h.addEventListener('pointermove', move); h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
+  raf = requestAnimationFrame(tick);
+}
+function Grip({ i, n, onMove, label }) {
+  return html`<button type="button" className="grip" aria-label=${'Déplacer ' + (label || 'cet exercice') + ' : glisse avec le doigt, ou flèches haut et bas'}
+    onPointerDown=${e => dragSort(e, i, onMove)}
+    onKeyDown=${e => { if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); onMove(i, i - 1); } else if (e.key === 'ArrowDown' && i < n - 1) { e.preventDefault(); onMove(i, i + 1); } }}><${Icon} n="grip" s=${20} /></button>`;
+}
+const moveIn = (a, from, to) => { const b = a.slice(); if (from === to || from < 0 || to < 0 || from >= b.length || to >= b.length) return a; b.splice(to, 0, b.splice(from, 1)[0]); return b; };
 
 /* ---------- briques ---------- */
 function Card({ title, sub, right, cls, children }) {
@@ -3246,14 +3321,15 @@ function WeekStrip({ date, setDate }) {
   })}</div>`;
 }
 
-function ExoBlock({ ex, exos, seances, date, onSets, onSwap, onDel }) {
+function ExoBlock({ ex, exos, seances, date, onSets, onSwap, onDel, i: pos, n: total, onMove }) {
   const e0 = exos[ex.e] || { n: ex.e, m: '', s: [], lo: 8, hi: 12, inc: 2.5 }, e = Object.assign({}, e0, { rir: Apex.rirDefaut(e0) }, Apex.ovOf(ex));
   const h = Apex.histoExo(seances, ex.e).filter(x => x.date < date), last = h.length ? h[h.length - 1] : null, obj = Apex.objectif(e, last);
   const best = h.reduce((b, x) => Math.max(b, x.e1), 0), cur = (ex.sets || []).reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0), ph = String(obj.reps).split('·');
-  const setAt = (i, k, v) => onSets(ex.sets.map((s, n) => (n === i ? cleanSet(Object.assign({}, s, { [k]: v })) : s)));
-  return html`<div className="exo">
-    <div className="exo-h">
-      <div><h3>${e.n}${fl(e) && html`<span className="badge">${fl(e)}</span>`}</h3>
+  const setAt = (i, k, v) => { if (k === 'r' && v > 0 && !(ex.sets[i] && ex.sets[i].r > 0)) chronoApresSerie(); onSets(ex.sets.map((s, n) => (n === i ? cleanSet(Object.assign({}, s, { [k]: v })) : s))); };
+  return html`<div className="exo" data-sort="1">
+    <div className="exo-h has-grip">
+      <${Grip} i=${pos} n=${total} label=${e.n} onMove=${onMove} />
+      <div><h3>${e.n}${e.uni && html`<span className="badge uni">1 côté</span>`}${fl(e) && html`<span className="badge">${fl(e)}</span>`}</h3>
         <div className="exo-m">
           <span>${last ? html`Dernier <b>${setsTxt(last.sets)}</b>` : 'Première fois'}</span>
           <span>Objectif <b>${obj.txt}</b></span>
@@ -3283,18 +3359,21 @@ function ExoBlock({ ex, exos, seances, date, onSets, onSwap, onDel }) {
 }
 
 function ExoSheet({ exos, title, muscle, onPick, onClose }) {
-  const [q, setQ] = useState(''); const [cu, setCu] = useState({ n: '', m: muscle || 'pecH', lo: 8, hi: 12, inc: 2.5 });
-  const list = Object.keys(exos).map(k => exos[k]).filter(e => !q || norm(e.n).indexOf(norm(q)) >= 0).sort((a, b) => (a.m === muscle ? 0 : 1) - (b.m === muscle ? 0 : 1) || a.m.localeCompare(b.m));
-  const create = () => { const n = cu.n.trim(); if (!n) return; const id = 'c_' + Apex.uid(), all = Object.assign({}, Store.cfg().exos || {}); const lo = Math.max(1, Math.round(cu.lo || 8)), hi = Math.max(lo, Math.round(cu.hi || 12)); all[id] = { id, n: n.slice(0, 60), m: cu.m, s: [], lo, hi, inc: cu.inc > 0 ? cu.inc : 2.5 }; Store.patch('cfg', null, { exos: all }); onPick(id); onClose(); };
+  const [q, setQ] = useState(''); const [uni, setUni] = useState(false); const [cu, setCu] = useState({ n: '', m: muscle || 'pecH', lo: 8, hi: 12, inc: 2.5, uni: false });
+  const list = Object.keys(exos).map(k => exos[k]).filter(e => (!q || norm(e.n).indexOf(norm(q)) >= 0) && (!uni || e.uni)).sort((a, b) => (a.m === muscle ? 0 : 1) - (b.m === muscle ? 0 : 1) || a.m.localeCompare(b.m));
+  const create = () => { const n = cu.n.trim(); if (!n) return; const id = 'c_' + Apex.uid(), all = Object.assign({}, Store.cfg().exos || {}); const lo = Math.max(1, Math.round(cu.lo || 8)), hi = Math.max(lo, Math.round(cu.hi || 12)); all[id] = { id, n: n.slice(0, 60), m: cu.m, s: [], lo, hi, inc: cu.inc > 0 ? cu.inc : 2.5 }; if (cu.uni) all[id].uni = 1; Store.patch('cfg', null, { exos: all }); onPick(id); onClose(); };
   return html`<${Sheet} title=${title} onClose=${onClose}>
     <input id="ex-q" className="inp" type="search" placeholder="Chercher un exercice" value=${q} onChange=${e => setQ(e.target.value)} aria-label="Chercher un exercice" />
+    <label className="chk-l" htmlFor="ex-uni"><input id="ex-uni" type="checkbox" checked=${uni} onChange=${e => setUni(e.target.checked)} /><span>Unilatéral <small>(un côté à la fois)</small></span></label>
     <div className="lst">${list.map(e => html`<button key=${e.id} type="button" onClick=${() => { onPick(e.id); onClose(); }}>
-      <div><b>${e.n}</b><span>${Apex.MUSCLES[e.m] || e.m} · ${e.lo}–${e.hi} rép.</span></div><em></em></button>`)}</div>
+      <div><b>${e.n}${e.uni && html`<span className="badge uni">1 côté</span>`}</b><span>${Apex.MUSCLES[e.m] || e.m} · ${e.lo}–${e.hi} rép.</span></div><em></em></button>`)}</div>
+    ${uni && !list.length && html`<p className="mut" style=${{ fontSize: 12 }}>Aucun exercice unilatéral ne correspond.</p>`}
     <h3>Exercice perso</h3>
     <div className="form">
       <label className="fld" htmlFor="ex-n"><span className="fld-l">Nom</span><input id="ex-n" className="inp" type="text" maxLength="60" value=${cu.n} onChange=${e => setCu(Object.assign({}, cu, { n: e.target.value }))} /></label>
       <label className="fld" htmlFor="ex-m"><span className="fld-l">Muscle principal</span><select id="ex-m" className="inp" value=${cu.m} onChange=${e => setCu(Object.assign({}, cu, { m: e.target.value }))}>${Object.keys(Apex.MUSCLES).map(k => html`<option key=${k} value=${k}>${Apex.MUSCLES[k]}</option>`)}</select></label>
     </div>
+    <label className="chk-l" htmlFor="ex-cuni"><input id="ex-cuni" type="checkbox" checked=${cu.uni} onChange=${e => setCu(Object.assign({}, cu, { uni: e.target.checked }))} /><span>Exercice unilatéral</span></label>
     <div className="form" style=${{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
       <${Num} id="ex-lo" label="Rép. min" value=${cu.lo} onChange=${v => setCu(Object.assign({}, cu, { lo: v }))} dec=${0} min=${1} max=${50} />
       <${Num} id="ex-hi" label="Rép. max" value=${cu.hi} onChange=${v => setCu(Object.assign({}, cu, { hi: v }))} dec=${0} min=${1} max=${60} />
@@ -3318,7 +3397,7 @@ function SeanceCard({ date }) {
   const r = Apex.resumeSeance(se), swEx = sheet && sheet.t === 'swap' ? se.exos[sheet.i] : null;
   return html`<${Card} cls="c7" title=${'Séance ' + (se.type || '')} sub=${dMid(date) + (se.fin ? ' · terminée' : ' · en cours')} right=${html`<${Pill} st=${se.fin ? 'good' : 'warn'}>${se.fin ? 'Terminée' : 'En cours'}<//>`}>
     ${se.note && html`<div className="note"><${Icon} n="info" /><div><span>${se.note}</span></div></div>`}
-    <div>${(se.exos || []).map((ex, i) => html`<${ExoBlock} key=${ex.e + '-' + i} ex=${ex} exos=${exos} seances=${S.seances} date=${date}
+    <div>${(se.exos || []).map((ex, i) => html`<${ExoBlock} key=${ex.e + '-' + i} ex=${ex} exos=${exos} seances=${S.seances} date=${date} i=${i} n=${(se.exos || []).length} onMove=${(a, b) => putExos(moveIn(se.exos, a, b))}
       onSets=${sets => putExos(se.exos.map((x, n) => (n === i ? Object.assign({}, x, { sets }) : x)))}
       onSwap=${() => setSheet({ t: 'swap', i })}
       onDel=${() => putExos(se.exos.filter((_, n) => n !== i))} />`)}</div>
@@ -3418,6 +3497,7 @@ function Training({ date, setDate }) {
     </div>`}
     ${view === 'prog' && html`<${ProgrammeTab} />`}
     ${view === 'suivi' && html`<div className="grid"><div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}><${FatigueCard} date=${date} /></div><${HistoCard} /></div>`}
+    <${Chrono} />
   </div>`;
 }
 
@@ -3519,12 +3599,10 @@ function SeanceProg({ type, items, exos, cfg, open, onToggle, onParams, onAdd })
       <${Icon} n=${open ? 'up' : 'down'} s=${18} /></button>
     ${open && html`<div className="sp-b">
       ${nbJours === 0 && html`<p className="mut" style=${{ fontSize: 12 }}>Pas placée dans la semaine : elle n’est pas comptée dans le volume.</p>`}
-      ${list.map((x, i) => { const e = exos[x.e] || { n: x.e, m: '', lo: 8, hi: 12 }, p = Apex.paramsDe(e, x), foc = Apex.focusLabel(cfg, e.m); return html`<div key=${x.e + '-' + i} className="pr">
+      <div className="pr-list">${list.map((x, i) => { const e = exos[x.e] || { n: x.e, m: '', lo: 8, hi: 12 }, p = Apex.paramsDe(e, x), foc = Apex.focusLabel(cfg, e.m); return html`<div key=${x.e + '-' + i} className="pr" data-sort="1"><${Grip} i=${i} n=${list.length} label=${e.n} onMove=${(a, b) => upd(it => Apex.deplacerExo(it, type, a, b))} />
         <button type="button" className="pr-n" onClick=${() => onParams(i)} aria-label=${'Régler ' + e.n}><b>${e.n}${foc && html`<span className="badge">${foc}</span>`}</b>
           <span><i className="pill-m">${p.n} × ${p.lo}–${p.hi}</i><i className="pill-m rir">RIR ${p.rir}</i>${p.perso && html`<i className="pill-m perso">réglé</i>`}</span></button>
-        <div className="pr-a"><button type="button" className="ib sm" aria-label="Monter" disabled=${i === 0} onClick=${() => upd(a => Apex.deplacerExo(a, type, i, i - 1))}><${Icon} n="up" s=${16} /></button>
-          <button type="button" className="ib sm" aria-label="Descendre" disabled=${i === list.length - 1} onClick=${() => upd(a => Apex.deplacerExo(a, type, i, i + 1))}><${Icon} n="down" s=${16} /></button>
-          <button type="button" className="ib sm" aria-label=${'Retirer ' + e.n} onClick=${() => upd(a => Apex.retirerExo(a, type, i))}><${Icon} n="x" s=${16} /></button></div></div>`; })}
+        <div className="pr-a"><button type="button" className="ib sm" aria-label=${'Retirer ' + e.n} onClick=${() => upd(a => Apex.retirerExo(a, type, i))}><${Icon} n="x" s=${16} /></button></div></div>`; })}</div>
       ${!list.length && html`<div className="empty" style=${{ padding: '8px 0' }}><span>Aucun exercice. Ajoute-en depuis la bibliothèque ci-dessous ou avec le bouton.</span></div>`}
       <div className="row sb"><button type="button" className="btn sm" onClick=${onAdd}><${Icon} n="plus" s=${16} />Exercice</button><span className="mut" style=${{ fontSize: 12 }}>Touche un exercice pour régler séries, répétitions et RIR.</span></div>
     </div>`}
@@ -3532,13 +3610,14 @@ function SeanceProg({ type, items, exos, cfg, open, onToggle, onParams, onAdd })
 }
 
 function Bibliotheque({ cfg, onAdd }) {
-  const lib = Apex.bibliotheque(cfg), [open, setOpen] = useState(''), [q, setQ] = useState('');
-  const flt = g => g.exos.filter(x => !q || norm(x.n).indexOf(norm(q)) >= 0 || norm(g.nom).indexOf(norm(q)) >= 0);
+  const lib = Apex.bibliotheque(cfg), [open, setOpen] = useState(''), [q, setQ] = useState(''), [uni, setUni] = useState(false);
+  const flt = g => g.exos.filter(x => (!q || norm(x.n).indexOf(norm(q)) >= 0 || norm(g.nom).indexOf(norm(q)) >= 0) && (!uni || x.uni));
   return html`<${Card} cls="c12" title="Tous les exercices par muscle" sub="Choisis un exercice et règle séries, répétitions et RIR avant de l’ajouter.">
     <input id="lib-q" className="inp" type="search" placeholder="Chercher un exercice ou un muscle" value=${q} onChange=${e => setQ(e.target.value)} aria-label="Chercher un exercice ou un muscle" />
-    <div className="lib">${lib.map(g => { const l = flt(g); if (q && !l.length) return null; const on = q ? true : open === g.m; return html`<section key=${g.m} className=${cx('lib-g', on && 'open')}>
+    <label className="chk-l" htmlFor="lib-uni"><input id="lib-uni" type="checkbox" checked=${uni} onChange=${e => setUni(e.target.checked)} /><span>Unilatéral <small>(un côté à la fois)</small></span></label>
+    <div className="lib">${lib.map(g => { const l = flt(g); if ((q || uni) && !l.length) return null; const on = (q || uni) ? true : open === g.m; return html`<section key=${g.m} className=${cx('lib-g', on && 'open')}>
       <button type="button" className="lib-h" aria-expanded=${on} onClick=${() => setOpen(open === g.m ? '' : g.m)}><b>${g.nom}</b>${g.focus && html`<em>point faible</em>`}<span>${g.exos.length} exercice${g.exos.length > 1 ? 's' : ''}</span><${Icon} n=${on ? 'up' : 'down'} s=${16} /></button>
-      ${on && html`<div className="lib-b">${l.map(x => html`<div key=${x.id} className="lib-r"><div><b>${x.n}</b><span>${x.lo}–${x.hi} rép.${x.indirect.length ? ' · aide ' + x.indirect.map(m => Apex.MUSCLES[m]).join(', ').toLowerCase() : ''}${x.perso ? ' · perso' : ''}</span>
+      ${on && html`<div className="lib-b">${l.map(x => html`<div key=${x.id} className="lib-r"><div><b>${x.n}${x.uni && html`<span className="badge uni">1 côté</span>`}</b><span>${x.lo}–${x.hi} rép.${x.indirect.length ? ' · aide ' + x.indirect.map(m => Apex.MUSCLES[m]).join(', ').toLowerCase() : ''}${x.perso ? ' · perso' : ''}</span>
         ${x.types.length > 0 && html`<span className="lib-t">${x.types.map(t => html`<i key=${t} className="pill-m">${t}</i>`)}</span>`}</div>
         <button type="button" className="btn sm" onClick=${() => onAdd(x.id)} aria-label=${'Ajouter ' + x.n}><${Icon} n="plus" s=${16} />Ajouter</button></div>`)}</div>`}
     </section>`; })}</div>
@@ -3569,6 +3648,89 @@ function ProgrammeTab() {
     ${sheet && sheet.t === 'addlib' && html`<${AddToSession} exoId=${sheet.id} onClose=${() => setSheet(null)} />`}
     ${sheet && sheet.t === 'admin' && html`<${ExoAdmin} onClose=${() => setSheet(null)} />`}
     ${sheet && sheet.t === 'seances' && html`<${Sheet} title="Mes séances" onClose=${() => setSheet(null)}><${SeancesEditor} /><//>`}
+  </div>`;
+}
+
+/* ---- 53-ui-chrono.js ---- */
+/* Alvora — chrono muscu : repos entre les séries (compte à rebours, bip + vibration à la fin) et chronomètre libre.
+   L'état vit hors des composants et dans le stockage du téléphone : le chrono continue quand on change d'onglet ou qu'on verrouille l'écran. */
+const CHR = (() => {
+  const KEY = 'apexhq:chrono', subs = new Set();
+  let s = { mode: 'repos', dur: 90, endAt: null, left: null, startAt: null, acc: 0, open: false };
+  try { const o = JSON.parse(localStorage.getItem(KEY) || 'null'); if (o && typeof o === 'object') s = Object.assign(s, o); } catch (e) { /* état neuf */ }
+  let ctx = null;
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* non mémorisé */ } };
+  const emit = () => { save(); subs.forEach(f => f()); };
+  const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
+  const unlock = () => { try { if (AC) { ctx = ctx || new AC(); if (ctx.state === 'suspended') ctx.resume(); } } catch (e) { /* audio indisponible */ } };
+  const beep = () => {
+    try {
+      if (!ctx) return;
+      [0, 0.28, 0.56].forEach((t, i) => { const o = ctx.createOscillator(), g = ctx.createGain(), at = ctx.currentTime + t; o.frequency.value = i === 2 ? 1175 : 880; o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.4, at + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.22); o.start(at); o.stop(at + 0.24); });
+    } catch (e) { /* silence */ }
+  };
+  const left = () => (s.endAt ? Math.max(0, s.endAt - Date.now()) : s.left != null ? s.left : s.dur * 1000);
+  const elapsed = () => s.acc + (s.startAt ? Date.now() - s.startAt : 0);
+  const running = () => !!s.endAt || !!s.startAt;
+  const finish = () => {
+    s.endAt = null; s.left = 0; emit();
+    try { if (navigator.vibrate) navigator.vibrate([250, 120, 250, 120, 500]); } catch (e) { /* vibration indisponible */ }
+    beep(); if (typeof toast === 'function') toast('Repos terminé : prochaine série');
+  };
+  const A = {
+    s: () => s, subs, left, elapsed, running, unlock,
+    mode: m => { s.mode = m; emit(); },
+    toggle: () => { s.open = !s.open; emit(); },
+    open: () => { s.open = true; emit(); },
+    startRest: sec => { unlock(); const d = Math.max(5, Math.min(900, Math.round(sec || s.dur))); s.mode = 'repos'; s.dur = d; s.endAt = Date.now() + d * 1000; s.left = null; emit(); },
+    pauseRest: () => { if (s.endAt) { s.left = Math.max(0, s.endAt - Date.now()); s.endAt = null; emit(); } },
+    resumeRest: () => { unlock(); const l = left(); if (l <= 0) { A.startRest(s.dur); return; } s.endAt = Date.now() + l; s.left = null; emit(); },
+    resetRest: () => { s.endAt = null; s.left = null; emit(); },
+    adjust: sec => { if (s.endAt) s.endAt = Math.max(Date.now() + 1000, s.endAt + sec * 1000); else { const l = (s.left != null ? s.left : s.dur * 1000) + sec * 1000; s.left = Math.max(5000, l); s.dur = Math.max(5, Math.round(s.left / 1000)); } emit(); },
+    setDur: sec => { s.dur = sec; if (!s.endAt) s.left = null; emit(); },
+    startWatch: () => { unlock(); if (!s.startAt) { s.startAt = Date.now(); emit(); } },
+    pauseWatch: () => { if (s.startAt) { s.acc += Date.now() - s.startAt; s.startAt = null; emit(); } },
+    resetWatch: () => { s.startAt = null; s.acc = 0; emit(); },
+    auto: () => { try { return localStorage.getItem('apexhq:chrono:auto') === '1'; } catch (e) { return false; } },
+    setAuto: v => { try { localStorage.setItem('apexhq:chrono:auto', v ? '1' : '0'); } catch (e) { /* non mémorisé */ } emit(); },
+  };
+  /* Horloge globale : détecte la fin du repos même si le chrono est replié ou si on est sur un autre onglet. */
+  if (typeof window !== 'undefined') setInterval(() => { if (s.endAt && Date.now() >= s.endAt) finish(); else if (running()) subs.forEach(f => f()); }, 250);
+  return A;
+})();
+/* Appelé quand une série est notée : lance le repos si l'option est active. */
+const chronoApresSerie = () => { if (CHR.auto()) CHR.startRest(CHR.s().dur); };
+const chrFmt = ms => { const t = Math.max(0, Math.ceil(ms / 1000)), m = Math.floor(t / 60), r = t % 60; return m + ':' + (r < 10 ? '0' : '') + r; };
+const chrFmtW = ms => { const t = Math.floor(ms / 1000), m = Math.floor(t / 60), r = t % 60; return m + ':' + (r < 10 ? '0' : '') + r; };
+function useChrono() { const [, f] = useState(0); useEffect(() => { const cb = () => f(x => x + 1); CHR.subs.add(cb); return () => { CHR.subs.delete(cb); }; }, []); return CHR; }
+
+function Chrono() {
+  const c = useChrono(), s = c.s(), repos = s.mode === 'repos', run = c.running(), open = s.open;
+  const l = c.left(), tot = (repos ? s.dur : 0) * 1000, t = repos ? l : c.elapsed(), low = repos && !!s.endAt && l <= 10000, fini = repos && !run && s.left === 0;
+  const PRESETS = [60, 90, 120, 180, 240];
+  const main = repos
+    ? (s.endAt ? html`<button type="button" className="btn pri chr-go" onClick=${c.pauseRest}><${Icon} n="pause" s=${20} />Pause</button>`
+      : html`<button type="button" className="btn pri chr-go" onClick=${() => (s.left != null && s.left > 0 ? c.resumeRest() : c.startRest(s.dur))}><${Icon} n="play" s=${20} />${s.left != null && s.left > 0 ? 'Reprendre' : 'Lancer le repos'}</button>`)
+    : (s.startAt ? html`<button type="button" className="btn pri chr-go" onClick=${c.pauseWatch}><${Icon} n="pause" s=${20} />Pause</button>`
+      : html`<button type="button" className="btn pri chr-go" onClick=${c.startWatch}><${Icon} n="play" s=${20} />${s.acc > 0 ? 'Reprendre' : 'Démarrer'}</button>`);
+  return html`<div className=${cx('chr', open && 'open')}>
+    ${open && html`<section className="chr-p" role="dialog" aria-label="Chrono">
+      <div className="row sb"><${Seg} neutral label="Type de chrono" value=${s.mode} onChange=${c.mode} options=${[['repos', 'Repos'], ['chrono', 'Chrono']]} />
+        <button type="button" className="ib sm" aria-label="Replier le chrono" onClick=${c.toggle}><${Icon} n="down" s=${18} /></button></div>
+      <div className=${cx('chr-t', low && 'low', fini && 'done')} role="timer" aria-live="off">${repos ? chrFmt(t) : chrFmtW(t)}</div>
+      ${repos && html`<div className="chr-b" aria-hidden="true"><i style=${{ width: (tot ? Math.max(0, Math.min(100, l / tot * 100)) : 0) + '%' }}></i></div>`}
+      <div className="chr-c">
+        ${repos && html`<button type="button" className="btn" onClick=${() => c.adjust(-15)} aria-label="Moins 15 secondes">−15 s</button>`}
+        ${main}
+        ${repos && html`<button type="button" className="btn" onClick=${() => c.adjust(15)} aria-label="Plus 15 secondes">+15 s</button>`}
+        ${!repos && html`<button type="button" className="btn" onClick=${c.resetWatch} aria-label="Remettre à zéro"><${Icon} n="refresh" s=${18} /></button>`}
+      </div>
+      ${repos && html`<div className="chips" role="group" aria-label="Durée du repos">${PRESETS.map(p => html`<button key=${p} type="button" className="chip" aria-pressed=${s.dur === p && !s.endAt} onClick=${() => c.startRest(p)}>${chrFmt(p * 1000)}</button>`)}</div>
+        <label className="chk-l" htmlFor="chr-auto"><input id="chr-auto" type="checkbox" checked=${c.auto()} onChange=${e => c.setAuto(e.target.checked)} /><span>Lancer le repos après chaque série notée</span></label>
+        ${run || s.left != null ? html`<button type="button" className="btn ghost sm" onClick=${c.resetRest}>Arrêter</button>` : null}`}
+    </section>`}
+    <button type="button" className=${cx('chr-pill', run && 'run', low && 'low', fini && 'done')} aria-expanded=${open} aria-label=${open ? 'Replier le chrono' : 'Ouvrir le chrono'} onClick=${c.toggle}>
+      <${Icon} n="timer" s=${20} />${(run || fini || (!repos && s.acc > 0)) ? html`<b>${repos ? chrFmt(t) : chrFmtW(t)}</b>` : html`<span>Chrono</span>`}</button>
   </div>`;
 }
 
@@ -4586,7 +4748,6 @@ function SeancesEditor() {
   };
   const delType = t => { if (types.length <= 1) { setMsg('Garde au moins une séance.'); return; } const o = P(); delete o[t]; const pl = Object.assign({}, cfg.planning); Object.keys(pl).forEach(k => { if (pl[k] === t) pl[k] = ''; }); save(types.filter(x => x !== t), o, pl); setMsg('Séance supprimée. Ses jours du planning passent en repos.'); };
   const reset = () => { Store.patch('cfg', null, { seanceTypes: null, programme: null, planning: Apex.DEFAULT_CFG.planning }); setMsg('Programme et planning par défaut rétablis.'); };
-  const swap = (t, i, k) => upd(t, a => { const b = a.slice(); const x = b[i]; b[i] = b[k]; b[k] = x; return b; });
   return html`<div className="stack">
     <p className="mut" style=${{ fontSize: 12 }}>Crée, renomme et réordonne tes séances, choisis leurs exercices et le nombre de séries. Le planning de la semaine se règle dans l’onglet Profil.</p>
     ${types.map(t => { const list = prog[t] || [], on = open === t; return html`<article key=${t} className="meal">
@@ -4594,14 +4755,12 @@ function SeancesEditor() {
         <div className="meal-t"><b>${t}</b><span>${list.length} exercice${list.length > 1 ? 's' : ''} · ${list.reduce((s, x) => s + x[1], 0)} séries</span></div><${Icon} n=${on ? 'up' : 'down'} s=${18} /></button>
       ${on && html`<div className="its">
         <div style=${{ padding: '10px 14px' }}><${Txt} id=${'tn-' + t} label="Nom de la séance" value=${t} max=${24} onCommit=${v => rename(t, v)} /></div>
-        ${list.map((x, i) => { const e = exos[x[0]]; return html`<div key=${x[0] + '-' + i} className="it">
+        ${list.map((x, i) => { const e = exos[x[0]]; return html`<div key=${x[0] + '-' + i} className="it sortable" data-sort="1"><${Grip} i=${i} n=${list.length} label=${e ? e.n : x[0]} onMove=${(a, b) => upd(t, arr => moveIn(arr, a, b))} />
           <div className="it-n"><b>${e ? e.n : x[0]}</b><span>${e ? (Apex.MUSCLES[e.m] || e.m) + ' · ' + e.lo + '–' + e.hi + ' rép.' : 'exercice supprimé'}</span></div>
           <div className="row" style=${{ gap: 0, flexWrap: 'nowrap' }}>
             <button type="button" className="ib sm" aria-label=${'Moins de séries : ' + (e ? e.n : x[0])} onClick=${() => upd(t, a => a.map((y, k) => (k === i ? Object.assign({}, y, { n: Math.max(1, y.n - 1) }) : y)))}><${Icon} n="minus" s=${16} /></button>
             <b className="num" style=${{ minWidth: 22, textAlign: 'center', fontSize: 17 }}>${x[1]}</b>
             <button type="button" className="ib sm" aria-label=${'Plus de séries : ' + (e ? e.n : x[0])} onClick=${() => upd(t, a => a.map((y, k) => (k === i ? Object.assign({}, y, { n: Math.min(10, y.n + 1) }) : y)))}><${Icon} n="plus" s=${16} /></button>
-            <button type="button" className="ib sm" aria-label="Monter" disabled=${i === 0} onClick=${() => swap(t, i, i - 1)}><${Icon} n="up" s=${16} /></button>
-            <button type="button" className="ib sm" aria-label="Descendre" disabled=${i === list.length - 1} onClick=${() => swap(t, i, i + 1)}><${Icon} n="down" s=${16} /></button>
             <button type="button" className="ib sm" aria-label="Retirer de la séance" onClick=${() => upd(t, a => a.filter((_, k) => k !== i))}><${Icon} n="x" s=${16} /></button>
           </div></div>`; })}
         ${!list.length && html`<div className="empty" style=${{ padding: '10px 14px' }}><span>Séance vide. Ajoute des exercices.</span></div>`}
