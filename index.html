@@ -702,10 +702,14 @@ body.dragging-sort { -webkit-user-select: none; user-select: none; cursor: grabb
 .chips { flex-wrap: wrap; } .chips .chip { max-width: 100%; white-space: normal; text-align: left; }
 /* bonhomme : muscles de l'exercice */
 .mfig { flex: none; display: block; }
-.mfig .mf-b { fill: #0a0b0d; stroke: #5d6e6a; stroke-width: 1.5; stroke-linejoin: round; }
-.mfig .mf-o { fill: #0a0b0d; stroke: #5d6e6a; stroke-width: 1.5; stroke-linejoin: round; }
-.mfig .mf-s { fill: color-mix(in oklab, var(--acc-hi) 48%, #0a0b0d); stroke: #5d6e6a; stroke-width: 1.5; stroke-linejoin: round; }
-.mfig .mf-p { fill: var(--acc-hi); stroke: #5d6e6a; stroke-width: 1.5; stroke-linejoin: round; }
+.mfig .mf-sil { fill: #5d6e6a; stroke: #5d6e6a; stroke-width: 1; stroke-linejoin: round; }
+.mfig .mf-b, .mfig .mf-o, .mfig .mf-s, .mfig .mf-p { stroke: #5d6e6a; stroke-width: .8px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.mfig:not(.both) .mf-b, .mfig:not(.both) .mf-o, .mfig:not(.both) .mf-s, .mfig:not(.both) .mf-p { stroke-width: .5px; }
+.mfig .mf-b, .mfig .mf-o { fill: #0a0b0d; }
+.mfig .mf-s { fill: color-mix(in oklab, var(--acc-hi) 42%, #52625e); }
+.mfig .mf-p { fill: var(--acc-hi); }
+.mfig .mf-j { stroke: none; pointer-events: none; }
+.mfig-lg .mfig { max-width: 100%; height: auto; }
 .mfig-box { display: grid; place-items: center; padding: 6px 4px; border-radius: 12px; background: #e9ecef; border: 1px solid rgba(255, 255, 255, .12); }
 .mfig-lg { display: grid; justify-items: center; gap: 6px; padding: 12px; border-radius: 18px; background: #e9ecef; border: 1px solid var(--line); } .mfig-lg span { color: #3a4147 !important; }
 .mfig-lg span { font-size: 12px; color: var(--ink-3); text-align: center; } .mfig-lg i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 5px 0 0; vertical-align: -1px; }
@@ -750,8 +754,15 @@ body.dragging-sort { -webkit-user-select: none; user-select: none; cursor: grabb
 .exo-h.has-grip .mfig-box { padding: 6px 7px; border-radius: 14px; background: radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, .09), rgba(255, 255, 255, .02)); }
 .exo-h.has-grip h3 { font-size: 16px; }
 
-.msc { display: grid; gap: 10px; } .msc-r { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: baseline; font-size: 14px; } .msc-r b { font-family: var(--f-num); font-size: 15px; font-weight: 600; }
-.msc-b { grid-column: 1 / -1; height: 6px; border-radius: 99px; background: rgba(255, 255, 255, .09); overflow: hidden; } .msc-b i { display: block; height: 100%; border-radius: 99px; background: var(--acc-hi); }
+.msc { display: grid; gap: 9px; }
+.msc-r { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 14px 8px 8px; border-radius: 18px; border: 1px solid var(--line); background: linear-gradient(135deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .02)); }
+.msc-r .mfig-box { padding: 4px 8px; border-radius: 12px; background: #e9ecef; }
+.msc-n { display: grid; gap: 7px; min-width: 0; } .msc-n b { font-size: 15px; font-weight: 500; line-height: 1.2; overflow-wrap: anywhere; }
+.msc-d { display: flex; gap: 4px; } .msc-d i { flex: 0 1 18px; height: 7px; border-radius: 99px; background: var(--acc-hi); box-shadow: 0 0 8px color-mix(in oklab, var(--acc-hi) 55%, transparent); }
+.msc-v { display: grid; justify-items: end; line-height: 1; } .msc-v b { font-family: var(--f-num); font-size: 30px; font-weight: 600; color: var(--acc-hi); } .msc-v small { font-size: 11px; color: var(--ink-3); margin-top: 3px; letter-spacing: .04em; text-transform: uppercase; }
+.msc-aide { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-3); } .msc-aide em { font-style: normal; padding: 3px 9px; border-radius: 99px; background: rgba(255, 255, 255, .07); color: var(--ink-2); }
+button.dp-n { text-align: left; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; } .dp-row .mfig-box { cursor: pointer; }
+.exo-h .mfig-box { cursor: pointer; }
 [data-sort] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; } [data-sort] input, [data-sort] textarea { -webkit-user-select: text; user-select: text; }
 .sort-contents { display: contents; }
 /* le fond clair du bonhomme l'emporte sur les anciens réglages des lignes */
@@ -759,7 +770,7 @@ body.dragging-sort { -webkit-user-select: none; user-select: none; cursor: grabb
 </style>
 </head><body>
 <div id="app" class="app"><p style="padding:48px 16px;color:#85847e;font-family:system-ui,sans-serif">Chargement d’Macrova…</p></div>
-<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261113125046'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_RELAY = "https://script.google.com/macros/s/AKfycbxO8jSVN56K2yio_DV3wzEUJuUFTh3Xd0xmj77j6CejCK5R26ftBlWnprUg3Xsv_PF-/exec";  window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
+<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261113130656'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_RELAY = "https://script.google.com/macros/s/AKfycbxO8jSVN56K2yio_DV3wzEUJuUFTh3Xd0xmj77j6CejCK5R26ftBlWnprUg3Xsv_PF-/exec";  window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
 window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__bip = e; window.dispatchEvent(new Event('apex-bip')); });
 window.addEventListener('appinstalled', function () { window.__bip = null; });</script>
 <script src="vendor/react.min.js"></script><script src="vendor/react-dom.min.js"></script><script src="vendor/htm.js"></script>

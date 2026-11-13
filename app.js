@@ -2638,7 +2638,7 @@ function SortList({ onMove, className, children }) {
     const zoneOk = (row, t) => { const z = row.querySelector('[data-sort-zone]'); return !z || z.contains(t); };
     const demarrer = y => { st.ctl = sortSession(st.row, lignes().indexOf(st.row), (a, b) => mv.current(a, b)); st.ctl.start(y); st.on = true; try { if (navigator.vibrate) navigator.vibrate(12); } catch (x) { /* pas de vibration */ } };
     const stop = valider => { if (!st) return; clearTimeout(st.timer); if (st.on) { st.ctl.end(valider); finDrag = Date.now(); } st = null; };
-    const ts = e => { if (e.touches.length !== 1) return; const t = e.target, row = ligneDe(t); if (!row || t.closest(NON) || !zoneOk(row, t)) return; const p = e.touches[0]; st = { row, x: p.clientX, y: p.clientY, on: false }; st.timer = setTimeout(() => demarrer(st.y), 320); };
+    const ts = e => { if (e.touches.length !== 1) return; const t = e.target, row = ligneDe(t); if (!row || t.closest(NON) || !zoneOk(row, t)) return; const p = e.touches[0]; st = { row, x: p.clientX, y: p.clientY, on: false }; st.timer = setTimeout(() => demarrer(st.y), 260); };
     const tm = e => { if (!st) return; const p = e.touches[0]; if (!st.on) { if (Math.abs(p.clientX - st.x) > 9 || Math.abs(p.clientY - st.y) > 9) { clearTimeout(st.timer); st = null; } return; } e.preventDefault(); st.ctl.move(p.clientY); };
     const te = e => stop(e.type === 'touchend');
     const md = e => { if (e.button !== 0) return; const t = e.target, row = ligneDe(t); if (!row || t.closest(NON) || !zoneOk(row, t)) return; st = { row, x: e.clientX, y: e.clientY, on: false }; window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu); };
@@ -2661,7 +2661,6 @@ function Grip({ i, n, onMove, label }) {
 function Mover({ i, n, onMove, label }) {
   return html`<div className="mover" role="group" aria-label=${'Déplacer ' + (label || 'cet exercice')}>
     <button type="button" className="mv" aria-label=${'Monter ' + (label || 'cet exercice')} disabled=${i === 0} onClick=${() => onMove(i, i - 1)}><${Icon} n="up" s=${15} w=${2.2} /></button>
-    <${Grip} i=${i} n=${n} label=${label} onMove=${onMove} />
     <button type="button" className="mv" aria-label=${'Descendre ' + (label || 'cet exercice')} disabled=${i === n - 1} onClick=${() => onMove(i, i + 1)}><${Icon} n="down" s=${15} w=${2.2} /></button>
   </div>`;
 }
@@ -3494,7 +3493,28 @@ function WeekStrip({ date, setDate }) {
   })}</div>`;
 }
 
-function ExoBlock({ ex, exos, seances, date, onSets, onSwap, onDel, onOk, onRest, i: pos, n: total, onMove }) {
+/* Modifier un exercice (séance du jour ou séance à venir) : séries, répétitions, repos, RIR, remplacer, retirer. x = { n, lo?, hi?, rir?, rest? } */
+function ExoEditSheet({ e0, x, onPatch, onSwap, onRemove, onClose }) {
+  const p = Apex.paramsDe(e0, x), ms = Apex.MUSCLES;
+  return html`<${Sheet} title=${e0.n} onClose=${onClose}>
+    <div className="mfig-lg"><${MuscleFig} m=${e0.m} s=${e0.s} h=${230} both /><span><i style=${{ background: 'var(--acc-hi)' }}></i>${ms[e0.m] || ''}${(e0.s || []).length ? html` · <i style=${{ background: 'color-mix(in oklab, var(--acc-hi) 42%, #52625e)' }}></i>aide : ${e0.s.map(m => ms[m]).join(', ')}` : ''}${e0.uni ? ' · un côté à la fois' : ''}</span></div>
+    <div className="stp-g">
+      <${Stepper} label="Séries" value=${p.n} min=${1} max=${10} onChange=${v => onPatch({ n: v })} />
+      <${Stepper} label="Rép. min" value=${p.lo} min=${1} max=${40} onChange=${v => onPatch({ lo: v, hi: Math.max(p.hi, v) })} />
+      <${Stepper} label="Rép. max" value=${p.hi} min=${p.lo} max=${50} onChange=${v => onPatch({ hi: v })} />
+      <${Stepper} label="Repos entre séries" value=${p.rest} min=${30} max=${300} step=${15} suffix=" s" onChange=${v => onPatch({ rest: v })} />
+    </div>
+    ${p.n >= 5 && html`<div className="note"><${Icon} n="info" /><div><span>${p.n} séries sur un seul exercice, c’est beaucoup : au-delà de 4, la qualité baisse. Mieux vaut un autre exercice pour ce muscle.</span></div></div>`}
+    <${RirChips} value=${p.rir} onChange=${v => onPatch({ rir: v })} />
+    <div className="row">
+      <button type="button" className="btn grow" onClick=${onSwap}><${Icon} n="swap" s=${18} />Remplacer</button>
+      <${Confirm} label="Retirer" sure="Retirer ?" cls="ghost" icon="trash" onYes=${() => { onRemove(); onClose(); }} />
+    </div>
+    <button type="button" className="btn pri wide" onClick=${onClose}><${Icon} n="check" s=${18} />Terminé</button>
+  <//>`;
+}
+
+function ExoBlock({ ex, exos, seances, date, onSets, onSwap, onDel, onOk, onRest, onEdit, i: pos, n: total, onMove }) {
   const e0 = exos[ex.e] || { n: ex.e, m: '', s: [], lo: 8, hi: 12, inc: 2.5 }, e = Object.assign({}, e0, { rir: Apex.rirDefaut(e0) }, Apex.ovOf(ex));
   const h = Apex.histoExo(seances, ex.e).filter(x => x.date < date), last = h.length ? h[h.length - 1] : null, obj = Apex.objectif(e, last);
   const best = h.reduce((b, x) => Math.max(b, x.e1), 0), cur = (ex.sets || []).reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0), ph = String(obj.reps).split('·');
@@ -3504,9 +3524,9 @@ function ExoBlock({ ex, exos, seances, date, onSets, onSwap, onDel, onOk, onRest
   return html`<div className=${cx('exo', ex.ok && 'valide')} data-sort="1">
     <div className="exo-h has-grip" data-sort-zone="1">
       <${Mover} i=${pos} n=${total} label=${e.n} onMove=${onMove} />
-      <span className="mfig-box"><${MuscleFig} m=${e.m} s=${e.s} h=${62} /></span>
-      <div className="exo-t"><button type="button" className="exo-tt" aria-expanded=${!replie} onClick=${() => ex.ok && setOuvert(!ouvert)}><h3>${e.n}<span className="badge">${Apex.MUSCLES[e.m] || ''}</span>${e.uni && html`<span className="badge uni">1 côté</span>`}</h3></button>
-        <div className="exo-m">
+      <span className="mfig-box" onClick=${onEdit}><${MuscleFig} m=${e.m} s=${e.s} h=${62} /></span>
+      <div className="exo-t"><button type="button" className="exo-tt" aria-label=${'Modifier ' + e.n} onClick=${onEdit}><h3>${e.n}<span className="badge">${Apex.MUSCLES[e.m] || ''}</span>${e.uni && html`<span className="badge uni">1 côté</span>`}</h3></button>
+        <div className="exo-m" onClick=${() => ex.ok && setOuvert(!ouvert)}>
           ${replie ? html`<span><b>${faites.length}</b> série${faites.length > 1 ? 's' : ''} faite${faites.length > 1 ? 's' : ''}${faites.length ? html` · <b>${setsTxt(faites)}</b>` : ''}</span>` : html`
           <span>${last ? html`Dernier <b>${setsTxt(last.sets)}</b>` : 'Première fois'}</span>
           <span>Objectif <b>${obj.txt}</b></span>
@@ -3577,7 +3597,7 @@ function SeanceCard({ date }) {
       <button type="button" className="btn" onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: Apex.prochaineSeance(S.seances, cfg, date) })}><${Icon} n="dumbbell" s=${18} />Passer en jour de salle</button></div>
   <//>`;
   if (!se) return html`<${DayPlan} date=${date} />`;
-  const r = Apex.resumeSeance(se), swEx = sheet && sheet.t === 'swap' ? se.exos[sheet.i] : null;
+  const r = Apex.resumeSeance(se), swEx = sheet && sheet.t === 'swap' ? se.exos[sheet.i] : null, edEx = sheet && sheet.t === 'edit' ? se.exos[sheet.i] : null;
   return html`<${Card} cls="c7" title=${'Séance ' + (se.type || '')} sub=${dMid(date) + (se.fin ? ' · terminée' : ' · en cours')} right=${html`<${Pill} st=${se.fin ? 'good' : 'warn'}>${se.fin ? 'Terminée' : 'En cours'}<//>`}>
     ${se.note && html`<div className="note"><${Icon} n="info" /><div><span>${se.note}</span></div></div>`}
     ${(se.exos || []).length > 0 && html`<div className="exo-prog" role="img" aria-label=${(se.exos || []).filter(x => x.ok).length + ' exercices validés sur ' + (se.exos || []).length}>
@@ -3586,6 +3606,7 @@ function SeanceCard({ date }) {
     <${SortList} onMove=${(a, b) => putExos(moveIn(se.exos, a, b))}>${(se.exos || []).map((ex, i) => html`<${ExoBlock} key=${ex.e + '-' + i} ex=${ex} exos=${exos} seances=${S.seances} date=${date} i=${i} n=${(se.exos || []).length} onMove=${(a, b) => putExos(moveIn(se.exos, a, b))}
       onSets=${sets => putExos(se.exos.map((x, n) => (n === i ? Object.assign({}, x, { sets }) : x)))}
       onSwap=${() => setSheet({ t: 'swap', i })}
+      onEdit=${() => setSheet({ t: 'edit', i })}
       onOk=${v => putExos(se.exos.map((x, n) => (n === i ? Object.assign({}, x, { ok: v ? true : null }) : x)))}
       onRest=${v => putExos(se.exos.map((x, n) => (n === i ? Object.assign({}, x, { rest: v }) : x)))}
       onDel=${() => putExos(se.exos.filter((_, n) => n !== i))} />`)}<//>
@@ -3600,6 +3621,9 @@ function SeanceCard({ date }) {
       <${Confirm} label="Supprimer" sure="Supprimer la séance ?" icon="trash" onYes=${() => Store.del('seances', date)} />
     </div>
     ${sheet && sheet.t === 'add' && html`<${ExoSheet} exos=${exos} title="Ajouter un exercice" onClose=${() => setSheet(null)} onPick=${id => putExos((se.exos || []).concat({ e: id, sets: [{}, {}, {}] }))} />`}
+    ${edEx && html`<${ExoEditSheet} e0=${exos[edEx.e] || { n: edEx.e, m: '', s: [], lo: 8, hi: 12, inc: 2.5 }} x=${Object.assign({}, edEx, { n: (edEx.sets || []).length })} onClose=${() => setSheet(null)}
+      onSwap=${() => setSheet({ t: 'swap', i: sheet.i })} onRemove=${() => putExos(se.exos.filter((_, n) => n !== sheet.i))}
+      onPatch=${f => putExos(se.exos.map((x, n) => { if (n !== sheet.i) return x; if (f.n == null) return Object.assign({}, x, f); const sets = (x.sets || []).slice(0, f.n); while (sets.length < f.n) sets.push({}); return Object.assign({}, x, { sets }); }))} />`}
     ${swEx && html`<${ExoSheet} exos=${exos} title=${'Remplacer · ' + ((exos[swEx.e] || {}).n || '')} muscle=${(exos[swEx.e] || {}).m} onClose=${() => setSheet(null)} onPick=${id => putExos(se.exos.map((x, n) => (n === sheet.i ? Object.assign({}, x, { e: id }) : x)))} />`}
   <//>`;
 }
@@ -3614,9 +3638,12 @@ function MusclesSeance({ date }) {
   const prim = Object.keys(dir).sort((a, b) => dir[b] - dir[a]), sec = Object.keys(ind).filter(k => !dir[k]).sort((a, b) => ind[b] - ind[a]), top = Math.max.apply(null, prim.map(k => dir[k]).concat(1));
   if (!prim.length) return html`<${Card} title="Muscles de la séance" sub=${se ? se.type : type}><div className="empty"><span>Aucun exercice dans cette séance.</span></div><//>`;
   return html`<${Card} title="Muscles de la séance" sub=${(se ? se.type : type || 'Séance libre') + ' · ' + prim.length + ' muscle' + (prim.length > 1 ? 's' : '')}>
-    <div className="mfig-lg"><${MuscleFig} m=${prim} s=${sec} h=${210} both /><span><i style=${{ background: 'var(--acc-hi)' }}></i>Travaillés${sec.length ? html` · <i style=${{ background: 'color-mix(in oklab, var(--acc-hi) 48%, #0a0b0d)' }}></i>Sollicités en aide` : ''}</span></div>
-    <div className="msc">${prim.map(k => html`<div key=${k} className="msc-r"><span>${Apex.MUSCLES[k] || k}</span><b>${dir[k]} série${dir[k] > 1 ? 's' : ''}</b><div className="msc-b" aria-hidden="true"><i style=${{ width: dir[k] / top * 100 + '%' }}></i></div></div>`)}</div>
-    ${sec.length > 0 && html`<p className="mut" style=${{ fontSize: 12 }}>En aide : ${sec.map(k => Apex.MUSCLES[k] || k).join(', ').toLowerCase()}.</p>`}
+    <div className="mfig-lg"><${MuscleFig} m=${prim} s=${sec} h=${280} both /><span><i style=${{ background: 'var(--acc-hi)' }}></i>Travaillés${sec.length ? html` · <i style=${{ background: 'color-mix(in oklab, var(--acc-hi) 42%, #52625e)' }}></i>Sollicités en aide` : ''}</span></div>
+    <div className="msc">${prim.map(k => html`<div key=${k} className="msc-r" role="group" aria-label=${(Apex.MUSCLES[k] || k) + ' : ' + dir[k] + ' série' + (dir[k] > 1 ? 's' : '')}>
+      <span className="mfig-box"><${MuscleFig} m=${k} h=${50} /></span>
+      <div className="msc-n"><b>${Apex.MUSCLES[k] || k}</b><div className="msc-d" aria-hidden="true">${Array.from({ length: Math.min(dir[k], 12) }, (_, n) => html`<i key=${n}></i>`)}</div></div>
+      <div className="msc-v"><b>${dir[k]}</b><small>série${dir[k] > 1 ? 's' : ''}</small></div></div>`)}</div>
+    ${sec.length > 0 && html`<div className="msc-aide"><span>Sollicités en aide</span>${sec.map(k => html`<em key=${k}>${Apex.MUSCLES[k] || k}</em>`)}</div>`}
   <//>`;
 }
 
@@ -3736,7 +3763,7 @@ function ExoParams({ type, i, onClose }) {
   const e = exos[it.e] || { n: it.e, m: '', lo: 8, hi: 12, inc: 2.5 }, p = Apex.paramsDe(e, it);
   const put = patch => saveProg(Apex.majExo(items, type, i, patch));
   return html`<${Sheet} title=${e.n} onClose=${onClose}>
-    <div className="mfig-lg"><${MuscleFig} m=${e.m} s=${e.s} h=${230} both /><span><i style=${{ background: 'var(--acc-hi)' }}></i>${Apex.MUSCLES[e.m] || ''}${(e.s || []).length ? html` · <i style=${{ background: 'color-mix(in oklab, var(--acc-hi) 42%, transparent)' }}></i>aide : ${e.s.map(m => Apex.MUSCLES[m]).join(', ')}` : ''}${e.uni ? ' · un côté à la fois' : ''}</span></div>
+    <div className="mfig-lg"><${MuscleFig} m=${e.m} s=${e.s} h=${230} both /><span><i style=${{ background: 'var(--acc-hi)' }}></i>${Apex.MUSCLES[e.m] || ''}${(e.s || []).length ? html` · <i style=${{ background: 'color-mix(in oklab, var(--acc-hi) 42%, #52625e)' }}></i>aide : ${e.s.map(m => Apex.MUSCLES[m]).join(', ')}` : ''}${e.uni ? ' · un côté à la fois' : ''}</span></div>
     <p className="sec" style=${{ fontSize: 13 }}>Réglages pour la séance « ${type} ».${p.perso ? '' : ' Valeurs par défaut de l’exercice.'}</p>
     <div className="stp-g">
       <${Stepper} label="Séries" value=${p.n} min=${1} max=${10} onChange=${v => put({ n: v })} />
@@ -3957,56 +3984,30 @@ function Chrono() {
 }
 
 /* ---- 54-ui-figure.js ---- */
-/* Macrova — le « bonhomme » : silhouette noire de face et de dos, muscles dessinés en facettes séparées par des traits gris-vert,
-   le muscle travaillé s'allume en couleur (planche d'anatomie). Tout est dessiné pour la moitié gauche (x < 50) puis reflété. */
-const FIG_BASE = {
-  centre: ['M44 3 L56 3 L58 12 L56 22 L50 26 L44 22 L42 12 Z', 'M45 24 L55 24 L57 32 L43 32 Z', 'M31 36 L69 36 L74 48 L71 68 L68 98 L50 110 L32 98 L29 68 L26 48 Z'],
-  gauche: ['M27 38 L20 41 L14 60 L10 82 L19 84 L24 64 L29 44 Z', 'M10 82 L19 84 L16 104 L9 120 L3 124 L5 104 Z', 'M3 124 L9 120 L13 130 L9 138 L3 136 Z',
-    'M34 100 L50 108 L50 150 L44 162 L35 158 L32 130 Z', 'M35 160 L45 162 L46 180 L43 194 L35 194 L34 178 Z', 'M34 194 L44 194 L47 200 L32 200 Z'],
-};
-const FIG_FACE = {
-  trap: ['M43 30 L34 36 L30 40 L38 40 L44 34 Z'],
-  dAnt: ['M30 40 L27 40 L22 46 L21 56 L27 56 L32 49 Z'],
-  dLat: ['M27 40 L21 42 L17 52 L18 60 L21 56 L22 46 Z'],
-  pecH: ['M50 37 L40 37 L32 41 L33 48 L41 48 L50 46 Z'],
-  pec: ['M33 48 L32 55 L38 61 L50 62 L50 46 L41 48 Z'],
-  bic: ['M21 57 L27 57 L26 70 L21 80 L16 80 L17 66 Z'],
-  avb: ['M16 84 L20 86 L18 102 L12 116 L7 120 L8 104 Z'],
-  abd: ['M33 60 L42 64 L43 98 L36 98 L32 80 Z', 'M45 64 L50 64 L50 72 L45 72 Z', 'M45 74 L50 74 L50 83 L45 83 Z', 'M45 85 L50 85 L50 95 L45 95 Z', 'M46 97 L50 97 L50 107 L46 107 Z'],
-  quad: ['M36 112 L50 112 L49 148 L44 160 L36 156 L33 130 Z'],
-  mol: ['M36 163 L44 163 L45 178 L42 192 L36 192 L35 178 Z'],
-};
-const FIG_DOS = {
-  trap: ['M50 24 L44 28 L31 38 L38 48 L50 78 Z'],
-  dPost: ['M31 39 L27 40 L22 46 L21 56 L27 56 L32 49 Z'],
-  dLat: ['M27 40 L21 42 L17 52 L18 60 L21 56 L22 46 Z'],
-  lats: ['M32 54 L30 64 L34 84 L40 100 L48 96 L49 66 L40 62 Z'],
-  dosH: ['M40 46 L37 54 L41 62 L49 64 L50 56 L50 46 Z'],
-  lomb: ['M44 80 L50 78 L50 108 L45 106 Z'],
-  tri: ['M21 57 L27 57 L26 70 L21 80 L16 80 L17 66 Z'],
-  avb: ['M16 84 L20 86 L18 102 L12 116 L7 120 L8 104 Z'],
-  fess: ['M34 102 L50 106 L50 128 L40 130 L33 116 Z'],
-  isch: ['M36 132 L50 130 L49 150 L44 160 L36 156 L34 142 Z'],
-  mol: ['M36 163 L44 163 L46 178 L42 192 L36 192 L35 178 Z'],
-};
-function FigMiroir({ children }) { return html`<${React.Fragment}>${children}<g transform="translate(100 0) scale(-1 1)">${children}</g><//>`; }
+/* Macrova — le « bonhomme » : planche d'anatomie de face et de dos (silhouette noire, muscles en facettes séparées par des traits gris-vert).
+   GÉNÉRÉ à partir de l'illustration de référence de Quentin (formes vectorisées puis rattachées à chaque muscle) ; les muscles travaillés s'allument en couleur.
+   Chaque vue : w = largeur, base = contour plein (le trait gris-vert), k = facettes par muscle ('b' = tête, mains, pieds, cou : jamais allumés). Hauteur : 400. */
+const FIG_H = 400;
+const FIG_VUES = {"face":{"w":208,"base":"M98 5L111 5L112 7L113 7L114 7L115 9L120 11L121 24L125 28L124 28L123 36L120 37L120 44L119 44L118 53L117 53L117 62L125 65L126 67L127 67L128 67L132 70L149 74L151 76L151 77L151 78L154 80L154 81L154 82L157 84L157 85L157 86L158 86L157 104L158 104L158 105L158 106L160 107L160 108L160 109L162 110L162 111L162 112L165 115L165 131L164 131L164 132L164 133L170 139L170 142L171 142L171 145L172 145L172 148L173 148L174 154L175 154L176 165L177 165L178 169L180 170L180 171L180 172L181 172L185 182L187 183L187 184L187 185L198 189L205 196L204 200L201 200L201 199L196 197L199 205L201 206L201 207L201 208L204 212L204 215L198 215L198 214L197 214L198 218L192 218L192 217L191 217L191 218L185 218L185 217L185 216L184 216L184 217L184 218L179 218L177 208L176 208L176 204L175 204L176 193L174 192L174 191L174 190L171 188L171 187L171 186L164 179L164 178L164 177L161 175L161 174L161 173L158 171L158 170L158 169L154 166L154 165L154 164L152 162L152 159L150 157L150 154L149 154L148 149L147 149L146 144L145 144L144 124L143 124L143 123L143 122L140 118L139 134L138 134L138 137L135 139L136 169L139 173L140 233L139 233L136 248L135 248L133 258L132 258L132 262L131 262L131 265L132 265L132 294L130 296L130 306L131 306L131 313L132 313L132 319L133 319L133 327L132 327L132 331L131 331L131 334L130 334L127 349L126 349L126 352L125 352L125 356L124 356L124 359L123 359L123 363L122 363L122 366L121 366L121 374L119 376L119 379L122 381L123 385L125 386L125 387L125 388L127 390L127 396L121 397L121 398L118 398L118 399L114 399L114 400L107 400L106 394L105 394L105 376L106 376L108 368L110 366L110 340L109 340L107 332L106 332L106 321L105 321L105 317L106 317L109 302L110 302L110 301L110 300L108 299L108 296L106 294L106 265L105 265L105 256L106 256L107 245L108 245L108 240L109 240L109 232L108 232L108 225L105 221L105 218L103 219L103 220L103 221L100 225L100 244L101 244L101 250L102 250L102 255L103 255L103 261L104 261L104 262L103 262L103 266L102 266L102 288L103 288L103 293L102 293L102 294L102 295L99 299L99 305L100 305L100 309L101 309L101 313L102 313L102 317L103 317L103 325L102 325L102 333L101 333L99 341L98 341L99 368L100 368L100 371L101 371L102 376L103 376L103 395L102 395L101 400L94 400L94 399L91 399L91 398L88 398L88 397L83 397L82 394L81 394L81 390L83 389L85 383L87 382L87 381L87 380L90 377L87 374L88 369L87 369L87 366L86 366L86 362L85 362L85 359L84 359L84 355L83 355L83 352L82 352L81 344L80 344L79 337L78 337L77 330L76 330L76 326L75 326L77 308L78 308L78 301L79 301L77 293L76 293L77 261L76 261L73 246L72 246L70 236L69 236L69 232L68 232L69 177L70 177L70 171L72 169L73 141L74 141L74 140L70 137L69 128L68 128L68 118L66 120L65 128L64 128L63 145L61 147L61 150L59 152L57 160L56 160L54 166L51 168L51 169L51 170L48 172L48 173L48 174L44 177L44 178L44 179L41 181L41 182L41 183L38 185L38 186L38 187L33 192L33 205L32 205L30 217L29 217L29 218L24 218L24 217L23 217L23 218L10 218L10 215L4 215L4 214L4 213L5 213L5 212L5 211L6 211L6 210L6 209L7 209L7 208L7 207L8 207L8 206L8 205L9 205L12 198L4 200L4 197L3 197L9 190L10 190L11 190L12 188L15 188L15 187L22 184L25 176L27 175L27 174L27 173L28 173L28 172L28 171L29 171L29 170L29 169L30 169L30 168L30 167L33 163L33 155L34 155L35 148L37 146L37 143L38 143L38 140L39 140L40 136L44 133L44 130L43 130L43 115L45 114L45 113L45 112L47 111L47 110L47 109L49 108L49 107L49 106L51 104L51 85L52 85L52 84L52 83L55 81L55 80L55 79L58 77L59 74L76 70L76 69L84 66L85 64L91 62L91 51L90 51L90 48L89 48L88 37L85 36L84 26L87 24L88 12L91 9L92 9L93 9L94 7L98 6Z","k":{"b":["M98 7L111 7L119 12L120 25L123 27L122 35L118 37L118 47L109 55L98 54L91 47L90 37L86 33L86 27L89 24L89 14L91 11Z","M92 51L100 62L101 76L93 64Z","M116 50L116 63L107 76L109 61Z","M21 186L23 187L25 192L31 193L32 203L29 210L29 215L26 217L28 207L25 207L24 213L22 217L21 217L20 217L19 215L22 209L22 206L21 206L20 206L16 216L13 217L12 215L16 208L16 204L13 206L9 214L6 214L6 213L6 212L15 196L13 195L8 198L5 198L5 197L5 196L9 192L10 192L11 192L11 191L11 190L14 190Z","M186 186L197 190L203 196L203 197L203 198L195 195L193 196L202 212L202 213L202 214L199 214L195 206L192 204L192 208L196 214L195 217L192 216L188 206L187 206L186 206L186 209L189 216L186 217L183 207L180 207L182 217L181 217L180 217L179 215L179 210L176 202L177 193L183 192Z","M99 374L102 378L101 397L98 399L95 395L94 398L83 395L83 390L88 381L92 377L95 377Z","M108 375L114 376L119 379L122 386L126 390L124 396L114 398L113 395L112 398L108 398Z"],"trap":["M90 63L94 67L95 71L77 72L77 71L77 70L87 66Z","M117 63L131 70L132 72L113 72Z"],"dLat":["M60 76L68 76L68 77L68 78L67 78L66 78L61 84L60 84L59 84L55 95L53 96L52 87Z","M141 76L149 76L149 77L149 78L156 86L156 96L153 94L151 86L147 82L146 82L145 82L141 78L141 77Z"],"dAnt":["M73 76L76 76L77 80L75 81L71 92L70 92L69 92L65 96L62 96L61 98L57 98L61 86Z","M132 76L136 76L144 84L145 84L146 84L151 94L151 98L148 98L147 96L144 96L137 91L137 88L135 87L135 84L133 83L133 80L131 78Z"],"pecH":["M81 76L89 76L101 81L101 90L76 90L81 79Z","M119 76L127 76L133 90L108 90L108 80L117 78Z"],"pec":["M101 90L101 106L93 108L83 108L72 100L68 99L68 98L68 97L75 91L76 90Z","M133 90L134 92L138 96L139 96L140 96L139 100L138 100L137 100L133 104L130 104L126 108L107 106L108 90Z"],"@pecH+pec":["M81 76L89 76L101 81L101 106L93 108L83 108L72 100L68 99L68 98L68 97L75 91L81 79Z","M119 76L127 76L134 92L138 96L139 96L140 96L139 100L138 100L137 100L133 104L130 104L126 108L107 106L108 80L117 78Z"],"bic":["M60 101L65 101L66 103L67 103L68 103L67 116L60 130L52 135L50 123L52 120L55 104Z","M144 101L153 103L158 122L157 135L148 130L142 118L140 104Z","M50 108L51 113L48 122L50 132L49 137L48 133L45 131L45 115L50 110L50 109Z","M157 108L164 116L164 130L159 137L158 134L160 129L160 120Z","M60 132L60 140L50 146L50 143L58 136Z","M147 132L159 143L158 146L148 139Z"],"avb":["M45 134L47 150L43 154L42 158L27 180L26 184L23 185L32 166L34 165L35 153L39 141Z","M163 134L169 140L174 156L175 166L177 167L182 179L184 180L185 185L184 185L183 185L182 181L180 180L179 176L177 175L176 171L174 170L162 150Z","M60 143L61 145L53 165L49 168L49 169L49 170L46 172L37 186L33 189L31 181L38 171L40 165L42 164L45 156L50 149Z","M147 143L154 146L161 152L162 156L164 157L166 163L168 164L170 170L172 171L174 177L178 182L176 189L175 189L174 189L171 183L167 180L167 179L167 178L155 164Z"],"abd":["M71 105L72 105L73 105L76 109L71 110Z","M136 105L138 106L138 110L133 109L133 108L133 107L134 107L135 107Z","M78 109L82 110L84 113L78 112Z","M128 109L131 109L132 111L125 114L124 112Z","M70 111L74 114L76 119L69 117Z","M137 111L139 113L139 117L133 119Z","M75 112L83 116L82 122L76 117Z","M132 112L133 116L128 122L127 122L126 122L125 117Z","M100 112L101 120L95 121L87 126L87 117Z","M108 112L120 116L123 120L122 126L115 123L114 121L108 121Z","M72 120L75 120L81 124L81 131L80 131L79 131Z","M134 120L137 121L128 131L127 124Z","M70 122L72 123L76 132L81 136L80 143L79 143L78 143L76 139L71 135L69 126Z","M138 121L139 128L137 136L130 143L129 143L128 143L128 136L133 131Z","M99 125L100 125L101 125L101 135L91 136L87 138L87 130Z","M108 125L121 130L122 138L119 138L117 136L108 136Z","M97 141L101 141L101 154L98 154L94 151L87 151L87 142Z","M108 141L121 142L122 151L115 151L108 154Z","M75 143L83 148L84 170L87 175L86 178L85 178L84 178L81 174L73 169Z","M133 143L135 169L127 176L122 178L122 174L125 168L125 148Z","M88 156L100 157L101 192L93 187Z","M114 156L120 156L116 187L108 192L107 163L109 157Z","M82 183L83 183L84 183L99 198L93 209L89 198L82 187Z","M125 183L126 183L127 183L127 186L119 199L117 208L116 208L115 208L110 200L110 197Z"],"quad":["M71 174L75 176L73 227L84 275L83 275L82 275L81 273L80 265L70 234Z","M136 174L138 176L139 233L131 261L129 263L127 274L125 275L130 247L135 230L133 176L134 176L135 176Z","M78 184L95 219L97 236L79 198Z","M130 183L131 194L111 237L113 220L117 214L117 211L121 205L121 202Z","M77 198L93 232L89 276L88 276L87 276L86 273L83 254L76 227Z","M131 198L133 225L129 238L122 275L119 276L116 231Z","M100 202L101 202L102 202L102 217L97 225L95 210Z","M107 201L114 211L112 225L107 218Z","M95 238L97 240L102 259L102 264L97 279L91 276Z","M113 237L117 276L111 279L106 261Z","M78 276L82 284L84 293L78 291Z","M130 276L131 291L124 293Z","M84 281L94 282L91 298L90 298L89 298L88 291L84 287Z","M115 281L124 281L125 283L125 286L121 290L120 298L117 298L114 285Z","M100 283L101 294L99 295L95 307L93 308L92 299Z","M108 283L116 298L115 308L107 292Z"],"mol":["M81 297L89 314L90 350L97 374L89 370L76 325Z","M127 296L129 301L132 326L126 344L124 356L121 362L120 370L112 373L117 351L119 348L119 315Z","M97 306L101 314L101 331L97 339L96 365L93 340L94 320Z","M110 306L112 307L115 324L115 351L112 366L112 341L108 332L107 325L107 317L109 314Z"]}},"dos":{"w":209,"base":"M97 2L111 2L120 11L120 20L123 21L123 24L122 24L121 30L119 31L119 40L113 48L117 52L118 52L119 52L121 55L122 55L123 55L125 58L126 58L127 58L129 61L130 61L131 61L133 64L138 65L138 66L143 66L145 68L150 69L150 70L150 71L152 72L152 73L152 74L154 75L154 76L154 77L158 81L160 86L159 86L157 100L165 107L165 112L164 112L164 134L167 137L168 137L169 137L171 140L172 140L173 140L173 141L173 142L174 142L174 146L175 146L176 154L177 154L177 157L178 157L181 172L184 175L187 182L189 183L189 184L189 185L194 187L194 188L199 189L206 196L205 200L197 198L200 205L201 205L201 206L201 207L202 207L202 208L202 209L203 209L203 210L203 211L204 211L204 212L204 213L205 213L205 214L205 215L201 215L201 216L200 216L199 216L199 217L199 218L195 218L195 219L194 219L193 219L193 218L186 219L186 218L186 217L185 217L185 218L179 218L179 214L178 214L178 210L177 210L177 206L176 206L176 192L173 189L170 182L168 181L168 180L168 179L165 176L164 172L162 171L162 170L162 169L158 165L157 161L155 160L154 154L153 154L152 149L150 147L150 144L148 142L147 133L146 133L145 124L144 124L143 112L142 112L142 115L141 115L141 118L139 120L137 129L135 131L137 169L138 169L138 177L139 177L139 184L140 184L140 206L141 206L141 209L142 209L142 246L141 246L141 249L140 249L140 252L139 252L139 255L138 255L138 258L137 258L136 281L135 281L135 301L136 301L137 319L136 319L136 320L136 321L135 321L135 322L135 323L134 323L134 324L134 325L133 325L133 326L133 327L130 331L130 366L129 366L127 381L131 383L132 390L128 393L128 394L128 395L125 398L114 398L113 395L110 392L110 391L110 390L112 389L112 388L112 387L115 384L115 380L114 380L114 377L115 377L115 358L114 358L113 344L112 344L113 335L109 330L109 317L108 317L108 316L109 316L109 310L110 310L112 295L113 295L116 288L115 288L115 285L114 285L113 280L112 280L111 275L110 275L111 262L112 262L112 246L111 246L110 236L109 236L109 231L108 231L108 226L107 226L107 200L106 200L105 200L105 199L101 200L101 201L102 201L102 202L101 202L101 203L102 203L102 204L101 204L101 228L100 228L100 233L99 233L99 238L98 238L98 243L97 243L97 248L96 248L98 276L97 276L96 282L93 286L94 293L96 294L96 297L97 297L97 303L98 303L98 308L99 308L99 313L100 313L100 329L96 334L96 347L95 347L95 354L94 354L94 361L93 361L93 377L94 377L93 384L96 386L96 387L96 388L98 390L98 393L95 395L94 398L83 398L81 396L81 395L81 394L78 392L78 391L78 390L76 389L77 383L81 381L81 375L80 375L80 370L79 370L79 332L78 332L78 331L78 330L77 330L77 329L77 328L76 328L76 327L76 326L75 326L75 325L75 324L72 320L72 306L73 306L73 292L74 292L74 289L73 289L73 276L72 276L72 262L71 262L71 257L70 257L70 254L69 254L69 251L68 251L68 248L67 248L67 233L66 233L66 232L67 232L67 231L66 231L66 211L67 211L68 200L69 200L69 180L70 180L71 163L72 163L72 150L73 150L74 133L73 133L73 130L71 128L71 125L70 125L70 122L68 120L66 112L65 112L65 121L64 121L64 126L63 126L63 130L62 130L61 140L60 140L60 143L59 143L58 148L56 150L56 153L54 155L54 158L53 158L51 164L49 165L49 166L49 167L47 168L46 172L44 173L44 174L44 175L40 179L40 180L40 181L37 184L36 188L32 192L32 201L33 201L33 202L33 203L32 203L32 208L31 208L31 211L30 211L29 218L18 219L16 217L15 219L14 219L13 219L13 218L9 218L9 217L9 216L8 216L7 216L7 215L3 215L3 214L3 213L5 212L5 211L5 210L6 210L6 209L6 208L7 208L7 207L7 206L8 206L8 205L8 204L11 200L11 199L11 198L3 200L3 195L6 192L7 192L8 192L11 188L19 186L19 185L19 184L22 181L23 177L27 173L35 141L38 138L39 138L40 138L41 136L44 135L44 106L51 100L50 89L49 89L49 84L50 84L51 80L53 79L53 78L53 77L55 76L55 75L55 74L57 73L57 72L57 71L59 69L60 69L61 69L65 66L74 65L76 62L77 62L78 62L80 59L81 59L82 59L84 56L85 56L86 56L88 53L89 53L90 53L92 50L95 49L95 48L95 47L90 42L89 31L87 29L85 21L88 20L89 10Z","k":{"b":["M102 3L111 4L118 11L118 20L121 22L121 25L119 30L118 30L117 30L117 40L115 43L110 37L112 31L96 31L98 36L96 41L93 44L91 40L91 30L90 30L89 30L89 27L87 25L87 22L90 21L90 11L97 4Z","M20 186L21 186L22 186L24 192L31 193L31 205L28 217L25 217L27 207L26 207L25 207L22 217L18 217L22 208L21 206L19 207L16 216L11 217L16 205L12 207L9 214L5 213L10 203L12 202L14 195L8 198L4 198L4 197L4 196L7 195L11 190Z","M187 186L197 190L204 196L204 197L204 198L201 198L194 195L195 200L197 201L203 213L199 214L195 205L192 205L197 217L193 217L189 206L188 206L187 206L187 210L190 217L186 216L183 207L182 207L181 207L183 217L182 217L181 217L179 213L177 205L177 194L178 192L184 192Z","M78 385L81 386L84 390L91 390L92 387L93 387L94 387L96 391L94 393L84 395L78 389Z","M129 385L131 388L124 395L114 393L112 391L114 387L115 387L116 387L118 390L124 390Z"],"trap":["M100 33L103 34L100 67L87 64L78 64L81 60L82 60L83 60L99 47L101 41Z","M107 33L107 40L110 48L125 60L130 62L130 63L130 64L120 64L108 67L108 52L105 44L105 34Z","M72 66L81 66L99 73L100 105L86 93L79 73L66 68Z","M127 66L136 66L142 68L129 73L122 93L108 105L109 73L125 68Z"],"dPost":["M59 71L70 72L72 74L52 95L50 85Z","M144 71L149 71L151 76L156 81L158 85L156 95L137 75L137 74L137 73Z"],"dosH":["M71 78L76 78L82 96L63 94L64 86Z","M133 78L137 78L143 84L143 85L143 86L145 87L145 94L126 96L131 80Z","M63 96L84 100L100 115L100 127L73 127L72 123L67 113L67 109L63 101Z","M143 96L144 96L145 96L145 102L143 104L136 127L136 127L108 127L108 116L124 100Z"],"lats":["M100 127L102 173L83 156L73 127Z","M136 127L136 127L126 150L126 154L116 165L115 165L114 165L113 168L106 172L108 127Z"],"@dosH+lats":["M63 96L84 100L100 115L102 173L83 156L72 123L67 113L67 109L63 101Z","M143 96L144 96L145 96L145 102L143 104L136 127L126 150L126 154L116 165L115 165L114 165L113 168L106 172L108 116L124 100Z"],"tri":["M59 93L61 95L63 121L54 135L46 131L45 108Z","M148 93L163 108L162 131L156 134L152 133L147 122L145 121Z"],"avb":["M50 135L53 142L58 141L58 144L56 146L52 159L40 172L46 156L46 141L48 140Z","M157 135L162 141L162 157L165 161L169 173L156 159L156 156L150 144L150 141L156 141Z","M41 138L44 143L42 162L34 178L32 179L31 184L29 185L29 186L29 187L28 187L27 187L24 179L29 172L36 143Z","M166 138L172 142L179 172L185 180L181 187L180 187L179 187L166 161Z"],"lomb":["M75 142L80 151L81 159L73 161Z","M132 142L133 142L134 142L133 144L135 161L128 159L128 152L132 145Z"],"fess":["M80 162L85 162L88 168L78 172L76 177L72 180L74 165Z","M124 162L128 162L134 165L136 180L132 177L130 172L124 170L123 168L120 168L121 164Z","M87 172L92 172L94 178L98 179L101 182L102 198L82 207L82 208L82 209L76 215L75 215L74 215L72 207L70 206L71 188L78 176L86 174Z","M116 172L121 172L130 176L138 190L138 206L134 215L133 215L132 215L126 207L106 198L107 182L114 178Z"],"isch":["M98 202L100 204L100 226L95 243L93 234L93 212L94 205Z","M108 202L112 203L115 206L115 234L113 242L109 230Z","M89 208L90 208L91 208L90 238L95 251L96 262L96 277L92 285L82 264L80 240L84 211Z","M117 208L123 210L125 214L128 232L128 243L126 264L116 286L112 277L112 263L113 252L118 238Z","M68 210L70 211L70 214L72 216L72 222L69 231Z","M139 210L141 212L140 231L136 221L136 216Z","M79 216L80 219L76 250L78 252L80 260L74 278L73 259L68 245L73 221Z","M129 217L135 220L140 245L135 259L134 278L129 264L129 256L132 250Z"],"mol":["M79 273L82 274L82 319L84 325L84 329L81 332L79 331L73 319L74 297Z","M127 273L130 273L130 283L133 289L135 312L135 319L128 332L124 329L126 320Z","M85 278L95 296L97 305L98 330L95 334L94 334L93 334L86 326Z","M122 279L122 326L115 334L114 334L113 334L110 330L110 311L113 296Z","M84 331L89 333L95 341L91 369L91 388L88 387L87 359L81 335Z","M122 331L123 331L124 331L127 336L121 360L120 387L118 388L116 357L113 342L114 338Z","M80 348L83 353L86 368L86 388L83 388L83 379L80 367Z","M127 349L128 367L125 379L125 387L122 388L122 368Z"]}}};
+const FIG_FACE = FIG_VUES.face.k, FIG_DOS = FIG_VUES.dos.k;
 /* m = muscle principal ou liste de muscles principaux ; s = muscles qui aident */
 function FigBody({ vue, m, s, x }) {
-  const spec = vue === 'face' ? FIG_FACE : FIG_DOS, prim = Array.isArray(m) ? m : [m], role = k => (prim.indexOf(k) >= 0 ? 'mf-p' : (s || []).indexOf(k) >= 0 ? 'mf-s' : 'mf-o');
-  const ordre = Object.keys(spec).sort((a, b) => (role(a) === 'mf-p') - (role(b) === 'mf-p') || (role(a) === 'mf-s') - (role(b) === 'mf-s'));
+  const v = FIG_VUES[vue], prim = Array.isArray(m) ? m : [m], role = k => (prim.indexOf(k) >= 0 ? 'mf-p' : (s || []).indexOf(k) >= 0 ? 'mf-s' : 'mf-o');
+  const ordre = Object.keys(v.k).filter(k => k !== 'b' && k[0] !== '@').sort((a, b) => (role(a) === 'mf-p') - (role(b) === 'mf-p') || (role(a) === 'mf-s') - (role(b) === 'mf-s'));
   return html`<g transform=${'translate(' + x + ' 0)'}>
-    ${FIG_BASE.centre.map((d, i) => html`<path key=${'c' + i} className="mf-b" d=${d} />`)}
-    <${FigMiroir}>${FIG_BASE.gauche.map((d, i) => html`<path key=${'g' + i} className="mf-b" d=${d} />`)}<//>
-    <${FigMiroir}>${ordre.map(k => spec[k].map((d, i) => html`<path key=${k + i} className=${role(k)} d=${d} />`))}<//>
+    <path className="mf-sil" d=${v.base} />
+    ${(v.k.b || []).map((d, i) => html`<path key=${'b' + i} className="mf-b" d=${d} />`)}
+    ${ordre.map(k => v.k[k].map((d, i) => html`<path key=${k + i} className=${role(k)} d=${d} />`))}
+    ${Object.keys(v.k).filter(k => k[0] === '@').map(k => { const q = k.slice(1).split('+'), r = role(q[0]); return r === role(q[1]) ? v.k[k].map((d, i) => html`<path key=${k + i} className=${r + ' mf-j'} d=${d} />`) : null; })}
   </g>`;
 }
 /* h = hauteur en pixels. both = face et dos côte à côte (grand format) ; sinon seule la vue qui montre le muscle. */
 function MuscleFig({ m, s, h = 52, both }) {
   const sec = s || [], prim = Array.isArray(m) ? m : [m], backOnly = prim.every(k => !FIG_FACE[k] && !!FIG_DOS[k]), showF = both || !backOnly, showD = both || backOnly;
-  const w = both ? 212 : 100, noms = k => Apex.MUSCLES[k] || k, label = prim.map(noms).join(', ') + (sec.length ? ' (aide : ' + sec.map(noms).join(', ') + ')' : '');
-  return html`<svg className=${cx('mfig', both && 'both')} viewBox=${'0 0 ' + w + ' 200'} height=${h} width=${Math.round(h * w / 200)} role="img" aria-label=${'Muscles travaillés : ' + label}>
+  const vw = both ? FIG_VUES.face.w + FIG_VUES.dos.w + 12 : (showD && !showF ? FIG_VUES.dos.w : FIG_VUES.face.w), noms = k => Apex.MUSCLES[k] || k, label = prim.map(noms).join(', ') + (sec.length ? ' (aide : ' + sec.map(noms).join(', ') + ')' : '');
+  return html`<svg className=${cx('mfig', both && 'both')} viewBox=${'0 0 ' + vw + ' ' + FIG_H} height=${h} width=${Math.round(h * vw / FIG_H)} role="img" aria-label=${'Muscles travaillés : ' + label}>
     ${showF && html`<${FigBody} vue="face" m=${prim} s=${sec} x=${0} />`}
-    ${showD && html`<${FigBody} vue="dos" m=${prim} s=${sec} x=${both ? 112 : 0} />`}
+    ${showD && html`<${FigBody} vue="dos" m=${prim} s=${sec} x=${both ? FIG_VUES.face.w + 12 : 0} />`}
   </svg>`;
 }
 
@@ -4371,7 +4372,7 @@ function DayPlan({ date }) {
     if (nb && nb.notes && nb.notes.length) f.note = nb.notes.join(' ');
     Store.patch('seances', date, f); toast('Séance ' + (libre ? 'libre' : type) + ' ouverte');
   };
-  const dur = Apex.dureeSeance(plan, exos), sets = plan.reduce((s, x) => s + x.n, 0), swapEx = sheet && sheet.t === 'swap' ? plan[sheet.i] : null;
+  const dur = Apex.dureeSeance(plan, exos), sets = plan.reduce((s, x) => s + x.n, 0), swapEx = sheet && sheet.t === 'swap' ? plan[sheet.i] : null, edPl = sheet && sheet.t === 'edit' ? plan[sheet.i] : null;
   return html`<${Card} cls="c7" title=${'Séance ' + (libre ? 'libre' : type)} sub=${dMid(date) + ' · double progression, RPE 8–9'}>
     <div className="chips" role="group" aria-label="Type de séance">${types.map(t => html`<button key=${t} type="button" className="chip" aria-pressed=${type === t} onClick=${() => setType(t)}>${t}</button>`)}
       <button type="button" className="chip" aria-pressed=${libre} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: 'Libre', plan: [], planNote: null })}>Libre</button></div>
@@ -4381,20 +4382,20 @@ function DayPlan({ date }) {
     ${plan.length ? html`<${SortList} className="dp" onMove=${(a, b) => put(moveIn(plan, a, b))}>${plan.map((x, i) => { const e0 = exos[x.e] || { n: x.e, m: '', lo: 8, hi: 12, inc: 2.5 }, e = Object.assign({}, e0, { rir: Apex.rirDefaut(e0) }, Apex.ovOf(x)), h = Apex.histoExo(S.seances, x.e).filter(q => q.date < date), o = Apex.objectif(e, h.length ? h[h.length - 1] : null);
       return html`<div key=${x.e + '-' + i} className="dp-row" data-sort="1">
         <${Mover} i=${i} n=${plan.length} label=${e.n} onMove=${(a, b) => put(moveIn(plan, a, b))} />
-        <span className="mfig-box"><${MuscleFig} m=${e.m} s=${e.s} h=${46} /></span>
-        <div className="dp-n"><b>${e.n}<span className="badge">${Apex.MUSCLES[e.m] || ''}</span>${e.uni && html`<span className="badge uni">1 côté</span>`}</b><span>${o.txt} · ⏱ ${Apex.restTxt(Apex.restDe(e0, x))}</span></div>
+        <span className="mfig-box" onClick=${() => setSheet({ t: 'edit', i })}><${MuscleFig} m=${e.m} s=${e.s} h=${64} /></span>
+        <button type="button" className="dp-n" aria-label=${'Modifier ' + e.n} onClick=${() => setSheet({ t: 'edit', i })}><b>${e.n}<span className="badge">${Apex.MUSCLES[e.m] || ''}</span>${e.uni && html`<span className="badge uni">1 côté</span>`}</b><span>${o.txt} · ⏱ ${Apex.restTxt(Apex.restDe(e0, x))}</span></button>
         <div className="dp-c">
           <button type="button" className="ib sm" aria-label=${'Moins de séries : ' + e.n} onClick=${() => upd(i, { n: Math.max(1, x.n - 1) })}><${Icon} n="minus" s=${16} /></button>
           <b className="num">${x.n}</b>
           <button type="button" className="ib sm" aria-label=${'Plus de séries : ' + e.n} onClick=${() => upd(i, { n: Math.min(10, x.n + 1) })}><${Icon} n="plus" s=${16} /></button>
-          <button type="button" className="ib sm" aria-label=${'Remplacer : ' + e.n} onClick=${() => setSheet({ t: 'swap', i })}><${Icon} n="swap" s=${16} /></button>
-          <button type="button" className="ib sm" aria-label=${'Retirer : ' + e.n} onClick=${() => put(plan.filter((_, k) => k !== i))}><${Icon} n="x" s=${16} /></button>
         </div></div>`; })}<//>` : html`<div className="empty"><span><b>Séance vide.</b> Ajoute des exercices, ou laisse l’IA te proposer une séance.</span></div>`}
     <div className="tiles"><div className="tile"><span>Durée estimée</span><b>${dur}<small>min</small></b></div><div className="tile"><span>Séries</span><b>${sets}</b></div><div className="tile"><span>Exercices</span><b>${plan.length}</b></div></div>
     <div className="row"><button type="button" className="btn grow" onClick=${() => setSheet({ t: 'add' })}><${Icon} n="plus" s=${18} />Exercice</button>
       <button type="button" className="btn grow" onClick=${() => setSheet({ t: 'adapt' })}><${Icon} n="sparkles" s=${18} />${st.caps().sample ? 'Optimiser avec l’IA' : 'Adapter'}</button></div>
     <button type="button" className="btn pri wide" disabled=${!plan.length} onClick=${start}><${Icon} n="dumbbell" s=${18} />Démarrer la séance</button>
     ${sheet && sheet.t === 'add' && html`<${ExoSheet} exos=${exos} title="Ajouter un exercice" onClose=${() => setSheet(null)} onPick=${id => put(plan.concat({ e: id, n: 3 }))} />`}
+    ${edPl && html`<${ExoEditSheet} e0=${exos[edPl.e] || { n: edPl.e, m: '', s: [], lo: 8, hi: 12, inc: 2.5 }} x=${edPl} onClose=${() => setSheet(null)}
+      onSwap=${() => setSheet({ t: 'swap', i: sheet.i })} onRemove=${() => put(plan.filter((_, k) => k !== sheet.i))} onPatch=${f => upd(sheet.i, f)} />`}
     ${swapEx && html`<${ExoSheet} exos=${exos} title=${'Remplacer · ' + ((exos[swapEx.e] || {}).n || '')} muscle=${(exos[swapEx.e] || {}).m} onClose=${() => setSheet(null)} onPick=${id => upd(sheet.i, { e: id })} />`}
     ${sheet && sheet.t === 'adapt' && html`<${AdaptSheet} date=${date} plan=${plan} type=${libre ? 'libre' : type} onClose=${() => setSheet(null)} onApply=${r => Store.patch('journal', date, { date, plan: r.plan, planNote: { src: r.src, notes: r.notes, duree: r.duree } })} />`}
   <//>`;
