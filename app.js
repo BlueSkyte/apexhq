@@ -2817,7 +2817,7 @@ function PoidsStats({ last, m, t, cfg }) {
       <span className=${cx('wst-t', ok)}>${t ? html`<${Icon} n=${t.dk < 0 ? 'down' : 'up'} s=${16} w=${2.4} />${sgn(t.dk, f2)} kg par semaine` : 'Tendance dès 2 semaines'}</span></div>
     <div className="wst-side">
       <div className="wst-i"><i><${Icon} n="scale" s=${18} /></i><div><span>Dernière pesée</span><b>${f1(last.v)} kg</b><em>${dTiny(last.d)}</em></div></div>
-      <div className=${cx('wst-i', ok)}><i><${Icon} n="trend" s=${18} /></i><div><span>Rythme</span><b>${t ? sgn(t.pct) + ' %' : '–'}</b><em>${msg}</em></div></div>
+      <div className=${cx('wst-i', ok)}><i><${Icon} n="trend" s=${18} /></i><div><span>Rythme</span><b>${t ? sgn(t.pct) + ' %' : '–'}</b><em>par semaine · ${msg}</em></div></div>
       <div className="wst-i"><i><${Icon} n="target" s=${18} /></i><div><span>Depuis le départ</span><b>${since == null ? '–' : sgn(since) + ' kg'}</b><em>départ ${f1(dep)} kg</em></div></div>
     </div>
     ${pct != null && html`<div className="wst-p" role="img" aria-label=${'Progression vers ' + f1(cib) + ' kg : ' + Math.round(pct) + ' %'}>
@@ -3569,7 +3569,7 @@ function Training({ date, setDate }) {
   const [view, setView] = useState(() => { const v = lsGet('train:view', 'seance'); return ['seance', 'prog', 'suivi'].indexOf(v) >= 0 ? v : 'seance'; });
   const pick = v => { setView(v); lsSet('train:view', v); };
   return html`<div>
-    <div className="view-h"><h1>Muscu · ${dMid(date)}</h1><p>${nS} séance${nS > 1 ? 's' : ''} par semaine · ${Apex.types(cfg).join(', ')}.${foc.length ? ' Priorité : ' + foc.join(', ').toLowerCase() + '.' : ''}</p></div>
+    <div className="view-h"><h1>Muscu · ${dMid(date)}</h1><p>${nS} séance${nS > 1 ? 's' : ''} par semaine · ${Apex.types(cfg).join(', ')}.${foc.length ? ' Priorité : ' + foc.join(', ').toLowerCase() + '.' : ''}</p><${ChronoBtn} /></div>
     <div className="ttabs" role="tablist" aria-label="Espace muscu">${[['prog', 'Programme', 'sliders'], ['seance', 'Séance', 'dumbbell'], ['suivi', 'Suivi', 'chart']].map(t => html`<button key=${t[0]} type="button" role="tab" aria-selected=${view === t[0]} className="ttab" onClick=${() => pick(t[0])}><${Icon} n=${t[2]} s=${18} />${t[1]}</button>`)}</div>
     ${view === 'seance' && html`<div className="grid">
       <div className="c12"><${WeekBar} date=${date} setDate=${setDate} /></div>
@@ -3761,7 +3761,7 @@ const CHR = (() => {
   const A = {
     s: () => s, subs, left, elapsed, running, unlock,
     mode: m => { s.mode = m; emit(); },
-    toggle: () => { s.open = !s.open; emit(); },
+    toggle: () => { if (s.open && s.left === 0 && !s.endAt) s.left = null; s.open = !s.open; emit(); },
     open: () => { s.open = true; emit(); },
     startRest: sec => { unlock(); const d = Math.max(5, Math.min(900, Math.round(sec || s.dur))); s.mode = 'repos'; s.dur = d; s.endAt = Date.now() + d * 1000; s.left = null; emit(); },
     pauseRest: () => { if (s.endAt) { s.left = Math.max(0, s.endAt - Date.now()); s.endAt = null; emit(); } },
@@ -3785,6 +3785,11 @@ const chrFmt = ms => { const t = Math.max(0, Math.ceil(ms / 1000)), m = Math.flo
 const chrFmtW = ms => { const t = Math.floor(ms / 1000), m = Math.floor(t / 60), r = t % 60; return m + ':' + (r < 10 ? '0' : '') + r; };
 function useChrono() { const [, f] = useState(0); useEffect(() => { const cb = () => f(x => x + 1); CHR.subs.add(cb); return () => { CHR.subs.delete(cb); }; }, []); return CHR; }
 
+/* Bouton d'ouverture, dans l'en-tête de l'espace muscu (rien ne flotte tant que le chrono est au repos). */
+function ChronoBtn() {
+  const c = useChrono(), s = c.s(), run = c.running();
+  return html`<button type="button" className=${cx('btn sm', run && 'pri')} aria-label="Ouvrir le chrono" onClick=${c.open}><${Icon} n="timer" s=${16} />${run ? (s.mode === 'repos' ? chrFmt(c.left()) : chrFmtW(c.elapsed())) : 'Chrono'}</button>`;
+}
 function Chrono() {
   const c = useChrono(), s = c.s(), repos = s.mode === 'repos', run = c.running(), open = s.open;
   const l = c.left(), tot = (repos ? s.dur : 0) * 1000, t = repos ? l : c.elapsed(), low = repos && !!s.endAt && l <= 10000, fini = repos && !run && s.left === 0;
@@ -3794,6 +3799,7 @@ function Chrono() {
       : html`<button type="button" className="btn pri chr-go" onClick=${() => (s.left != null && s.left > 0 ? c.resumeRest() : c.startRest(s.dur))}><${Icon} n="play" s=${20} />${s.left != null && s.left > 0 ? 'Reprendre' : 'Lancer le repos'}</button>`)
     : (s.startAt ? html`<button type="button" className="btn pri chr-go" onClick=${c.pauseWatch}><${Icon} n="pause" s=${20} />Pause</button>`
       : html`<button type="button" className="btn pri chr-go" onClick=${c.startWatch}><${Icon} n="play" s=${20} />${s.acc > 0 ? 'Reprendre' : 'Démarrer'}</button>`);
+  if (!open && !run && !(s.left === 0 && repos)) return null;
   return html`<div className=${cx('chr', open && 'open')}>
     ${open && html`<section className="chr-p" role="dialog" aria-label="Chrono">
       <div className="row sb"><${Seg} neutral label="Type de chrono" value=${s.mode} onChange=${c.mode} options=${[['repos', 'Repos'], ['chrono', 'Chrono']]} />
