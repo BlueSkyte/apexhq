@@ -2,7 +2,7 @@
 "use strict";
 if (!window.React || !window.ReactDOM || !window.htm) { var a0 = document.getElementById('app'); if (a0) a0.textContent = 'Fichiers de l’app introuvables. Recharge la page.'; return; }
 /* ---- 10-logic.js ---- */
-/* ApexHQ — moteur de calcul (pur, sans DOM). Testé par test.js. */
+/* Alvora — moteur de calcul (pur, sans DOM). Testé par test.js. */
 const Apex = (() => {
   'use strict';
 
@@ -646,7 +646,7 @@ const Apex = (() => {
 if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 
 /* ---- 11-onboard-logic.js ---- */
-/* ApexHQ — questionnaire : calories précises, programme de séances, plan repas adapté.
+/* Alvora — questionnaire : calories précises, programme de séances, plan repas adapté.
    Étend le moteur Apex (fonctions pures, testées par test-onboard.js). */
 (function () {
   'use strict';
@@ -943,7 +943,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 12-adapt-logic.js ---- */
-/* ApexHQ — adaptation d'une séance : temps disponible, matériel, zones sensibles, forme du jour, points faibles.
+/* Alvora — adaptation d'une séance : temps disponible, matériel, zones sensibles, forme du jour, points faibles.
    Fonctions pures (testées par test-adapt.js). Étend le moteur Apex. */
 (function () {
   'use strict';
@@ -1078,7 +1078,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 12b-foods-world.js ---- */
-/* ApexHQ — base de plats, chaînes et produits du monde. Valeurs MOYENNES par portion (flag est) : à corriger avec l'étiquette si besoin.
+/* Alvora — base de plats, chaînes et produits du monde. Valeurs MOYENNES par portion (flag est) : à corriger avec l'étiquette si besoin.
    Chaque ligne : [id, nom, mots de recherche, protéines g, glucides g, lipides g, fibres g, unité, (kcal imposées pour l'alcool)].
    Les kcal sont calculées (4 P + 4 G + 9 L) pour rester cohérentes. Étend le moteur Apex. */
 (function () {
@@ -1309,7 +1309,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 12c-foods-ciqual.js ---- */
-/* ApexHQ — valeurs de référence issues de la table Ciqual 2020 (ANSES, licence CC BY 4.0, https://doi.org/10.5281/zenodo.4770202).
+/* Alvora — valeurs de référence issues de la table Ciqual 2020 (ANSES, licence CC BY 4.0, https://doi.org/10.5281/zenodo.4770202).
    Fichier GÉNÉRÉ : ne pas modifier à la main. NEW : plats et produits pour 100 g avec poids d'une portion. OVER : plats déjà présents dont les macros sont recalculées sur la table. */
 (function () {
   'use strict';
@@ -1676,7 +1676,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 13-meals-logic.js ---- */
-/* ApexHQ — programmes de repas sur une semaine : menus conseillés, semaine personnalisée, mode libre.
+/* Alvora — programmes de repas sur une semaine : menus conseillés, semaine personnalisée, mode libre.
    Fonctions pures (testées par test-meals.js). Étend le moteur Apex ; remplace planDuJour pour accepter une date. */
 (function () {
   'use strict';
@@ -1918,7 +1918,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 14-program-logic.js ---- */
-/* ApexHQ — espace programme : paramètres par exercice (séries, répétitions, RIR), bibliothèque par muscle,
+/* Alvora — espace programme : paramètres par exercice (séries, répétitions, RIR), bibliothèque par muscle,
    volume hebdomadaire, demande à l'IA. Fonctions pures (testées par test-program.js). */
 (function () {
   'use strict';
@@ -2023,7 +2023,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 15-store.js ---- */
-/* ApexHQ — état : cache localStorage + base privée du compte (capacité db, sous-arbre data/users/<id>/apex).
+/* Alvora — état : cache localStorage + base privée du compte (capacité db, sous-arbre data/users/<id>/apex).
    Local d'abord : chaque modification est écrite sur l'appareil, puis poussée document par document.
    Les champs modifiés localement gagnent sur le distant tant qu'ils ne sont pas confirmés. */
 const Store = (() => {
@@ -2155,9 +2155,9 @@ const Store = (() => {
 
   /* Après ajout ou retrait d'une clé API : recalcule l'accès à Claude. */
   const refreshAI = () => { caps.sample = pickSample(); emit(); };
-  const exportAll = () => ({ app: 'ApexHQ', v: 1, exportedAt: new Date().toISOString(), cfg: s.cfg, journal: s.journal, seances: s.seances, mensurations: s.mensurations, photos: s.photos });
+  const exportAll = () => ({ app: 'Alvora', v: 1, exportedAt: new Date().toISOString(), cfg: s.cfg, journal: s.journal, seances: s.seances, mensurations: s.mensurations, photos: s.photos });
   function importAll(o) {
-    if (!isObj(o) || o.app !== 'ApexHQ') throw new Error('Ce fichier n’est pas un export ApexHQ.');
+    if (!isObj(o) || (o.app !== 'Alvora' && o.app !== 'ApexHQ')) throw new Error('Ce fichier n’est pas un export Alvora.');
     let n = 0;
     if (isObj(o.cfg) && Object.keys(o.cfg).length) { patch('cfg', null, o.cfg); n++; }
     COLLS.forEach(c => { const m = o[c]; if (!isObj(m)) return; Object.keys(m).forEach(id => { if (isObj(m[id]) && ID_OK.test(id)) { patch(c, id, m[id]); n++; } }); });
@@ -2175,7 +2175,7 @@ const Store = (() => {
 })();
 
 /* ---- 16-ai.js ---- */
-/* ApexHQ — accès à l'IA, gratuit d'abord.
+/* Alvora — accès à l'IA, gratuit d'abord.
    - Version Claude : capacité `sample` = compte Claude de la personne (son quota, consentement au premier appel).
    - App autonome : clé Gemini gratuite (Google AI Studio) et/ou clé API Anthropic, collées par la personne et gardées sur
      l'appareil (jamais exportées ni synchronisées). Appels directs depuis le navigateur.
@@ -2342,7 +2342,7 @@ const aiMsg = e => {
 };
 
 /* ---- 20-ui-core.js ---- */
-/* ApexHQ — socle d'interface : React + htm, icônes, champs, feuilles, jauges, graphiques SVG. */
+/* Alvora — socle d'interface : React + htm, icônes, champs, feuilles, jauges, graphiques SVG. */
 const { useState, useEffect, useRef, useLayoutEffect, useSyncExternalStore, createElement } = React;
 const html = htm.bind(createElement);
 const useStore = () => { useSyncExternalStore(Store.sub, Store.ver); return Store; };
@@ -2358,7 +2358,7 @@ const dLong = s => DF({ weekday: 'long', day: 'numeric', month: 'long' }).format
 const dMid = s => DF({ weekday: 'short', day: 'numeric', month: 'short' }).format(Apex.parse(s));
 const dTiny = s => DF({ day: 'numeric', month: 'short' }).format(Apex.parse(s));
 const cx = (...a) => a.filter(Boolean).join(' ');
-const APP_NAME = 'ApexHQ'; // nom affiché et donné à l'IA : voir rename.js pour le changer partout
+const APP_NAME = 'Alvora'; // nom affiché et donné à l'IA
 
 /* ---------- icônes (24 px, trait) ---------- */
 const IC = {
@@ -2607,7 +2607,7 @@ function ChartCard({ title, sub, cls, legend, table, children }) {
 }
 
 /* ---- 30-ui-dashboard.js ---- */
-/* ApexHQ — onglet 1 : statut du jour, check-in matinal à jeun, lecture, poids, mensurations. */
+/* Alvora — onglet 1 : statut du jour, check-in matinal à jeun, lecture, poids, mensurations. */
 const MESURES = [['taille', 'Tour de taille'], ['poitrine', 'Poitrine'], ['epaules', 'Épaules'], ['bras', 'Bras contracté'], ['cuisse', 'Cuisse'], ['cou', 'Cou']];
 const ST_LAB = { vert: 'good', orange: 'warn', rouge: 'crit' };
 
@@ -2743,7 +2743,7 @@ function Dashboard({ date, go, setDate }) {
 }
 
 /* ---- 31-ui-debrief.js ---- */
-/* ApexHQ — debrief matinal : une seule page (poids, sommeil, forme), puis bilan du jour. */
+/* Alvora — debrief matinal : une seule page (poids, sommeil, forme), puis bilan du jour. */
 const LVL = [[2, 'À plat'], [4, 'Bof'], [6, 'Correct'], [8, 'Bien'], [10, 'Au top']];
 const nearLvl = v => (v == null ? null : LVL.reduce((b, x) => (Math.abs(x[0] - v) < Math.abs(b - v) ? x[0] : b), 2));
 
@@ -2832,7 +2832,7 @@ function CheckIn({ date, go }) {
 }
 
 /* ---- 40-ui-repas.js ---- */
-/* ApexHQ — onglet 2 : plan repas, swap, recalage, écarts, macros résiduelles, suppléments. */
+/* Alvora — onglet 2 : plan repas, swap, recalage, écarts, macros résiduelles, suppléments. */
 const unitOf = f => (f.u ? f.u[0] : 'g');
 const macTxt = m => 'P ' + f0(m.p) + ' · G ' + f0(m.g) + ' · L ' + f0(m.l);
 const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -3187,7 +3187,7 @@ function Repas({ date }) {
 }
 
 /* ---- 50-ui-training.js ---- */
-/* ApexHQ — onglet 3 : séance du jour, charges, points faibles (pecs, biceps, deltoïdes latéraux), fatigue. */
+/* Alvora — onglet 3 : séance du jour, charges, points faibles (pecs, biceps, deltoïdes latéraux), fatigue. */
 const fl = e => Apex.focusLabel(Store.cfg(), e.m);
 const setsTxt = sets => { const g = {}; sets.forEach(s => { const k = fq(s.kg || 0); (g[k] = g[k] || []).push(s.r); }); return Object.keys(g).map(k => k + ' × ' + g[k].join('·')).join('  '); };
 const cleanSet = s => { const o = {}; ['kg', 'r', 'rpe'].forEach(k => { if (s[k] != null) o[k] = s[k]; }); return o; };
@@ -3377,7 +3377,7 @@ function Training({ date, setDate }) {
 }
 
 /* ---- 52-ui-programme.js ---- */
-/* ApexHQ — espace programme : séances, réglages par exercice (séries, répétitions, RIR), bibliothèque par muscle,
+/* Alvora — espace programme : séances, réglages par exercice (séries, répétitions, RIR), bibliothèque par muscle,
    volume hebdomadaire, planning, construction par l'IA. Stocké dans cfg.programme (voir 14-program-logic.js). */
 /* Les séances d'aujourd'hui et des jours à venir, pas encore commencées, reprennent le nouveau programme tout de suite. */
 const rafraichirPlans = () => {
@@ -3528,7 +3528,7 @@ function ProgrammeTab() {
 }
 
 /* ---- 60-ui-analytics.js ---- */
-/* ApexHQ — onglet 4 : sèche (poids, projection, bilan métabolique), adhérence, force, volume, physique. */
+/* Alvora — onglet 4 : sèche (poids, projection, bilan métabolique), adhérence, force, volume, physique. */
 const POSES = [['face', 'Face'], ['profil', 'Profil'], ['dos', 'Dos']];
 
 function KPI({ ic, label, value, unit, hint, tone, empty }) {
@@ -3746,7 +3746,7 @@ function Analytics({ date }) {
 }
 
 /* ---- 63-ui-scan.js ---- */
-/* ApexHQ — scan de code-barres (app autonome) : caméra + Open Food Facts.
+/* Alvora — scan de code-barres (app autonome) : caméra + Open Food Facts.
    La caméra et l'accès à Open Food Facts ne sont pas permis dans la version Claude (sandbox) : le bouton n'y apparaît pas. */
 const CAN_SCAN = !!window.APEX_STANDALONE;
 const r1 = v => Math.round(v * 10) / 10;
@@ -3807,7 +3807,7 @@ function ScanSheet({ title, onProduct, onClose }) {
 }
 
 /* ---- 64-ui-adapt.js ---- */
-/* ApexHQ — séance du jour modifiable, adaptation en un geste (temps, matériel, priorité, forme), semaine selon les dispos.
+/* Alvora — séance du jour modifiable, adaptation en un geste (temps, matériel, priorité, forme), semaine selon les dispos.
    Avec une IA connectée : séance optimisée + conseils. Sans IA : même adaptation par l'algorithme de l'app. */
 const lsGet = (k, d) => { try { return localStorage.getItem('apexhq:' + k) || d; } catch (e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem('apexhq:' + k, String(v)); } catch (e) { /* préférence non mémorisée */ } };
@@ -3966,7 +3966,7 @@ function WeekBar({ date, setDate }) {
 }
 
 /* ---- 65-ui-coach.js ---- */
-/* ApexHQ — onglet 5 : coach IA intégré (Claude, via la capacité sample).
+/* Alvora — onglet 5 : coach IA intégré (Claude, via la capacité sample).
    Il lit l'état du jour (envoyé dans chaque demande) et enregistre repas, check-in, séries, pas et
    mensurations avec des outils de page. Chaque écriture est affichée et annulable. */
 const CHAT_LS = 'apexhq:chat:v1';
@@ -4189,7 +4189,7 @@ function Coach({ date }) {
   if (!sample) return html`<div>
     <div className="view-h"><h1>Coach</h1><p>IA intégrée à l’app.</p></div>
     <${Card} title="Coach indisponible dans cette vue">
-      <div className="empty"><span><b>Le coach a besoin d’une IA.</b> ${STANDALONE ? 'Active l’IA gratuite dans Réglages, section IA : ' : 'Ouvre ApexHQ depuis l’app Claude ou claude.ai, connecté à ton compte : '}le coach lit tes données et enregistre repas, debrief et séries quand tu lui parles.</span></div>
+      <div className="empty"><span><b>Le coach a besoin d’une IA.</b> ${STANDALONE ? 'Active l’IA gratuite dans Réglages, section IA : ' : 'Ouvre Alvora depuis l’app Claude ou claude.ai, connecté à ton compte : '}le coach lit tes données et enregistre repas, debrief et séries quand tu lui parles.</span></div>
     <//>
   </div>`;
   return html`<div>
@@ -4224,7 +4224,7 @@ function Coach({ date }) {
 }
 
 /* ---- 66-ui-onboard.js ---- */
-/* ApexHQ — assistant de démarrage : questions, calcul précis des calories, programme de séances, lien Claude.
+/* Alvora — assistant de démarrage : questions, calcul précis des calories, programme de séances, lien Claude.
    S'affiche à la première ouverture (profil vide) ou via Réglages › Refaire le questionnaire. */
 const STEPS = ['intro', 'objectif', 'intensite', 'profil', 'activite', 'training', 'focus', 'alim', 'supps', 'resultat', 'claude'];
 const METIERS = [['sedentaire', 'Sédentaire', 'Bureau, études, télétravail : peu de déplacements.', 'clock'], ['debout', 'Debout ou mobile', 'Commerce, enseignement, service : tu bouges dans la journée.', 'steps'], ['actif', 'Physique', 'Manutention, chantier, métier très actif.', 'bolt']];
@@ -4299,7 +4299,7 @@ function Wizard({ redo, onClose }) {
   };
   const pct = Math.round(step / (steps.length - 1) * 100);
   const body = {
-    intro: () => html`<div className="intro-mark"><${Icon} n="apex" s=${40} w=${1.8} /></div><h1>Configurons ton ApexHQ</h1>
+    intro: () => html`<div className="intro-mark"><${Icon} n="apex" s=${40} w=${1.8} /></div><h1>Configurons ton Alvora</h1>
       <p className="sec">Quelques questions pour calculer tes calories et tes macros avec précision, bâtir ton programme de séances autour de tes points faibles et adapter ton plan repas. Compte 3 minutes. Tout reste modifiable ensuite dans les réglages.</p>
       <ul className="intro-list"><li><${Icon} n="check" s=${16} w=${2.4} />Calories et macros calculées pour toi</li><li><${Icon} n="check" s=${16} w=${2.4} />Programme bâti autour de tes points faibles</li><li><${Icon} n="check" s=${16} w=${2.4} />Menus de la semaine par l’IA, selon tes macros et tes contraintes, quand tu veux</li></ul>
       ${(redo || cfg.q) && html`<div className="note"><${Icon} n="alert" /><div><span><b>Refaire le questionnaire remplace</b> tes cibles, ton programme, tes points faibles, tes compléments et ton plan repas type. Tes journées, pesées et séances déjà notées sont conservées.</span></div></div>`}
@@ -4393,7 +4393,7 @@ function Wizard({ redo, onClose }) {
 }
 
 /* ---- 67-ui-ailink.js ---- */
-/* ApexHQ — connexion à l'IA : le plus court possible.
+/* Alvora — connexion à l'IA : le plus court possible.
    - Version Claude : le compte Claude de la personne (un seul clic « Autoriser »).
    - App autonome avec Gemini intégré (clé du propriétaire dans le build) : un seul clic « Activer l'IA gratuite ».
    - Sinon : clé Gemini perso en deux gestes (ouvrir Google AI Studio, puis « Coller et lier »).
@@ -4447,7 +4447,7 @@ function ClaudeLink({ onChange }) {
         <details className="ai-card"><summary><b>Utiliser ma propre clé Gemini</b> · quota perso</summary><div className="stack" style=${{ marginTop: 10 }}>${gemini}</div></details>`
       : html`<div className="ai-card"><div className="row sb"><b>Gemini</b><span className="tag-free">Gratuit</span></div>${gemini}${privacy}</div>`}
     </div>` : html`<div className="stack">
-      <p className="sec" style=${{ fontSize: 13 }}>Tu es connecté avec ton compte Claude : tes données ApexHQ sont liées à ce compte, dans une base privée. L’IA utilise le quota de ton abonnement Claude, y compris gratuit. Quand il est atteint, l’IA se met en pause jusqu’à sa réinitialisation et le reste de l’app continue. Au premier test, Claude te demande l’autorisation.</p>
+      <p className="sec" style=${{ fontSize: 13 }}>Tu es connecté avec ton compte Claude : tes données Alvora sont liées à ce compte, dans une base privée. L’IA utilise le quota de ton abonnement Claude, y compris gratuit. Quand il est atteint, l’IA se met en pause jusqu’à sa réinitialisation et le reste de l’app continue. Au premier test, Claude te demande l’autorisation.</p>
       <div className="row"><button type="button" className=${cx('btn', !on && 'pri')} disabled=${!!busy} onClick=${testClaude}>${busy === 'c' ? 'Test…' : on ? 'Tester la connexion' : 'Autoriser et tester'}</button>
         ${on && html`<${Confirm} label="Désactiver" sure="Désactiver ?" cls="ghost" onYes=${() => { Store.patch('cfg', null, { claude: null }); setMsg('IA désactivée.'); if (onChange) onChange(false); }} />`}</div>
     </div>`}
@@ -4466,7 +4466,7 @@ function IABanner() {
     <button type="button" className="btn sm pri" onClick=${() => setSheet(true)}>Activer</button>
     <button type="button" className="ib sm" aria-label="Plus tard" onClick=${() => { AI.setConsent('0'); Store.refreshAI(); }}><${Icon} n="x" s=${16} /></button>
     ${sheet && html`<${Sheet} title="Activer l’IA gratuite" onClose=${() => setSheet(false)}>
-      <p className="sec" style=${{ fontSize: 14 }}>ApexHQ utilise Google Gemini. Quand tu parles au coach, adaptes une séance ou lances un debrief, ton message et les données utiles (poids, repas, séances) sont envoyés à Google.</p>
+      <p className="sec" style=${{ fontSize: 14 }}>Alvora utilise Google Gemini. Quand tu parles au coach, adaptes une séance ou lances un debrief, ton message et les données utiles (poids, repas, séances) sont envoyés à Google.</p>
       <div className="note"><${Icon} n="info" /><div><span>Niveau gratuit : limites partagées par minute et par jour, et Google peut réutiliser les échanges pour améliorer ses produits. N’écris rien de sensible. Tu peux désactiver l’IA à tout moment dans Réglages.</span></div></div>
       <button type="button" className="btn pri wide" disabled=${busy} onClick=${go}><${Icon} n="check" s=${18} />${busy ? 'Activation…' : 'J’accepte, activer l’IA'}</button>
       <button type="button" className="btn wide ghost" onClick=${() => { AI.setConsent('0'); Store.refreshAI(); setSheet(false); }}>Non merci, sans IA</button>
@@ -4475,7 +4475,7 @@ function IABanner() {
 }
 
 /* ---- 68-ui-custom.js ---- */
-/* ApexHQ — personnalisation : séances, exercices, points faibles, compléments, aliments perso.
+/* Alvora — personnalisation : séances, exercices, points faibles, compléments, aliments perso.
    Tout est stocké dans la config (cfg.seanceTypes, cfg.programme, cfg.exos, cfg.focus, cfg.supps, cfg.aliments). */
 
 /* Champ texte : valide à la perte de focus ou sur Entrée. */
@@ -4652,7 +4652,7 @@ function FoodsEditor() {
 }
 
 /* ---- 69-ui-share.js ---- */
-/* ApexHQ — partage, installation et mises à jour de l'app autonome.
+/* Alvora — partage, installation et mises à jour de l'app autonome.
    - Lien + QR code pour la faire essayer à des amis (chacun a ses propres données, sur son téléphone).
    - Bouton « Installer » (Android) ou mode d'emploi (iPhone).
    - Vérification de version à chaque ouverture : l'app se met à jour seule, sans désinstaller. */
@@ -4673,7 +4673,7 @@ async function checkUpdate(manual) {
       toast('Mise à jour en cours…');
       try { const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) { /* le rechargement suffit */ }
       setTimeout(() => location.reload(), 700);
-    } else if (manual) toast('ApexHQ est à jour (version ' + cur + ').');
+    } else if (manual) toast('Alvora est à jour (version ' + cur + ').');
   } catch (e) { if (manual) toast('Vérification impossible : es-tu connecté à internet ?'); }
 }
 
@@ -4691,9 +4691,9 @@ function InstallHelp() {
 function ShareBody() {
   const [copied, setCopied] = useState(false); const inp = useRef(null);
   const copy = async () => { try { await navigator.clipboard.writeText(PUBLIC_URL); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch (e) { if (inp.current) { inp.current.focus(); inp.current.select(); } toast('Sélectionne le lien et copie-le.'); } };
-  const share = async () => { try { await navigator.share({ title: 'ApexHQ', text: 'Essaie ApexHQ : suivi de sèche, repas et séances.', url: PUBLIC_URL }); } catch (e) { /* annulé */ } };
+  const share = async () => { try { await navigator.share({ title: 'Alvora', text: 'Essaie Alvora : suivi de sèche, repas et séances.', url: PUBLIC_URL }); } catch (e) { /* annulé */ } };
   return html`<div className="stack">
-    <p className="sec" style=${{ fontSize: 13 }}>Fais essayer ApexHQ à tes amis : gratuit, sans compte. Chacun a ses propres données, gardées sur son téléphone. Ce lien ne partage rien de toi.</p>
+    <p className="sec" style=${{ fontSize: 13 }}>Fais essayer Alvora à tes amis : gratuit, sans compte. Chacun a ses propres données, gardées sur son téléphone. Ce lien ne partage rien de toi.</p>
     <div className="row" style=${{ flexWrap: 'nowrap' }}><input ref=${inp} className="inp grow" readOnly value=${PUBLIC_URL} aria-label="Lien de l’application" onFocus=${e => e.target.select()} />
       <button type="button" className="btn" onClick=${copy}><${Icon} n=${copied ? 'check' : 'copy'} s=${18} />${copied ? 'Copié' : 'Copier'}</button></div>
     ${typeof navigator.share === 'function' && html`<button type="button" className="btn pri wide" onClick=${share}><${Icon} n="upload" s=${18} />Envoyer le lien</button>`}
@@ -4712,15 +4712,15 @@ function InstallBanner() {
   const dismiss = () => { try { localStorage.setItem('apexhq:nobanner', '1'); } catch (e) { /* sans effet */ } setHide(true); };
   return html`<div className="install" role="region" aria-label="Installer l’application">
     <i className="install-ic"><${Icon} n="apex" s=${22} w=${2} /></i>
-    <div className="install-t"><b>Installe ApexHQ</b><span>Icône sur l’écran d’accueil, plein écran, hors ligne.</span></div>
+    <div className="install-t"><b>Installe Alvora</b><span>Icône sur l’écran d’accueil, plein écran, hors ligne.</span></div>
     <button type="button" className="btn sm pri" onClick=${install}>${window.__bip ? 'Installer' : 'Comment ?'}</button>
     <button type="button" className="ib sm" aria-label="Masquer" onClick=${dismiss}><${Icon} n="x" s=${16} /></button>
-    ${sheet && html`<${Sheet} title="Installer ApexHQ" onClose=${() => setSheet(false)}><${InstallHelp} /><//>`}
+    ${sheet && html`<${Sheet} title="Installer Alvora" onClose=${() => setSheet(false)}><${InstallHelp} /><//>`}
   </div>`;
 }
 
 /* ---- 70-ui-app.js ---- */
-/* ApexHQ — coque : en-tête (jour + statut), onglets, réglages et données, démarrage. */
+/* Alvora — coque : en-tête (jour + statut), onglets, réglages et données, démarrage. */
 const STANDALONE = !!window.APEX_STANDALONE;
 const TABS_ALL = [['dashboard', 'Jour', 'home'], ['repas', 'Repas', 'utensils'], ['training', 'Training', 'dumbbell'], ['coach', 'Coach', 'chat'], ['analytics', 'Analyse', 'chart']];
 const tabOf = () => { let h = ''; try { h = (location.hash || '').replace('#', ''); } catch (e) { h = ''; } return TABS_ALL.some(t => t[0] === h) ? h : 'dashboard'; };
@@ -4798,8 +4798,8 @@ function SettingsSheet({ onClose }) {
     </div>
     ${dump && html`<div className="stack"><span className="fld-l">Copie ce texte et garde-le dans un fichier .json</span><textarea id="exp-dump" className="inp" readOnly value=${dump} onFocus=${e => e.target.select()} aria-label="Export JSON"></textarea></div>`}
     <label className="btn wide" htmlFor="imp-file"><${Icon} n="upload" s=${18} />Choisir un fichier .json</label>
-    <input id="imp-file" className="sr" type="file" accept="application/json,.json" onChange=${e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return; const r = new FileReader(); r.onload = () => { try { const k = Store.importAll(JSON.parse(String(r.result))); setMsg(k + ' document' + (k > 1 ? 's' : '') + ' importé' + (k > 1 ? 's' : '') + '.'); } catch (er) { setMsg(er instanceof SyntaxError ? 'Fichier illisible : ce n’est pas un export ApexHQ.' : er.message); } }; r.onerror = () => setMsg('Lecture du fichier impossible.'); r.readAsText(f); }} />
-    <textarea id="imp-txt" className="inp" placeholder="Colle ici le contenu d’un export ApexHQ pour l’importer" value=${imp} onChange=${e => setImp(e.target.value)} aria-label="Contenu JSON à importer"></textarea>
+    <input id="imp-file" className="sr" type="file" accept="application/json,.json" onChange=${e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return; const r = new FileReader(); r.onload = () => { try { const k = Store.importAll(JSON.parse(String(r.result))); setMsg(k + ' document' + (k > 1 ? 's' : '') + ' importé' + (k > 1 ? 's' : '') + '.'); } catch (er) { setMsg(er instanceof SyntaxError ? 'Fichier illisible : ce n’est pas un export Alvora.' : er.message); } }; r.onerror = () => setMsg('Lecture du fichier impossible.'); r.readAsText(f); }} />
+    <textarea id="imp-txt" className="inp" placeholder="Colle ici le contenu d’un export Alvora pour l’importer" value=${imp} onChange=${e => setImp(e.target.value)} aria-label="Contenu JSON à importer"></textarea>
     <button type="button" className="btn wide" disabled=${!imp.trim()} onClick=${doImp}><${Icon} n="upload" s=${18} />Importer et fusionner</button>
     ${msg && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${msg}</p>`}
     <//>`}
@@ -4836,7 +4836,7 @@ function App() {
   const View = tab === 'repas' ? Repas : tab === 'training' ? Training : tab === 'analytics' ? Analytics : tab === 'coach' ? Coach : Dashboard;
   return html`<div>
     <header className="top"><div className="wrap top-in">
-      <div className="brand"><${Icon} n="apex" s=${22} w=${2} />ApexHQ</div>
+      <div className="brand"><${Icon} n="apex" s=${22} w=${2} />Alvora</div>
       <span className=${cx('sync', sc[0])} role="status"><i></i>${sc[1]}</span>
       <span className="grow"></span>
       <button type="button" className="ib" aria-label="Actualiser l’app" onClick=${refreshApp}><${Icon} n="refresh" /></button>
