@@ -1889,14 +1889,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   function promptMenuSemaine(o) {
     const cfg = o.cfg, ip = A.iaProfil(cfg), n = o.repas || 4, liste = alimentsPourIA(cfg), q = cfg.q || {};
     const cibles = SEMAINE.map(d => { const t = cfg.planning && cfg.planning[d], c = t ? cfg.cibles.salle : cfg.cibles.repos; return d + ' = ' + JOURS[d] + ' : ' + (t ? 'jour de séance (' + t + ')' : 'repos') + ', cible ' + c.kcal + ' kcal, P ' + c.p + ' g, G ' + c.g + ' g, L ' + c.l + ' g'; });
-    const base = liste.map(f => f.id + '=' + f.n + (f.u ? ' (en ' + f.u[0] + ', 1 = ' + f.u[1] + ' g)' : ' (en g)') + ' ' + f.k + '/' + f.p + '/' + f.g + '/' + f.l);
+    const base = liste.slice().sort((a, b) => (b.c === 'perso' ? 1 : 0) - (a.c === 'perso' ? 1 : 0)).map(f => (f.c === 'perso' ? '★ ' : '') + f.id + '=' + f.n + (f.u ? ' (en ' + f.u[0] + ', 1 = ' + f.u[1] + ' g)' : ' (en g)') + ' ' + f.k + '/' + f.p + '/' + f.g + '/' + f.l);
     return ['Tu es diététicien. Compose le menu complet de la semaine de cette personne, repas par repas, selon ses macros et SES CONTRAINTES.',
       'Profil : ' + ip.ligne + ', objectif ' + ip.objTxt + (q.regime && q.regime !== 'omnivore' ? ', régime ' + q.regime : '') + (q.exclus ? ', aliments à éviter : ' + q.exclus : '') + '.',
       'Cibles par jour (clé du JSON = numéro du jour, 0 = dimanche) :\n' + cibles.join('\n'),
       'Nombre de repas par jour : ' + n + '. Structure par défaut : ' + structureRepas(n) + ' Si les contraintes de la personne décrivent les repas voulus (leur nombre, leurs noms, par exemple « petit-déj, midi, pré-séance, post-séance, dîner »), suis-les à la lettre tous les jours. Chaque repas a une heure "h" au format HH:MM (pré-séance 1 h 30 à 2 h avant la séance, post-séance dans l’heure qui suit, dîner 1 h à 1 h 30 après).',
       'RÈGLES DE DIÉTÉTIQUE SPORTIVE PAR REPAS (impératives, un menu qui ne les respecte pas est corrigé par l’app) :\n- Les VRAIS GROS REPAS sont le déjeuner et le dîner : viande ou poisson, féculent (riz, pâtes, pommes de terre…), légumes et un peu de bonne matière grasse, en grosses portions (chacun environ 30 à 35 % des calories du jour). Varie les protéines d’un jour à l’autre (volaille, poisson, bœuf maigre, œufs, légumineuses).\n- Les autres repas sont LÉGERS (environ 8 à 15 % des calories chacun) : jamais de plat cuisiné, de viande ni de féculent cuit.\n- Petit-déj léger : protéine (skyr, fromage blanc, œufs, whey) + flocons d’avoine ou pain complet + un fruit.\n- Pré-séance légère : glucides faciles à digérer + un peu de protéines, très peu de lipides et de fibres (ex. flocons d’avoine + banane + skyr ; galettes de riz + miel + fromage blanc ; pain + miel + fromage blanc). Jamais de légumes, de fruits à coque, de viande ni d’œufs.\n- Post-séance légère : un shake ou une collation rapide à digérer : whey (ou skyr / fromage blanc) + banane ou fruit + galettes de riz + miel. Jamais de viande, de poisson, d’œufs, de riz cuit, de pâtes, de légumes ni de fruits à coque : le vrai repas vient ensuite, au dîner.\n- Collation : skyr, fromage blanc ou whey + un fruit.\n- Les protéines sont réparties sur tous les repas et la cible protéines du jour doit être atteinte ; la whey est un vrai outil (1 dose en pré ou post-séance, ou au petit-déj). Donne des quantités indicatives qui respectent ces proportions : l’app recale ensuite le total sur les macros.',
       o.contraintes ? 'CONTRAINTES DE LA PERSONNE, à respecter strictement (horaires des repas, lieux, cantine, matériel, budget, temps de préparation, goûts) : « ' + String(o.contraintes).slice(0, 600) + ' ». Adapte les repas et leurs horaires en conséquence ; si une contrainte l’impose, propose une solution (par exemple un repas déplacé, plus léger ou à emporter).' : 'Aucune contrainte particulière.',
-      'Aliments de référence (id=nom ; quantité en g ou en unité indiquée ; kcal/P/G/L pour 100 g) :\n' + base.join('\n'),
+      'Aliments de référence (id=nom ; quantité en g ou en unité indiquée ; kcal/P/G/L pour 100 g). Les aliments marqués ★ ont été ajoutés par la personne à sa bibliothèque : privilégie-les quand ils conviennent au repas :\n' + base.join('\n'),
       'Règles : chaque repas contient 2 à 8 éléments sous la forme ["id", quantité]. Pour un plat qui n’est pas dans la liste (cantine, restaurant, plat maison), utilise un objet {"n":"nom","k":kcal,"p":protéines,"g":glucides,"l":lipides} pour la portion entière, avec une estimation honnête. Les quantités seront recalées par l’app sur les cibles : concentre-toi sur le choix des aliments, la variété (pas le même menu tous les jours), les horaires et la faisabilité. Protéines réparties sur les repas, féculents autour de l’entraînement.',
       'Réponds uniquement par un objet JSON : {"jours":{"1":[{"nom":"Petit-déj","h":"08:00","items":[["avoine",60],["skyr",200]]}],"2":[...],"3":[...],"4":[...],"5":[...],"6":[...],"0":[...]}}. Les 7 jours doivent être présents.'].join('\n\n');
   }
@@ -2800,6 +2800,28 @@ function Activite({ date, cls }) {
   <//>`;
 }
 
+/* Bandeau de tête de la carte Poids : la moyenne 7 jours en grand, trois repères, et la progression vers le poids visé. */
+function PoidsStats({ last, m, t, cfg }) {
+  const dep = cfg.profil.poidsDepart, cib = cfg.profil.poidsCible, cur = m ? m.v : last.v, ip = Apex.iaProfil(cfg);
+  const tot = Math.abs(dep - cib), fait = Math.abs(dep - cur) * (Math.sign(dep - cib) === Math.sign(dep - cur) ? 1 : -1), pct = tot > 0.1 ? Math.max(0, Math.min(100, fait / tot * 100)) : null;
+  const ok = !t ? null : ip.obj === 'seche' ? (t.pct <= -0.3 && t.pct >= -1.1 ? 'good' : t.pct > -0.3 ? 'warn' : 'crit') : ip.obj === 'masse' ? (t.pct >= 0.1 && t.pct <= 0.6 ? 'good' : 'warn') : (Math.abs(t.pct) <= 0.3 ? 'good' : 'warn');
+  const msg = !t ? 'dès 2 semaines' : ok === 'good' ? 'dans la cible' : ip.obj === 'seche' ? (t.pct > -0.3 ? 'trop lent' : 'trop rapide') : ip.obj === 'masse' ? (t.pct < 0.1 ? 'trop lent' : 'trop rapide') : 'à surveiller';
+  const since = m ? m.v - dep : null;
+  return html`<div className="wst">
+    <div className="wst-main"><span className="wst-k">Moyenne 7 jours</span>
+      <b className="wst-v">${m ? f1(m.v) : f1(last.v)}<small>kg</small></b>
+      <span className=${cx('wst-t', ok)}>${t ? html`<${Icon} n=${t.dk < 0 ? 'down' : 'up'} s=${16} w=${2.4} />${sgn(t.dk, f2)} kg par semaine` : 'Tendance dès 2 semaines'}</span></div>
+    <div className="wst-side">
+      <div className="wst-i"><i><${Icon} n="scale" s=${18} /></i><div><span>Dernière pesée</span><b>${f1(last.v)} kg</b><em>${dTiny(last.d)}</em></div></div>
+      <div className=${cx('wst-i', ok)}><i><${Icon} n="trend" s=${18} /></i><div><span>Rythme</span><b>${t ? sgn(t.pct) + ' %' : '–'}</b><em>${msg}</em></div></div>
+      <div className="wst-i"><i><${Icon} n="target" s=${18} /></i><div><span>Depuis le départ</span><b>${since == null ? '–' : sgn(since) + ' kg'}</b><em>départ ${f1(dep)} kg</em></div></div>
+    </div>
+    ${pct != null && html`<div className="wst-p" role="img" aria-label=${'Progression vers ' + f1(cib) + ' kg : ' + Math.round(pct) + ' %'}>
+      <div className="wst-pl"><span>${f1(dep)} kg</span><b>${Math.round(pct)} %</b><span>objectif ${f1(cib)} kg</span></div>
+      <div className="wst-pb"><i style=${{ width: pct + '%' }}></i></div></div>`}
+  </div>`;
+}
+
 function PoidsCard({ date, win }) {
   const st = useStore(), S = st.get(), cfg = st.cfg();
   const raw = Apex.serie(S.journal, 'poids'), mm = Apex.serieMM7(S.journal), from = win ? Apex.addDays(date, -win) : null;
@@ -2807,12 +2829,7 @@ function PoidsCard({ date, win }) {
   const table = raw.length ? { cols: ['Date', 'Pesée (kg)', 'Moy. 7 j (kg)'], rows: raw.slice().reverse().slice(0, 60).map(p => { const x = mm.find(q => q.d === p.d); return [dMid(p.d), f1(p.v), x ? f2(x.v) : '–']; }) } : null;
   return html`<${ChartCard} cls="c8" title="Poids" sub="Pesées à jeun et moyenne mobile 7 jours" table=${table}
     legend=${raw.length ? [['Moyenne 7 j', 'var(--acc-hi)'], ['Pesée du jour', 'var(--ink-3)', 'dot']] : null}>
-    ${raw.length > 0 && html`<div className="tiles">
-      <div className="tile"><span>Dernière pesée</span><b>${f1(last.v)}<small>kg</small></b><em>${dTiny(last.d)}</em></div>
-      <div className="tile"><span>Moyenne 7 j</span><b>${m ? f1(m.v) : '–'}<small>kg</small></b><em>${m ? m.n + ' pesée' + (m.n > 1 ? 's' : '') : ''}</em></div>
-      <div className="tile"><span>Rythme hebdo</span><b>${t ? sgn(t.dk, f2) : '–'}<small>kg</small></b><em>${t ? sgn(t.pct) + ' %/sem' : 'dès 2 semaines'}</em></div>
-      <div className="tile"><span>Depuis le départ</span><b>${m ? sgn(m.v - cfg.profil.poidsDepart) : '–'}<small>kg</small></b><em>départ ${f1(cfg.profil.poidsDepart)} kg</em></div>
-    </div>`}
+    ${raw.length > 0 && html`<${PoidsStats} last=${last} m=${m} t=${t} cfg=${cfg} />`}
     <${LineChart} h=${230} unit=" kg" from=${from} label="Poids : pesées et moyenne mobile 7 jours"
       series=${[{ name: 'Pesée', c: 'var(--ink-3)', type: 'dots', pts: raw }, { name: 'Moy. 7 j', c: 'var(--acc-hi)', type: 'line', area: true, end: true, pts: mm }]}
       empty=${html`<span><b>Aucune pesée.</b> Pèse-toi au réveil, à jeun, après les toilettes, et valide le check-in. La moyenne 7 jours se trace dès la 1re pesée ; la tendance est fiable après 2 semaines.</span>`} />
@@ -2991,23 +3008,69 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel }) {
       </div>`;
     })}</div>`}
     <div className="meal-f">
-      <button type="button" className="btn sm ghost" onClick=${onAdd}><${Icon} n="plus" s=${16} />Aliment</button>
+      <button type="button" className=${cx('btn sm', m.items.length ? 'ghost' : 'pri')} onClick=${onAdd}><${Icon} n="plus" s=${16} />${m.items.length ? 'Aliment' : 'Ajouter un aliment'}</button>
       <${Confirm} label="Retirer le repas" sure="Retirer ce repas ?" cls="ghost" onYes=${onDel} />
     </div>
   </article>`;
 }
 
+/* ---------- ma bibliothèque d'aliments : l'IA estime les macros, l'aliment reste dans la base et dans les menus de l'IA ---------- */
+const roleMacros = x => { const k = x.p * 4 + x.g * 4 + x.l * 9 || 1; return x.p * 4 / k >= 0.45 ? 'P' : x.g * 4 / k >= 0.55 ? 'G' : x.l * 9 / k >= 0.55 ? 'L' : ''; };
+const garderAliment = f => { const id = 'u_' + Apex.uid(); Store.patch('cfg', null, { aliments: Object.assign({}, Store.cfg().aliments, { [id]: Object.assign({ id, c: 'perso', etq: 0 }, f) }) }); return id; };
+/* Valeurs pour 100 g et poids d'une portion, estimés par l'IA à partir d'un nom ou d'une description. */
+async function estimerAliment(sample, txt) {
+  const r = await sample.json('Tu es diététicien. Donne les valeurs nutritionnelles moyennes de cet aliment ou de ce plat (table Ciqual ; valeurs officielles pour une enseigne ou un produit de marque ; si c’est un plat préparé, estime d’après sa composition). Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": kcal pour 100 g, "p": protéines en g pour 100 g, "g": glucides en g pour 100 g, "l": lipides en g pour 100 g, "f": fibres en g pour 100 g, "portion_g": poids en grammes d’une portion ou d’une pièce usuelle, "unite": "nom de l’unité (portion, tranche, pièce, barre…)"}.\n\nAliment : """' + txt.slice(0, 200) + '"""', { modelTier: 'quick', cache: false });
+  const k = Number(r && r.kcal); if (!(k >= 0 && k <= 950)) throw { code: 'invalid_json' };
+  const pg = Math.round(+r.portion_g), ok = pg >= 10 && pg <= 800;
+  return { n: String(r.nom || txt).slice(0, 60), k: Math.round(k), p: r1(+r.p || 0), g: r1(+r.g || 0), l: r1(+r.l || 0), f: r1(+r.f || 0), pg: ok ? pg : 0, unite: String(r.unite || 'portion').slice(0, 20) };
+}
+const alimentDepuis = x => { const o = { n: x.n.trim().slice(0, 60), k: x.k, p: x.p || 0, g: x.g || 0, l: x.l || 0, f: x.f || 0 }; return Object.assign(o, { r: roleMacros(o), d: x.pg ? 1 : 100, u: x.pg ? [x.unite + ' ' + x.pg + ' g', x.pg] : null }); };
+
+function FoodLibSheet({ onClose, onAdded }) {
+  const st = useStore(), cfg = st.cfg(), sample = st.caps().sample;
+  const mine = Object.keys(cfg.aliments || {}).filter(k => k.indexOf('u_') === 0).map(k => cfg.aliments[k]);
+  const [txt, setTxt] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [x, setX] = useState(null);
+  const est = async () => { if (!txt.trim() || !sample || busy) return; setBusy(true); setErr(''); setX(null); try { setX(await estimerAliment(sample, txt.trim())); } catch (e) { setErr(aiErr(e) || 'Estimation impossible. Saisis les valeurs à la main.'); } setBusy(false); };
+  const manuel = () => setX({ n: txt.trim() || '', k: null, p: null, g: null, l: null, f: 0, pg: 0, unite: 'portion' });
+  const save = () => { if (!x || !x.n.trim() || x.k == null) return; const id = garderAliment(alimentDepuis(x)); toast('« ' + x.n.trim() + ' » ajouté à ta bibliothèque'); setX(null); setTxt(''); if (onAdded) onAdded(id); };
+  const del = id => { const a = Object.assign({}, Store.cfg().aliments); delete a[id]; Store.patch('cfg', null, { aliments: a }); };
+  const set = p => setX(Object.assign({}, x, p));
+  return html`<${Sheet} title="Ma bibliothèque d’aliments" onClose=${onClose}>
+    <p className="sec" style=${{ fontSize: 13 }}>Ajoute un aliment ou un plat : ${sample ? 'l’IA estime ses macros. ' : ''}Il est proposé dans la recherche et l’IA l’utilise en priorité dans tes menus.</p>
+    <label className="fld" htmlFor="fl-n"><span className="fld-l">Aliment ou plat</span><input id="fl-n" className="inp" type="text" maxLength="200" placeholder="ex. Skyr vanille Danone, poulet tikka maison, barre Barebells caramel" value=${txt} onChange=${e => setTxt(e.target.value)} onKeyDown=${e => { if (e.key === 'Enter') est(); }} /></label>
+    <div className="row">${sample && html`<button type="button" className="btn pri grow" disabled=${busy || !txt.trim()} onClick=${est}><${Icon} n="sparkles" s=${18} />${busy ? 'L’IA estime…' : 'Estimer avec l’IA'}</button>`}
+      <button type="button" className="btn" onClick=${manuel}>Saisir à la main</button></div>
+    ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
+    ${x && html`<div className="note acc"><${Icon} n="sparkles" /><div>
+      <span><b>${sample && x.k != null ? 'Estimation à vérifier' : 'Valeurs'}</b> · pour 100 g. Corrige avec l’étiquette si tu l’as.</span>
+      <label className="fld" htmlFor="fl-nn"><span className="fld-l">Nom</span><input id="fl-nn" className="inp" type="text" maxLength="60" value=${x.n} onChange=${e => set({ n: e.target.value })} /></label>
+      <div className="form f4">
+        <${Num} id="fl-k" label="kcal" value=${x.k} onChange=${v => set({ k: v })} dec=${0} min=${0} max=${950} />
+        <${Num} id="fl-p" label="Prot." value=${x.p} onChange=${v => set({ p: v })} dec=${1} min=${0} max=${100} />
+        <${Num} id="fl-g" label="Gluc." value=${x.g} onChange=${v => set({ g: v })} dec=${1} min=${0} max=${100} />
+        <${Num} id="fl-l" label="Lip." value=${x.l} onChange=${v => set({ l: v })} dec=${1} min=${0} max=${100} />
+      </div>
+      <${Num} id="fl-pg" label=${'Poids d’une ' + (x.unite || 'portion') + ' (facultatif)'} unit="g" value=${x.pg || null} onChange=${v => set({ pg: v || 0 })} dec=${0} min=${0} max=${800} placeholder="ex. 150" />
+      <button type="button" className="btn pri wide" disabled=${!x.n.trim() || x.k == null} onClick=${save}><${Icon} n="check" s=${18} />Ajouter à ma bibliothèque</button>
+    </div></div>`}
+    <h3>Mes aliments${mine.length ? ' (' + mine.length + ')' : ''}</h3>
+    ${mine.map(f => html`<div key=${f.id} className="mini"><span><b style=${{ color: 'var(--ink)', fontWeight: 500 }}>${f.n}</b><br />${f0(f.k)} kcal${f.u && f.u[1] !== 100 ? '/100 g' : ''} · P ${fq(f.p)} · G ${fq(f.g)} · L ${fq(f.l)}</span><span></span>
+      <${Confirm} label="Retirer" sure="Retirer ?" cls="ghost" onYes=${() => del(f.id)} /></div>`)}
+    ${!mine.length && html`<p className="mut" style=${{ fontSize: 13 }}>Aucun aliment perso pour l’instant.</p>`}
+  <//>`;
+}
+
 function AddSheet({ foods, title, onAdd, onClose }) {
   const [q, setQ] = useState(''); const [cat, setCat] = useState(''); const [scan, setScan] = useState(false);
   const [fr, setFr] = useState({ n: '', k: null, p: null, g: null, l: null });
-  const [ai, setAi] = useState({ txt: '', busy: false, res: null, err: '' });
+  const [ai, setAi] = useState({ txt: '', busy: false, res: null, err: '', keep: true });
   const sample = Store.caps().sample;
   const list = Object.keys(foods).map(k => foods[k]).filter(f => (!cat || f.c === cat) && (!q || norm(f.n + ' ' + (f.al || '')).indexOf(norm(q)) >= 0));
   const pick = f => { onAdd({ a: f.id, q: f.d || (f.u ? 1 : 100) }); onClose(); };
   const addFree = () => {
     if (!fr.n.trim() || fr.k == null) return;
     const x = { n: fr.n.trim().slice(0, 60), k: fr.k || 0, p: fr.p || 0, g: fr.g || 0, l: fr.l || 0 };
-    if (fr.keep) { const id = 'u_' + Apex.uid(); Store.patch('cfg', null, { aliments: Object.assign({}, Store.cfg().aliments, { [id]: { id, n: x.n, c: 'perso', r: '', k: x.k, p: x.p, g: x.g, l: x.l, f: 0, d: 1, u: ['portion', 100] } }) }); onAdd({ a: id, q: 1 }); }
+    if (fr.keep) { const id = garderAliment({ n: x.n, r: '', k: x.k, p: x.p, g: x.g, l: x.l, f: 0, d: 1, u: ['portion', 100] }); onAdd({ a: id, q: 1 }); }
     else onAdd({ q: 1, x });
     onClose();
   };
@@ -3015,13 +3078,31 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     const txt = ai.txt.trim(); if (!txt || !sample) return;
     setAi(s => Object.assign({}, s, { busy: true, err: '', res: null }));
     try {
-      const r = await sample.json('Tu es diététicien. Estime les valeurs nutritionnelles TOTALES du repas décrit (table Ciqual ; valeurs officielles pour les enseignes de restauration). Sans quantité précisée, prends une portion standard adulte. Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": nombre, "p": grammes de protéines, "g": grammes de glucides, "l": grammes de lipides, "f": grammes de fibres, "detail": "hypothèses de portions en une ligne"}.\n\nRepas : """' + txt.slice(0, 600) + '"""');
+      const r = await sample.json('Tu es diététicien. Estime les valeurs nutritionnelles TOTALES de ce qui est décrit (table Ciqual ; valeurs officielles pour les enseignes de restauration). Sans quantité précisée, prends une portion standard adulte. Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": nombre, "p": grammes de protéines, "g": grammes de glucides, "l": grammes de lipides, "f": grammes de fibres, "detail": "hypothèses de portions en une ligne"}.\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false });
       const k = r && +r.kcal; if (!Apex.num(k) || k <= 0) throw { code: 'invalid_json' };
       setAi(s => Object.assign({}, s, { busy: false, res: { n: String(r.nom || 'Repas estimé').slice(0, 60), k, p: +r.p || 0, g: +r.g || 0, l: +r.l || 0, f: +r.f || 0, detail: String(r.detail || '').slice(0, 260) } }));
     } catch (e) { setAi(s => Object.assign({}, s, { busy: false, err: aiErr(e) })); }
   };
+  const addAi = () => {
+    const r = ai.res, x = { n: r.n, k: Math.round(r.k), p: Math.round(r.p), g: Math.round(r.g), l: Math.round(r.l), f: Math.round(r.f) };
+    if (ai.keep) { const id = garderAliment({ n: x.n, r: '', k: x.k, p: x.p, g: x.g, l: x.l, f: x.f, d: 1, u: ['portion', 100] }); onAdd({ a: id, q: 1 }); toast('« ' + x.n + ' » gardé dans ta bibliothèque'); }
+    else onAdd({ q: 1, x });
+    onClose();
+  };
   return html`<${Sheet} title=${title} onClose=${onClose}>
-    <input id="add-q" className="inp" type="search" placeholder="Chercher : poulet, gnocchi, Big Mac…" value=${q} onChange=${e => setQ(e.target.value)} aria-label="Chercher un aliment" />
+    ${sample && html`<div className="ai-box">
+      <label className="fld" htmlFor="ai-txt"><span className="fld-l"><${Icon} n="sparkles" s=${14} /> Décris ce que tu manges, l’IA calcule</span>
+        <textarea id="ai-txt" className="inp" rows="2" placeholder="ex. 2 tranches de pain complet, 1 œuf, du fromage, ou « pizza 4 fromages, 2 parts »" value=${ai.txt} maxLength="600" onChange=${e => setAi(Object.assign({}, ai, { txt: e.target.value }))} aria-label="Décris le repas à estimer"></textarea></label>
+      <button type="button" className="btn pri wide" disabled=${ai.busy || !ai.txt.trim()} onClick=${estimate}><${Icon} n="sparkles" s=${18} />${ai.busy ? 'Estimation…' : 'Estimer les macros'}</button>
+      ${ai.err && html`<div className="note"><${Icon} n="alert" /><div><span>${ai.err}</span></div></div>`}
+      ${ai.res && html`<div className="note acc"><${Icon} n="sparkles" /><div>
+        <span><b>${ai.res.n}</b> · ${f0(ai.res.k)} kcal · ${macTxt(ai.res)}</span>
+        ${ai.res.detail && html`<span>${ai.res.detail}</span>`}
+        <label className="chk-l" htmlFor="ai-keep"><input id="ai-keep" type="checkbox" checked=${ai.keep} onChange=${e => setAi(Object.assign({}, ai, { keep: e.target.checked }))} /><span>Garder dans ma bibliothèque <small>(l’IA l’utilisera dans mes menus)</small></span></label>
+        <button type="button" className="btn sm pri" onClick=${addAi}>Ajouter au repas</button>
+      </div></div>`}
+    </div>`}
+    <input id="add-q" className="inp" type="search" placeholder="Ou cherche : poulet, gnocchi, Big Mac…" value=${q} onChange=${e => setQ(e.target.value)} aria-label="Chercher un aliment" />
     ${CAN_SCAN && html`<button type="button" className="btn" onClick=${() => setScan(true)}><${Icon} n="camera" s=${18} />Scanner un code-barres</button>`}
     ${scan && html`<${ScanSheet} onClose=${() => setScan(false)} onProduct=${p => { const id = ajouterProduit(p); onAdd({ a: id, q: p.dose ? 1 : 100 }); onClose(); }} />`}
     <div className="chips">
@@ -3031,34 +3112,21 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     <div className="lst">
       ${list.length ? list.slice(0, 120).map(f => { const x = Apex.mac({ a: f.id, q: f.d || (f.u ? 1 : 100) }, foods); return html`<button key=${f.id} type="button" onClick=${() => pick(f)}>
         <div><b>${f.n}</b><span>${fq(f.d || (f.u ? 1 : 100))} ${unitOf(f)} · ${macTxt(x)}${f.etq ? ' · à caler sur l’étiquette' : f.cq ? ' · Ciqual (ANSES)' : f.est ? ' · valeur moyenne' : ''}</span></div><em>${f0(x.k)}<small>kcal</small></em></button>`; })
-      : html`<div className="empty" style=${{ padding: 14 }}>Rien dans la base. Utilise l’estimation par l’IA ou la saisie libre ci-dessous.</div>`}
+      : html`<div className="empty" style=${{ padding: 14 }}>Rien dans la base. ${sample ? 'Décris-le plus haut, l’IA estime.' : 'Utilise la saisie manuelle ci-dessous.'}</div>`}
       ${list.length > 120 && html`<p className="mut" style=${{ fontSize: 12, padding: '4px 2px' }}>${list.length - 120} autres résultats : précise ta recherche (ex. « kebab », « mcdo », « tajine »).</p>`}
     </div>
-    <h3>Saisie libre</h3>
-    <div className="form">
-      <label className="fld full" htmlFor="fr-n"><span className="fld-l">Nom</span><input id="fr-n" className="inp" type="text" maxLength="60" placeholder="Poke bowl saumon" value=${fr.n} onChange=${e => setFr(Object.assign({}, fr, { n: e.target.value }))} /></label>
-    </div>
-    <div className="form f4">
-      <${Num} id="fr-k" label="kcal" value=${fr.k} onChange=${v => setFr(Object.assign({}, fr, { k: v }))} dec=${0} min=${0} max=${6000} />
-      <${Num} id="fr-p" label="Protéines" value=${fr.p} onChange=${v => setFr(Object.assign({}, fr, { p: v }))} dec=${0} min=${0} max=${400} />
-      <${Num} id="fr-g" label="Glucides" value=${fr.g} onChange=${v => setFr(Object.assign({}, fr, { g: v }))} dec=${0} min=${0} max=${900} />
-      <${Num} id="fr-l" label="Lipides" value=${fr.l} onChange=${v => setFr(Object.assign({}, fr, { l: v }))} dec=${0} min=${0} max=${400} />
-    </div>
-    <label className="row" htmlFor="fr-keep" style=${{ fontSize: 13, color: 'var(--ink-2)', gap: 8 }}><input id="fr-keep" type="checkbox" checked=${!!fr.keep} onChange=${e => setFr(Object.assign({}, fr, { keep: e.target.checked }))} />Garder dans ma base (valeurs par portion)</label>
-    <button type="button" className="btn wide" disabled=${!fr.n.trim() || fr.k == null} onClick=${addFree}>Ajouter la saisie libre</button>
-    ${sample && html`<div className="stack">
-      <h3>Estimation par l’IA</h3>
-      <textarea id="ai-txt" className="inp" placeholder="2 parts de pizza 4 fromages, 1 tiramisu, 1 bière 25 cl" value=${ai.txt} maxLength="600" onChange=${e => setAi(Object.assign({}, ai, { txt: e.target.value }))} aria-label="Décris le repas à estimer"></textarea>
-      <button type="button" className="btn wide" disabled=${ai.busy || !ai.txt.trim()} onClick=${estimate}><${Icon} n="sparkles" s=${18} />${ai.busy ? 'Estimation…' : 'Estimer les macros'}</button>
-      ${ai.err && html`<div className="note"><${Icon} n="alert" /><div><span>${ai.err}</span></div></div>`}
-      ${ai.res && html`<div className="note acc"><${Icon} n="sparkles" /><div>
-        <span><b>${ai.res.n}</b> · ${f0(ai.res.k)} kcal · ${macTxt(ai.res)}</span>
-        ${ai.res.detail && html`<span>${ai.res.detail}</span>`}
-        <span className="mut">Estimation, pas une pesée. Corrige si tu as l’étiquette.</span>
-        <button type="button" className="btn sm pri" onClick=${() => { onAdd({ q: 1, x: { n: ai.res.n, k: Math.round(ai.res.k), p: Math.round(ai.res.p), g: Math.round(ai.res.g), l: Math.round(ai.res.l), f: Math.round(ai.res.f) } }); onClose(); }}>Ajouter au repas</button>
-      </div></div>`}
-    </div>`}
-    <p className="mut" style=${{ fontSize: 12 }}>Valeurs de la table Ciqual 2020 (Anses, licence CC BY 4.0) et moyennes de plats ; poids cru pour viandes, poissons et féculents ; plats et écarts : valeurs par portion.</p>
+    <details className="more"><summary>Saisie manuelle des macros</summary><div className="stack">
+      <div className="form"><label className="fld full" htmlFor="fr-n"><span className="fld-l">Nom</span><input id="fr-n" className="inp" type="text" maxLength="60" placeholder="Poke bowl saumon" value=${fr.n} onChange=${e => setFr(Object.assign({}, fr, { n: e.target.value }))} /></label></div>
+      <div className="form f4">
+        <${Num} id="fr-k" label="kcal" value=${fr.k} onChange=${v => setFr(Object.assign({}, fr, { k: v }))} dec=${0} min=${0} max=${6000} />
+        <${Num} id="fr-p" label="Protéines" value=${fr.p} onChange=${v => setFr(Object.assign({}, fr, { p: v }))} dec=${0} min=${0} max=${400} />
+        <${Num} id="fr-g" label="Glucides" value=${fr.g} onChange=${v => setFr(Object.assign({}, fr, { g: v }))} dec=${0} min=${0} max=${900} />
+        <${Num} id="fr-l" label="Lipides" value=${fr.l} onChange=${v => setFr(Object.assign({}, fr, { l: v }))} dec=${0} min=${0} max=${400} />
+      </div>
+      <label className="chk-l" htmlFor="fr-keep"><input id="fr-keep" type="checkbox" checked=${!!fr.keep} onChange=${e => setFr(Object.assign({}, fr, { keep: e.target.checked }))} /><span>Garder dans ma bibliothèque</span></label>
+      <button type="button" className="btn wide" disabled=${!fr.n.trim() || fr.k == null} onClick=${addFree}>Ajouter</button>
+    </div></details>
+    <p className="mut" style=${{ fontSize: 12 }}>Valeurs Ciqual 2020 (Anses, CC BY 4.0) et moyennes de plats. Poids cru pour viandes, poissons et féculents.</p>
   <//>`;
 }
 
@@ -3108,7 +3176,7 @@ function MealWeekSheet({ cfg, progId, onClose }) {
   <//>`;
 }
 
-function PlanCard({ cfg, onWeek, onIA }) {
+function PlanCard({ cfg, onWeek, onIA, onLib }) {
   const choisi = !!cfg.repasMode, mode = cfg.repasMode || 'libre', prog = cfg.repasProg || '', conseille = Apex.programmeConseille(cfg), pesee = cfg.repasPesee !== false, setCfg = p => Store.patch('cfg', null, p);
   const nSem = cfg.repasSemaine ? Object.keys(cfg.repasSemaine).length : 0, base = prog || conseille, sample = Store.caps().sample;
   const peseeSeg = html`<div className="row sb"><span className="fld-l" style=${{ margin: 0 }}>Quantités</span><${Seg} neutral label="Pesée des aliments" value=${pesee} onChange=${v => setCfg({ repasPesee: v })} options=${[[true, 'Je pèse'], [false, 'Sans pesée']]} /></div>`;
@@ -3117,7 +3185,7 @@ function PlanCard({ cfg, onWeek, onIA }) {
       <button type="button" className="big" onClick=${onIA}><i><${Icon} n="sparkles" s=${22} /></i><b>L’IA fait ma semaine</b><span>Selon tes macros et tes contraintes.</span></button>
       <button type="button" className="big" onClick=${() => setCfg({ repasMode: 'libre' })}><i><${Icon} n="plus" s=${22} /></i><b>Je compose moi-même</b><span>Ce que tu manges est déduit de ton quota.</span></button>
     </div>
-    <div className="row sb"><button type="button" className="btn sm ghost" onClick=${() => setCfg({ repasMode: 'programme' })}>Voir des menus tout faits</button></div>
+    <div className="row sb"><button type="button" className="btn sm ghost" onClick=${() => setCfg({ repasMode: 'programme' })}>Voir des menus tout faits</button><button type="button" className="btn sm" onClick=${onLib}><${Icon} n="plus" s=${16} />Ma bibliothèque d’aliments</button></div>
   <//>`;
   const MODES = [['perso', 'Ma semaine'], ['libre', 'Libre'], ['programme', 'Menus faits']];
   const options = html`<details className="more"><summary>Options</summary><div className="stack">
@@ -3133,6 +3201,7 @@ function PlanCard({ cfg, onWeek, onIA }) {
       <div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${prog ? 'Actif : ' + Apex.PROGRAMMES[prog].n : 'Choisis un menu'}</span><button type="button" className="btn sm" onClick=${() => onWeek(base)}><${Icon} n="clock" s=${16} />Voir la semaine</button></div></div>`}
     ${mode !== 'programme' && html`<button type="button" className="btn pri wide" onClick=${onIA}><${Icon} n="sparkles" s=${18} />${nSem ? 'Refaire ma semaine avec l’IA' : 'Faire ma semaine avec l’IA'}</button>`}
     ${mode === 'perso' && nSem > 0 && html`<p className="mut" style=${{ fontSize: 12 }}>Semaine enregistrée : ${nSem} / 7 jours.</p>`}
+    <button type="button" className="btn wide" onClick=${onLib}><${Icon} n="plus" s=${18} />Ajouter un aliment à ma bibliothèque</button>
     ${options}
   <//>`;
 }
@@ -3200,10 +3269,11 @@ function SuppCard({ supL, supp, date }) {
   </section>`;
 }
 
+const SLOTS_VIDES = { salle: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Post-séance', '19:00'], ['Dîner', '20:30']], repos: [['Petit-déj', '08:00'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00']] };
 function Repas({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
   const j = S.journal[date] || {}, meals = j.repas || [], c = Apex.cibleDuJour(cfg, j, date), t = Apex.totJour(j, foods);
-  const [sheet, setSheet] = useState(null), [wk, setWk] = useState(''), [ia, setIa] = useState(false);
+  const [sheet, setSheet] = useState(null), [wk, setWk] = useState(''), [ia, setIa] = useState(false), [lib, setLib] = useState(false);
   const put = ms => Store.patch('journal', date, { date, repas: ms });
   const mapMeal = (mid, fn) => put(meals.map(m => (m.id === mid ? fn(m) : m)));
   const mapItem = (mid, iid, fn) => mapMeal(mid, m => Object.assign({}, m, { items: m.items.map(i => (i.id === iid ? fn(i) : i)).filter(Boolean) }));
@@ -3216,6 +3286,9 @@ function Repas({ date }) {
   const reste = { k: c.kcal - plan.k, p: c.p - plan.p, g: c.g - plan.g, l: c.l - plan.l };
   const mode = cfg.repasMode || 'libre', pesee = cfg.repasPesee !== false, jourNom = Apex.JOURS[Apex.dow(date)].toLowerCase();
   const semOk = !!(cfg.repasSemaine && cfg.repasSemaine[Apex.dow(date)]);
+  const vide = meals.every(m => !m.items.length);
+  /* Les repas du jour existent d'office, vides : il ne reste qu'à les remplir. */
+  useEffect(() => { if (mode === 'libre' && j.repas == null && !man) put((SLOTS_VIDES[c.statut] || SLOTS_VIDES.repos).map(s => ({ id: Apex.uid(), nom: s[0], h: s[1], ok: true, items: [] }))); }, [date, mode, c.statut]);
   const gen = () => { put(Apex.planDuJour(cfg, c.statut, c, date)); toast('Menu du ' + jourNom + ' chargé, calé sur ' + f0(c.kcal) + ' kcal'); };
   const saveJour = () => { Store.patch('cfg', null, { repasMode: 'perso', repasSemaine: Object.assign({}, cfg.repasSemaine || {}, { [Apex.dow(date)]: Apex.repasEnModele(meals, foods) }) }); toast('Enregistré pour tous les ' + jourNom + 's'); };
   const tplOk = !!(cfg.repasModeles && cfg.repasModeles[c.statut]);
@@ -3256,9 +3329,9 @@ function Repas({ date }) {
           ${man && html`<div className="note"><${Icon} n="info" /><div><span>Ce bilan vient du check-in. Les repas cochés ne comptent pas tant qu’il est actif.</span>
             <${Confirm} label="Revenir au planner" sure="Effacer le bilan saisi ?" onYes=${() => Store.patch('journal', date, { date, man: null })} /></div></div>`}
         <//>
-        <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => setIa(true)} />
+        <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => setIa(true)} onLib=${() => setLib(true)} />
         <${Card} title="Repas" sub="Touche un aliment pour le remplacer" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
-          ${meals.length ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods} pesee=${pesee}
+          ${meals.length && (mode === 'libre' || !vide) ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods} pesee=${pesee}
             onToggle=${() => mapMeal(m.id, x => Object.assign({}, x, { ok: !x.ok }))}
             onQty=${(it, q) => mapItem(m.id, it.id, i => { const o = Object.assign({}, i, { q }); delete o.adj; return o; })}
             onSwap=${it => setSheet({ t: 'swap', mid: m.id, iid: it.id })}
@@ -3298,6 +3371,7 @@ function Repas({ date }) {
       </div>
     </div>
     ${ia && html`<${MenuIASheet} onClose=${() => setIa(false)} />`}
+    ${lib && html`<${FoodLibSheet} onClose=${() => setLib(false)} />`}
     ${wk && html`<${MealWeekSheet} cfg=${cfg} progId=${wk} onClose=${() => setWk('')} />`}
     ${sheet && sheet.t === 'add' && sh && html`<${AddSheet} foods=${foods} title=${'Ajouter · ' + sh.nom} onClose=${() => setSheet(null)} onAdd=${it => addItems(sh.id, [it])} />`}
     ${shIt && html`<${SwapSheet} it=${shIt} foods=${foods} onClose=${() => setSheet(null)}
