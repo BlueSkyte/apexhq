@@ -3143,29 +3143,32 @@ function SwapSheet({ it, foods, onPick, onDel, onClose }) {
   <//>`;
 }
 
-function Boucler({ reste, foods, meals, onAdd }) {
-  const mem = (k, d) => { try { const v = localStorage.getItem('apexhq:bk:' + k); return v && foods[v] ? v : d; } catch (e) { return d; } };
-  const [sel, setSel] = useState(() => ({ P: mem('P', 'poulet'), G: mem('G', 'riz'), L: mem('L', 'amandes') }));
-  const [mid, setMid] = useState('');
-  const set = (r, v) => { setSel(s => Object.assign({}, s, { [r]: v })); try { localStorage.setItem('apexhq:bk:' + r, v); } catch (e) { /* préférence non mémorisée */ } };
-  const res = Apex.boucler(reste, [foods[sel.P], foods[sel.G], foods[sel.L]], foods);
-  const libres = meals.filter(m => !m.ok), cible = mid && libres.some(m => m.id === mid) ? mid : (libres.length ? libres[libres.length - 1].id : '');
-  const opts = r => Object.keys(foods).map(k => foods[k]).filter(f => f.r === r && f.c !== 'ecart').map(f => html`<option key=${f.id} value=${f.id}>${f.n}</option>`);
-  return html`<div className="stack">
-    <div className="form" style=${{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-      <label className="fld" htmlFor="bk-p"><span className="fld-l">Protéines</span><select id="bk-p" className="inp" value=${sel.P} onChange=${e => set('P', e.target.value)}>${opts('P')}</select></label>
-      <label className="fld" htmlFor="bk-g"><span className="fld-l">Glucides</span><select id="bk-g" className="inp" value=${sel.G} onChange=${e => set('G', e.target.value)}>${opts('G')}</select></label>
-      <label className="fld" htmlFor="bk-l"><span className="fld-l">Lipides</span><select id="bk-l" className="inp" value=${sel.L} onChange=${e => set('L', e.target.value)}>${opts('L')}</select></label>
-    </div>
-    ${res.items.length ? html`<div className="stack">
-      <div className="rows">${res.items.map(i => { const f = foods[i.a], x = Apex.mac(i, foods); return html`<div key=${i.a} className="mini"><span>${f.n}</span><span className="mut tab">${f0(x.k)} kcal</span><b>${fq(i.q)}<small>${unitOf(f)}</small></b></div>`; })}</div>
-      <div className="note"><${Icon} n="target" /><div><span>Apporte <b>${f0(res.tot.k)} kcal</b> · ${macTxt(res.tot)}. Écart final : ${sgn(res.delta.k, f0)} kcal, P ${sgn(res.delta.p, f0)} g.</span></div></div>
-      <div className="row">
-        ${libres.length > 1 && html`<select id="bk-m" className="inp grow" aria-label="Repas de destination" value=${cible} onChange=${e => setMid(e.target.value)}>${libres.map(m => html`<option key=${m.id} value=${m.id}>${m.nom}</option>`)}</select>`}
-        <button type="button" className="btn pri grow" onClick=${() => onAdd(cible, res.items)}><${Icon} n="plus" s=${18} />${libres.length ? 'Ajouter au repas' : 'Créer le repas'}</button>
-      </div>
-    </div>` : html`<div className="empty">Ces trois aliments ne comblent pas ce reste. Change une source.</div>`}
-  </div>`;
+/* Idées pour finir la journée : trois propositions toutes faites qui comblent ce qu'il reste (kcal, protéines, glucides, lipides). */
+const IDEES_P = ['poulet', 'skyr', 'thon', 'fb0', 'oeuf', 'dinde', 'blanc'], IDEES_G = ['riz', 'banane', 'avoine', 'pdt', 'pain', 'pates', 'galette'], IDEES_L = ['amandes', 'noix', 'huile', 'beurrecac'];
+function ideesReste(reste, foods, cfg) {
+  const q = cfg.q || {}, ex = q.regime || q.exclus ? Apex.exclusIds(q, foods) : {}, ok = id => foods[id] && !ex[id];
+  const mine = r => Object.keys(foods).filter(k => foods[k].c === 'perso' && foods[k].r === r && !ex[k]);
+  const P = mine('P').concat(IDEES_P).filter(ok), G = mine('G').concat(IDEES_G).filter(ok), L = mine('L').concat(IDEES_L).filter(ok), out = [], vu = {};
+  if (!P.length || !G.length || !L.length) return out;
+  for (let i = 0; i < 9 && out.length < 3; i++) {
+    const src = [foods[P[i % P.length]], foods[G[(i * 2 + 1) % G.length]], foods[L[i % L.length]]], key = src.map(f => f.id).join();
+    if (vu[key]) continue; vu[key] = 1;
+    const res = Apex.boucler(reste, src, foods); if (!res.items.length || res.items.every(it => !(it.q > 0))) continue;
+    if (Math.abs(res.delta.k) > Math.max(120, reste.k * 0.2)) continue;
+    out.push({ src, items: res.items.filter(it => it.q > 0), tot: res.tot });
+  }
+  return out;
+}
+function ResteIdees({ reste, foods, meals, cfg, onAdd }) {
+  if (reste.k > 1000) return html`<p className="mut" style=${{ fontSize: 13 }}>Ajoute ce que tu manges : il te reste encore beaucoup à manger, des idées pour finir la journée apparaîtront ensuite.</p>`;
+  const idees = ideesReste(reste, foods, cfg), vide = meals.find(m => !m.items.length);
+  if (!idees.length) return html`<div className="empty"><span>Ajoute des aliments pour voir des idées qui collent à ton reste.</span></div>`;
+  return html`<div className="idees">${idees.map((d, i) => html`<div key=${i} className="idee">
+    <div className="idee-t"><b>${d.items.map(it => foods[it.a].n.split(' (')[0].toLowerCase()).join(' + ').replace(/^./, c => c.toUpperCase())}</b>
+      <span>${d.items.map(it => fq(it.q) + ' ' + unitOf(foods[it.a]).replace(/^dose.*/, 'dose')).join(' · ')}</span>
+      <em>≈ ${f0(d.tot.k)} kcal · ${macTxt(d.tot)}</em></div>
+    <button type="button" className="btn sm pri" aria-label=${'Ajouter cette idée' + (vide ? ' à ' + vide.nom : '')} onClick=${() => onAdd(vide ? vide.id : '', d.items)}><${Icon} n="plus" s=${16} />${vide ? vide.nom : 'Ajouter'}</button>
+  </div>`)}</div>`;
 }
 
 function MealWeekSheet({ cfg, progId, onClose }) {
@@ -3288,7 +3291,7 @@ function Repas({ date }) {
   const semOk = !!(cfg.repasSemaine && cfg.repasSemaine[Apex.dow(date)]);
   const vide = meals.every(m => !m.items.length);
   /* Les repas du jour existent d'office, vides : il ne reste qu'à les remplir. */
-  useEffect(() => { if (mode === 'libre' && j.repas == null && !man) put((SLOTS_VIDES[c.statut] || SLOTS_VIDES.repos).map(s => ({ id: Apex.uid(), nom: s[0], h: s[1], ok: true, items: [] }))); }, [date, mode, c.statut]);
+  useEffect(() => { if (mode === 'libre' && j.repas == null && !man) put((SLOTS_VIDES[c.statut] || SLOTS_VIDES.repos).map(s => ({ id: Apex.uid(), nom: s[0], h: s[1], ok: false, items: [] }))); }, [date, mode, c.statut]);
   const gen = () => { put(Apex.planDuJour(cfg, c.statut, c, date)); toast('Menu du ' + jourNom + ' chargé, calé sur ' + f0(c.kcal) + ' kcal'); };
   const saveJour = () => { Store.patch('cfg', null, { repasMode: 'perso', repasSemaine: Object.assign({}, cfg.repasSemaine || {}, { [Apex.dow(date)]: Apex.repasEnModele(meals, foods) }) }); toast('Enregistré pour tous les ' + jourNom + 's'); };
   const tplOk = !!(cfg.repasModeles && cfg.repasModeles[c.statut]);
@@ -3298,11 +3301,11 @@ function Repas({ date }) {
   };
   const resetTpl = () => { const o = Object.assign({}, cfg.repasModeles || {}); delete o[c.statut]; Store.patch('cfg', null, { repasModeles: Object.keys(o).length ? o : null }); toast('Plan type ' + c.statut + ' rétabli'); };
   const refit = () => { put(fitted); toast('Recalé : ' + f0(fitK) + ' kcal prévus'); };
-  const addMeal = () => { const used = meals.map(m => m.nom), n = nomRepas(), m = { id: Apex.uid(), nom: used.indexOf(n) < 0 ? n : 'Extra', h: heure(), ok: mode === 'libre', items: [] }; put(meals.concat(m)); setSheet({ t: 'add', mid: m.id }); };
+  const addMeal = () => { const used = meals.map(m => m.nom), n = nomRepas(), m = { id: Apex.uid(), nom: used.indexOf(n) < 0 ? n : 'Extra', h: heure(), ok: false, items: [] }; put(meals.concat(m)); setSheet({ t: 'add', mid: m.id }); };
   const addItems = (mid, items) => {
-    const its = items.map(i => Object.assign({ id: Apex.uid() }, i)), tgt = mid && meals.find(m => m.id === mid), compte = tgt ? !!tgt.ok : mode === 'libre';
+    const its = items.map(i => Object.assign({ id: Apex.uid() }, i)), tgt = mid && meals.find(m => m.id === mid), auto = mode === 'libre' && date <= Apex.today(), compte = tgt ? (!!tgt.ok || auto) : mode === 'libre';
     const add = its.reduce((s, i) => Apex.add(s, Apex.mac(i, foods)), Apex.Z());
-    if (tgt) mapMeal(mid, m => Object.assign({}, m, { items: m.items.concat(its) }));
+    if (tgt) mapMeal(mid, m => Object.assign({}, m, { items: m.items.concat(its), ok: !!m.ok || auto }));
     else put(meals.concat({ id: Apex.uid(), nom: 'Complément', h: heure(), ok: mode === 'libre', items: its }));
     if (compte && !man) toast('−' + f0(add.k) + ' kcal · −' + f0(add.g) + ' g de glucides · reste ' + f0(c.kcal - cons.k - add.k) + ' kcal');
     else toast('Ajouté au plan');
@@ -3348,23 +3351,23 @@ function Repas({ date }) {
         ${j.repasTxt && html`<${Card} title="Journal du jour" sub="Texte repris du QG Sèche"><div className="pre">${j.repasTxt}</div><//>`}
       </div>
       <div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}>
-        ${meals.length > 0 && html`<${Card} title="Boucler la journée" sub="Ce qu’il reste à combler">
+        ${meals.length > 0 && html`<${Card} title="Il te reste" sub=${!man && ecart < -40 ? 'Pour atteindre ta cible du jour' : 'Cible du jour : ' + f0(c.kcal) + ' kcal'}>
           ${j.lisse ? html`<div className="note acc"><${Icon} n="trend" /><div><span><b>Écart lissé.</b> ${j.lisse.map(p => dTiny(p.d) + ' −' + p.cut).join(' · ')} kcal. Pas de jeûne, pas de cardio punitif.</span><${Confirm} label="Annuler le lissage" onYes=${delisser} /></div></div>` : null}
           ${ecart > 40 && html`<div className="note acc"><${Icon} n="alert" /><div>
-            <span><b>${sgn(ecart, f0)} kcal</b> au-dessus de la cible${man ? '.' : ' avec le plan actuel.'}</span>
-            ${canFit && html`<span>Le recalage baisse glucides puis lipides des repas non mangés, protéines tenues à ${c.pMin} g minimum : ${f0(fitK)} kcal.</span>`}
+            <span><b>${sgn(ecart, f0)} kcal</b> au-dessus de ta cible${man ? '.' : '.'}</span>
+            ${canFit && html`<span>Je peux baisser les glucides puis les lipides des repas pas encore mangés (protéines gardées à ${c.pMin} g mini) : ${f0(fitK)} kcal.</span>`}
             ${canFit && html`<button type="button" className="btn sm pri" onClick=${refit}><${Icon} n="refresh" s=${16} />Recaler le reste</button>`}
-            ${!canFit && lis && lis.plan.length > 0 && html`<span>Plus rien à ajuster aujourd’hui. Lissage : ${lis.plan.map(p => dTiny(p.d) + ' −' + p.cut).join(' · ')} kcal${lis.reste > 0 ? ' ; ' + f0(lis.reste) + ' kcal non rattrapés (≈ ' + f0(lis.gras * 1000) + ' g de gras), assumés.' : '.'}</span>`}
+            ${!canFit && lis && lis.plan.length > 0 && html`<span>Lissage possible : ${lis.plan.map(p => dTiny(p.d) + ' −' + p.cut).join(' · ')} kcal${lis.reste > 0 ? ' (' + f0(lis.reste) + ' kcal non rattrapés, assumés)' : ''}.</span>`}
             ${!canFit && lis && lis.plan.length > 0 && html`<button type="button" className="btn sm" onClick=${lisser}>Lisser sur ${lis.plan.length} jour${lis.plan.length > 1 ? 's' : ''}</button>`}
           </div></div>`}
-          ${!man && meals.length > 0 && Math.abs(ecart) <= 40 && html`<div className="note"><${Icon} n="check" /><div><span><b>Journée bouclée.</b> Prévu ${f0(plan.k)} kcal pour ${f0(c.kcal)} · ${macTxt(plan)}.</span></div></div>`}
+          ${!man && meals.length > 0 && Math.abs(ecart) <= 40 && html`<div className="rest-ok"><i><${Icon} n="check" s=${22} w=${2.4} /></i><div><b>Journée bouclée</b><span>${f0(plan.k)} kcal · ${macTxt(plan)}</span></div></div>`}
           ${!man && ecart < -40 && html`<div className="stack">
-            <div className="tiles">
-              <div className="tile"><span>À combler</span><b>${f0(reste.k)}<small>kcal</small></b></div>
-              <div className="tile"><span>P · G · L</span><b>${f0(Math.max(0, reste.p))}·${f0(Math.max(0, reste.g))}·${f0(Math.max(0, reste.l))}<small>g</small></b></div>
+            <div className="rest">
+              <div className="rest-k"><b>${f0(reste.k)}</b><span>kcal restantes</span></div>
+              <div className="rest-m"><span style=${{ '--c': 'var(--p)' }}><i></i>P <b>${f0(Math.max(0, reste.p))}</b> g</span><span style=${{ '--c': 'var(--g)' }}><i></i>G <b>${f0(Math.max(0, reste.g))}</b> g</span><span style=${{ '--c': 'var(--l)' }}><i></i>L <b>${f0(Math.max(0, reste.l))}</b> g</span></div>
             </div>
-            <${Boucler} reste=${reste} foods=${foods} meals=${meals} onAdd=${addItems} />
-            ${canFit && html`<button type="button" className="btn wide" onClick=${refit}><${Icon} n="refresh" s=${18} />Ou recaler les quantités existantes</button>`}
+            <${ResteIdees} reste=${reste} foods=${foods} meals=${meals} cfg=${cfg} onAdd=${addItems} />
+            ${canFit && html`<button type="button" className="btn ghost sm" onClick=${refit}><${Icon} n="refresh" s=${16} />Ou recaler les quantités déjà prévues</button>`}
           </div>`}
         <//>`}
         <${SuppCard} key=${date} supL=${supL} supp=${supp} date=${date} />
