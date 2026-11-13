@@ -1789,8 +1789,65 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   /* Aliments de référence proposés à l'IA : base courante, sans les plats par portion, régime et exclusions respectés. */
   function alimentsPourIA(cfg) {
     const foods = A.allFoods(cfg), q = cfg.q || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {};
-    return Object.keys(foods).map(k => foods[k]).filter(f => !f.est && !f.cq && f.c !== 'ecart' && f.c !== 'supp' && !ex[f.id]);
+    const wheyOk = !cfg.q || !!q.whey;
+    return Object.keys(foods).map(k => foods[k]).filter(f => (f.id === 'clearwhey' ? wheyOk : !f.est && !f.cq && f.c !== 'ecart' && f.c !== 'supp') && !ex[f.id]);
   }
+
+  /* ---------- règles par type de repas (appliquées par l'app, pas seulement demandées à l'IA) ---------- */
+  const SLOT = nom => { const s = String(nom || '').toLowerCase(); if (/post/.test(s)) return 'post'; if (/pr[ée][-\s]?(s[ée]ance|entra|workout)/.test(s)) return 'pre'; if (/petit|matin|breakfast/.test(s)) return 'pdj'; if (/collation|snack|go[uû]ter|encas/.test(s)) return 'col'; return 'main'; };
+  const WHEY = 'clearwhey', PROT_RAPIDES = [WHEY, 'skyr', 'fb0', 'poulet', 'dinde', 'jambon', 'blanc', 'crevettes', 'cabillaud', 'seitan'], GLUC_RAPIDES = ['banane', 'riz', 'galette', 'miel', 'pdt', 'patate'];
+  const POST_NON = ['thon', 'pates', 'gnocchi', 'lentilles', 'pois', 'avoine', 'pain', 'wrap', 'soja'], PRE_NON = ['thon', 'lentilles', 'pois', 'soja'];
+  const okPost = f => !!f && !(f.l > 6) && f.c !== 'leg' && POST_NON.indexOf(f.id) < 0;
+  const okPre = f => !!f && !(f.l > 8) && f.c !== 'leg' && PRE_NON.indexOf(f.id) < 0;
+  const estGluc = f => !!f && (f.r === 'G' || f.c === 'fruit' || f.id === 'miel');
+  /* [id, quantité, ajustable] — post : protéines rapides + glucides rapides, très peu de lipides ; pré : glucides digestes, peu de fibres et de lipides. */
+  const POST_T = [
+    [[WHEY, 1, 0], ['banane', 1, 1], ['galette', 3, 1], ['miel', 10, 0]],
+    [['skyr', 250, 1], ['banane', 1, 1], ['galette', 2, 1], ['miel', 15, 0]],
+    [['poulet', 120, 1], ['riz', 70, 1], ['banane', 1, 1]],
+    [[WHEY, 1, 0], ['riz', 60, 1], ['fruitsrouges', 100, 0]],
+    [['fb0', 250, 1], ['banane', 1, 1], ['miel', 15, 0], ['galette', 2, 1]],
+    [['dinde', 120, 1], ['pdt', 250, 1], ['kiwi', 1, 0]],
+    [['seitan', 100, 1], ['riz', 70, 1], ['banane', 1, 1]],
+  ];
+  const PRE_T = [
+    [['avoine', 50, 1], ['banane', 1, 1], ['skyr', 150, 0]],
+    [['galette', 3, 1], ['miel', 15, 0], ['skyr', 200, 1]],
+    [['pain', 2, 1], ['miel', 15, 0], ['fb0', 200, 1]],
+    [['riz', 80, 1], ['lait', 200, 0], ['miel', 10, 0]],
+    [['banane', 1, 1], ['galette', 2, 1], [WHEY, 1, 0]],
+  ];
+  const LEGUMES = ['haricots', 'brocoli', 'courgette', 'epinards', 'poelee', 'poivron', 'champignons', 'salade'];
+  function corrigerMenu(sem, cfg) {
+    const foods = A.allFoods(cfg), q = cfg.q || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {}, wheyOk = (!cfg.q || !!q.whey) && !!foods[WHEY];
+    const dispo = id => !!foods[id] && !ex[id] && (id !== WHEY || wheyOk);
+    const item = (id, qte, adj) => ({ a: id, q: qte, adj: adj && foods[id].r ? 1 : 0 });
+    const modele = (T, di) => { for (let k = 0; k < T.length; k++) { const t = T[(di + k) % T.length]; if (t.every(x => dispo(x[0]))) return t.map(x => item(x[0], x[1], x[2])); } return null; };
+    const out = {};
+    SEMAINE.forEach((d, di) => {
+      if (!sem[d]) return;
+      out[d] = sem[d].map(m => {
+        if (m.items.some(it => it.x)) return m;
+        const kind = SLOT(m.nom); let items = m.items.filter(it => dispo(it.a));
+        if (!items.length && kind !== 'post' && kind !== 'pre') items = m.items.slice();
+        const has = pred => items.some(it => it.a && pred(foods[it.a]));
+        if (kind === 'post') {
+          items = items.filter(it => okPost(foods[it.a]));
+          if (!(items.some(it => PROT_RAPIDES.indexOf(it.a) >= 0) && items.some(it => GLUC_RAPIDES.indexOf(it.a) >= 0))) items = modele(POST_T, di) || items;
+        } else if (kind === 'pre') {
+          items = items.filter(it => okPre(foods[it.a]));
+          if (!items.some(it => estGluc(foods[it.a]))) items = modele(PRE_T, di) || items;
+        } else if (kind === 'pdj' || kind === 'col') {
+          if (!has(f => f.r === 'P' || f.id === WHEY)) { const p = ['skyr', 'fb0', 'oeuf', 'jambon'].find(dispo); if (p) items.push(item(p, p === 'oeuf' ? 3 : p === 'jambon' ? 80 : 200, 1)); }
+        } else if (kind === 'main') {
+          if (!has(f => f.c === 'leg')) { const l = LEGUMES.map((_, k) => LEGUMES[(di + k) % LEGUMES.length]).find(dispo); if (l) items.push(item(l, 200, 0)); }
+        }
+        return items.length ? Object.assign({}, m, { items }) : m;
+      });
+    });
+    return out;
+  }
+  const structureRepas = n => ({ 3: 'Petit-déj, Déjeuner, Dîner.', 4: 'Petit-déj, Déjeuner, Collation (les jours de séance : Pré-séance), Dîner.', 5: 'Petit-déj, Déjeuner, Pré-séance, Post-séance, Dîner (les jours de repos : Petit-déj, Déjeuner, Collation, Collation, Dîner).', 6: 'Petit-déj, Collation, Déjeuner, Pré-séance, Post-séance, Dîner (les jours de repos : Petit-déj, Collation, Déjeuner, Collation, Dîner, Collation du soir).' }[n] || 'Petit-déj, Déjeuner, Collation, Dîner.');
   function promptMenuSemaine(o) {
     const cfg = o.cfg, ip = A.iaProfil(cfg), n = o.repas || 4, liste = alimentsPourIA(cfg), q = cfg.q || {};
     const cibles = SEMAINE.map(d => { const t = cfg.planning && cfg.planning[d], c = t ? cfg.cibles.salle : cfg.cibles.repos; return d + ' = ' + JOURS[d] + ' : ' + (t ? 'jour de séance (' + t + ')' : 'repos') + ', cible ' + c.kcal + ' kcal, P ' + c.p + ' g, G ' + c.g + ' g, L ' + c.l + ' g'; });
@@ -1798,7 +1855,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return ['Tu es diététicien. Compose le menu complet de la semaine de cette personne, repas par repas, selon ses macros et SES CONTRAINTES.',
       'Profil : ' + ip.ligne + ', objectif ' + ip.objTxt + (q.regime && q.regime !== 'omnivore' ? ', régime ' + q.regime : '') + (q.exclus ? ', aliments à éviter : ' + q.exclus : '') + '.',
       'Cibles par jour (clé du JSON = numéro du jour, 0 = dimanche) :\n' + cibles.join('\n'),
-      'Nombre de repas par jour : ' + n + ' (nommés par exemple Petit-déj, Déjeuner, Collation, Dîner ; ajoute Pré-séance ou Post-séance les jours d’entraînement si pertinent). Chaque repas a une heure "h" au format HH:MM.',
+      'Nombre de repas par jour : ' + n + '. Structure par défaut : ' + structureRepas(n) + ' Si les contraintes de la personne décrivent les repas voulus (leur nombre, leurs noms, par exemple « petit-déj, midi, pré-séance, post-séance, dîner »), suis-les à la lettre tous les jours. Chaque repas a une heure "h" au format HH:MM (pré-séance 1 h 30 à 2 h avant la séance, post-séance dans l’heure qui suit, dîner 1 h à 1 h 30 après).',
+      'RÈGLES DE DIÉTÉTIQUE SPORTIVE PAR REPAS (impératives, un menu qui ne les respecte pas est refusé) :\n- Petit-déj : une source de protéines (skyr, fromage blanc, œufs, whey) + un glucide complexe (flocons d’avoine, pain complet) + un fruit.\n- Déjeuner et Dîner : une protéine maigre + un féculent + des légumes à chaque repas + un peu de bonne matière grasse. Varie les protéines d’un jour à l’autre (volaille, poisson, bœuf maigre, œufs, légumineuses).\n- Pré-séance : glucides faciles à digérer + protéines légères, PEU de lipides et de fibres (ex. flocons d’avoine + banane + skyr ; galettes de riz + miel + fromage blanc ; pain + miel + fromage blanc ; riz + lait + miel). Jamais de légumes, de fruits à coque, de viande grasse ni d’œufs.\n- Post-séance : protéines à absorption rapide + glucides rapides, quasiment SANS lipides ni fibres. Exemples : whey + banane + galettes de riz + miel ; skyr ou fromage blanc + banane + miel ; blanc de poulet + riz + fruit. Jamais de thon, de poisson gras, d’œufs entiers, de pâtes, de légumes, de fruits à coque ni de fromage.\n- Collation : protéines (skyr, fromage blanc, whey) + un fruit ou un féculent léger.\n- Les protéines sont réparties sur tous les repas (25 à 45 g chacun) et la cible protéines du jour doit être atteinte ; la whey est un vrai outil (1 dose en pré ou post-séance, ou au petit-déj).',
       o.contraintes ? 'CONTRAINTES DE LA PERSONNE, à respecter strictement (horaires des repas, lieux, cantine, matériel, budget, temps de préparation, goûts) : « ' + String(o.contraintes).slice(0, 600) + ' ». Adapte les repas et leurs horaires en conséquence ; si une contrainte l’impose, propose une solution (par exemple un repas déplacé, plus léger ou à emporter).' : 'Aucune contrainte particulière.',
       'Aliments de référence (id=nom ; quantité en g ou en unité indiquée ; kcal/P/G/L pour 100 g) :\n' + base.join('\n'),
       'Règles : chaque repas contient 2 à 8 éléments sous la forme ["id", quantité]. Pour un plat qui n’est pas dans la liste (cantine, restaurant, plat maison), utilise un objet {"n":"nom","k":kcal,"p":protéines,"g":glucides,"l":lipides} pour la portion entière, avec une estimation honnête. Les quantités seront recalées par l’app sur les cibles : concentre-toi sur le choix des aliments, la variété (pas le même menu tous les jours), les horaires et la faisabilité. Protéines réparties sur les repas, féculents autour de l’entraînement.',
@@ -1829,7 +1887,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       });
       const ok = Object.keys(out); if (ok.length < 4) return null;
       const manquants = []; SEMAINE.forEach(d => { if (!out[d]) { manquants.push(d); out[d] = out[ok[manquants.length % ok.length]]; } });
-      return { semaine: out, manquants };
+      return { semaine: corrigerMenu(out, cfg), manquants };
     } catch (e) { return null; }
   }
   /* Recale les quantités de chaque jour sur ses cibles (kcal, protéines, glucides, lipides) : l'IA choisit, l'app calcule. */
@@ -1839,7 +1897,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       const tpl = semaine[d]; if (!tpl) return;
       const c = A.cibleDuJour(cfg, null, A.addDays(lun, i));
       const meals = tpl.map(m => ({ id: m.id, nom: m.nom, h: m.h, ok: false, items: m.items.map(it => (it.x ? { id: A.uid(), q: it.q, x: it.x } : { id: A.uid(), a: it.a, q: it.q, adj: it.adj ? 1 : 0 })) }));
-      const aj = A.ajuster(meals, c, foods, { tous: true }).map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0) })).filter(m => m.items.length), t = aj.reduce((s, m) => A.add(s, A.totMeal(m, foods)), A.Z());
+      const calc = ms => A.ajuster(ms, c, foods, { tous: true }).map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0) })).filter(m => m.items.length);
+      const somme = ms => ms.reduce((s, m) => A.add(s, A.totMeal(m, foods)), A.Z());
+      let aj = calc(meals), t = somme(aj);
+      /* protéines sous la cible : ajoute un complément (whey, skyr, fromage blanc) à un repas adapté, puis recale */
+      const q = cfg.q || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {}, wheyOk = (!cfg.q || !!q.whey) && !!foods[WHEY];
+      const bonus = [[WHEY, 1, 0], ['skyr', 150, 1], ['fb0', 150, 1]].filter(b => foods[b[0]] && !ex[b[0]] && (b[0] !== WHEY || wheyOk));
+      for (let k = 0; k < 3 && c.p > 0 && t.p < c.p * 0.95 && bonus.length; k++) {
+        const b = bonus.find(x => !meals.some(m => m.items.some(it => it.a === x[0]))); if (!b) break;
+        const cible = meals.find(m => SLOT(m.nom) === 'post') || meals.find(m => SLOT(m.nom) === 'pdj') || meals.find(m => SLOT(m.nom) === 'col') || meals[0];
+        cible.items = cible.items.concat({ id: A.uid(), a: b[0], q: b[1], adj: b[2] && foods[b[0]].r ? 1 : 0 });
+        aj = calc(meals); t = somme(aj);
+      }
       res[d] = repasEnModele(aj, foods); totaux[d] = { k: Math.round(t.k), p: Math.round(t.p), g: Math.round(t.g), l: Math.round(t.l), cible: c };
     });
     return { semaine: res, totaux };
@@ -2589,7 +2658,7 @@ function Lecture({ date }) {
       <div><div className="rw-l">${r.lab}</div><div className="rw-v">${r.val}</div></div>
       <${Pill} st=${r.st === 'info' ? '' : r.st}>${r.tag}<//>
       <div className="rw-t">${r.txt}</div>
-    </div>`)}</div>` : !co && html`<div className="empty"><span><b>Rien à lire pour l’instant.</b> Valide le debrief matinal : poids, sommeil, pas et bilan d’hier sont comparés à tes cibles, avec l’action à faire.</span></div>`}
+    </div>`)}</div>` : !co && html`<div className="empty"><span><b>Rien à lire pour l’instant.</b> Valide le debrief matinal : poids, sommeil et forme sont comparés à tes cibles, avec l’action à faire.</span></div>`}
   <//>`;
 }
 
@@ -2674,10 +2743,10 @@ function Dashboard({ date, go, setDate }) {
 }
 
 /* ---- 31-ui-debrief.js ---- */
-/* ApexHQ — debrief matinal : une question par écran (guidé) ou tout sur une page (rapide), puis bilan du jour. */
+/* ApexHQ — debrief matinal : une seule page (poids, sommeil, forme), puis bilan du jour. */
 const LVL = [[2, 'À plat'], [4, 'Bof'], [6, 'Correct'], [8, 'Bien'], [10, 'Au top']];
 const nearLvl = v => (v == null ? null : LVL.reduce((b, x) => (Math.abs(x[0] - v) < Math.abs(b - v) ? x[0] : b), 2));
-const DSTEPS = [['poids', 'Poids'], ['sommeil', 'Sommeil'], ['forme', 'Forme'], ['hier', 'Hier'], ['recap', 'Bilan']];
+
 
 /* Grand champ numérique avec − et +. */
 function BigNum({ id, label, unit, value, onChange, step, min, max, dec, ph, hint }) {
@@ -2729,66 +2798,36 @@ function DebriefCard({ date, go, onEdit }) {
   <//>`;
 }
 
+
 function CheckIn({ date, go }) {
-  const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
-  const hier = Apex.addDays(date, -1), j = S.journal[date] || {}, jh = S.journal[hier] || {}, th = Apex.totJour(jh, foods);
-  const src = th.man || (th.eat.k > 0 ? th.eat : null), pw = Apex.serie(S.journal, 'poids').filter(p => p.d < date), lastW = pw.length ? pw[pw.length - 1].v : cfg.profil.poidsDepart;
+  const st = useStore(), S = st.get(), cfg = st.cfg(), j = S.journal[date] || {};
+  const pw = Apex.serie(S.journal, 'poids').filter(p => p.d < date), lastW = pw.length ? pw[pw.length - 1].v : cfg.profil.poidsDepart;
   const init = () => ({ poids: j.poids == null ? null : j.poids, sommeil: j.sommeil == null ? null : j.sommeil, sommeilQ: j.sommeilQ == null ? null : j.sommeilQ, reveils: j.reveils == null ? null : j.reveils,
-    energie: j.energie == null ? null : j.energie, force: j.force == null ? null : j.force, pas: jh.pas == null ? null : jh.pas,
-    kcal: src ? Math.round(src.k) : null, p: src ? Math.round(src.p) : null, g: src ? Math.round(src.g) : null, l: src ? Math.round(src.l) : null });
-  const [d, setD] = useState(init); const [edit, setEdit] = useState(!j.ci); const [nut, setNut] = useState(false); const [step, setStep] = useState(0);
-  const [mode, setMode] = useState(() => lsGet('ci:mode', 'guide'));
-  useEffect(() => { setD(init()); setEdit(!j.ci); setNut(false); setStep(0); }, [date, j.ci]);
-  const up = (k, nutField) => v => { setD(x => Object.assign({}, x, { [k]: v })); if (nutField) setNut(true); };
+    energie: j.energie == null ? null : j.energie, force: j.force == null ? null : j.force });
+  const [d, setD] = useState(init); const [edit, setEdit] = useState(!j.ci); const [more, setMore] = useState(false);
+  useEffect(() => { setD(init()); setEdit(!j.ci); setMore(false); }, [date, j.ci]);
+  const up = k => v => setD(x => Object.assign({}, x, { [k]: v }));
   const photoDay = Apex.dow(date) === cfg.photosJour;
-  const pickMode = m => { setMode(m); lsSet('ci:mode', m); setStep(0); };
   const save = () => {
     Store.patch('journal', date, { date, poids: d.poids, sommeil: d.sommeil, sommeilQ: d.sommeilQ, reveils: d.reveils, energie: d.energie, force: d.force, ci: new Date().toISOString() });
-    const ph = {}; if (d.pas !== (jh.pas == null ? null : jh.pas)) ph.pas = d.pas;
-    if (nut && d.kcal != null) { ph.man = { kcal: d.kcal || 0, p: d.p || 0, g: d.g || 0, l: d.l || 0 }; if (jh.man && jh.man.f) ph.man.f = jh.man.f; }
-    if (Object.keys(ph).length) Store.patch('journal', hier, Object.assign({ date: hier }, ph));
     setEdit(false); toast('Debrief enregistré');
   };
-  if (!edit) return html`<${DebriefCard} date=${date} go=${go} onEdit=${() => { setMode(lsGet('ci:mode', 'guide')); setStep(0); setEdit(true); }} />`;
-  const photoNote = photoDay && html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos.</b> Face, profil, dos avant de manger. Ajout dans l’onglet Analyse.</span></div></div>`;
-  const head = html`<div className="row sb"><div className="seg neu" role="group" aria-label="Mode"><button type="button" aria-pressed=${mode === 'guide'} onClick=${() => pickMode('guide')}>Guidé</button><button type="button" aria-pressed=${mode === 'rapide'} onClick=${() => pickMode('rapide')}>Rapide</button></div>
-    ${j.ci && html`<button type="button" className="btn sm ghost" onClick=${() => { setD(init()); setEdit(false); }}>Annuler</button>`}</div>`;
-  const nutrition = html`<div className="stack"><span className="fld-l">Bilan réel d’hier<b>${src && !nut ? (th.man ? 'saisi' : 'repris du planner') : nut ? 'modifié' : 'à saisir'}</b></span>
-    <div className="form f4"><${Num} id="ci-kcal" label="kcal" value=${d.kcal} onChange=${up('kcal', 1)} dec=${0} min=${0} max=${9000} />
-      <${Num} id="ci-p" label="Prot." value=${d.p} onChange=${up('p', 1)} dec=${0} min=${0} max=${500} /><${Num} id="ci-g" label="Gluc." value=${d.g} onChange=${up('g', 1)} dec=${0} min=${0} max=${1200} /><${Num} id="ci-l" label="Lip." value=${d.l} onChange=${up('l', 1)} dec=${0} min=${0} max=${500} /></div></div>`;
-  if (mode === 'rapide') return html`<${Card} cls="c5 r2" title="Debrief matinal" sub=${'À jeun · ' + dMid(date)}>
-    ${head}
-    <div className="form">
-      <${Num} id="ci-poids" label="Poids" unit="kg" value=${d.poids} onChange=${up('poids')} dec=${1} min=${40} max=${160} placeholder=${f1(lastW)} />
-      <${Num} id="ci-pas" label=${'Pas hier (' + dTiny(hier) + ')'} value=${d.pas} onChange=${up('pas')} dec=${0} min=${0} max=${80000} placeholder="10000" />
-      <${Num} id="ci-sommeil" label="Sommeil" unit="h" value=${d.sommeil} onChange=${up('sommeil')} dec=${2} min=${0} max=${16} placeholder="7,5" />
-      <${Num} id="ci-reveils" label="Réveils" value=${d.reveils} onChange=${up('reveils')} dec=${0} min=${0} max=${20} placeholder="0" />
-    </div>
-    <${Lvl} label="Qualité du sommeil" value=${d.sommeilQ} onChange=${up('sommeilQ')} /><${Lvl} label="Énergie" value=${d.energie} onChange=${up('energie')} /><${Lvl} label="Force perçue" value=${d.force} onChange=${up('force')} />
-    ${nutrition}${photoNote}
-    <button type="button" className="btn pri wide" disabled=${d.poids == null} onClick=${save}><${Icon} n="check" s=${18} />Valider le debrief</button>
-  <//>`;
-  const dots = html`<div className="dots" role="tablist" aria-label="Étapes">${DSTEPS.map((x, i) => html`<button key=${x[0]} type="button" role="tab" aria-selected=${step === i} aria-label=${x[1]} className=${cx(i < step && 'on', i === step && 'cur')} onClick=${() => setStep(i)}><i></i><span>${x[1]}</span></button>`)}</div>`;
+  if (!edit) return html`<${DebriefCard} date=${date} go=${go} onEdit=${() => { setMore(false); setEdit(true); }} />`;
   const dw = d.poids != null ? d.poids - lastW : null;
-  const bodies = [
-    () => html`<${BigNum} id="ci-poids" label="Ton poids ce matin" unit="kg" value=${d.poids} onChange=${up('poids')} step=${0.1} min=${40} max=${160} dec=${1} ph=${Math.round(lastW * 10) / 10} hint=${d.poids == null ? 'À jeun, après les toilettes. Dernière pesée : ' + f1(lastW) + ' kg.' : (dw === 0 ? 'Identique à ta dernière pesée.' : sgn(dw) + ' kg vs ta dernière pesée (' + f1(lastW) + ' kg). Seule la moyenne 7 jours compte.')} />`,
-    () => html`<${React.Fragment}><${BigNum} id="ci-sommeil" label="Heures dormies" unit="h" value=${d.sommeil} onChange=${up('sommeil')} step=${0.25} min=${0} max=${16} dec=${2} ph=${7.5} hint=${d.sommeil != null && d.sommeil < 7 ? 'Sous 7 h : la récupération et la faim en pâtissent.' : 'Objectif : 7 h ou plus.'} />
-      <${Lvl} label="Qualité du sommeil" value=${d.sommeilQ} onChange=${up('sommeilQ')} />
-      <div className="stack"><span className="fld-l">Réveils dans la nuit</span><div className="chips">${[0, 1, 2, 3].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${d.reveils === n} onClick=${() => up('reveils')(n)}>${n === 3 ? '3 ou +' : n}</button>`)}</div></div><//>`,
-    () => html`<${React.Fragment}><${Lvl} label="Énergie" value=${d.energie} onChange=${up('energie')} /><${Lvl} label="Force perçue à l’entraînement" value=${d.force} onChange=${up('force')} /><//>`,
-    () => html`<${React.Fragment}><${BigNum} id="ci-pas" label=${'Pas hier (' + dTiny(hier) + ')'} unit="pas" value=${d.pas} onChange=${up('pas')} step=${500} min=${0} max=${80000} dec=${0} ph=${10000} hint=${'Baseline : ' + f0(cfg.cibles.pasMin) + ' à ' + f0(cfg.cibles.pasMax) + ' pas.'} />
-      <div className="chips">${[6000, 8000, 10000, 12000, 14000].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${d.pas === n} onClick=${() => up('pas')(n)}>${f0(n)}</button>`)}</div>${nutrition}<//>`,
-    () => html`<${React.Fragment}><div className="tiles">
-      <div className="tile"><span>Poids</span><b>${f1(d.poids)}<small>kg</small></b></div><div className="tile"><span>Sommeil</span><b>${f1(d.sommeil)}<small>h</small></b><em>${d.sommeilQ != null ? 'qualité ' + d.sommeilQ + '/10' : ''}</em></div>
-      <div className="tile"><span>Énergie · force</span><b>${d.energie == null ? '–' : d.energie} · ${d.force == null ? '–' : d.force}</b></div><div className="tile"><span>Hier</span><b>${f0(d.pas)}<small>pas</small></b><em>${d.kcal != null ? f0(d.kcal) + ' kcal' : 'bilan non saisi'}</em></div></div>${photoNote}<//>`,
-  ];
-  const last = step === DSTEPS.length - 1;
-  return html`<${Card} cls="c5 r2" title="Debrief matinal" sub=${'À jeun · ' + dMid(date)}>
-    ${head}${dots}
-    <div className="ds">${bodies[step]()}</div>
-    <div className="row"><button type="button" className="btn" disabled=${step === 0} onClick=${() => setStep(step - 1)}>Retour</button>
-      ${last ? html`<button type="button" className="btn pri grow" disabled=${d.poids == null} onClick=${save}><${Icon} n="check" s=${18} />Valider le debrief</button>` : html`<button type="button" className="btn pri grow" onClick=${() => setStep(step + 1)}>${step === 0 && d.poids == null ? 'Passer' : 'Suivant'}</button>`}</div>
-    ${last && d.poids == null && html`<p className="mut" style=${{ fontSize: 12 }}>Le poids à jeun est requis : reviens à la première étape.</p>`}
+  const fait = [d.poids, d.sommeil, d.energie, d.force].filter(x => x != null).length;
+  return html`<${Card} cls="c5 r2 ci-card" title="Debrief matinal" sub=${'À jeun · ' + dMid(date)} right=${j.ci && html`<button type="button" className="btn sm ghost" onClick=${() => { setD(init()); setEdit(false); }}>Annuler</button>`}>
+    <div className="ci-prog" aria-label=${fait + ' sur 4 renseignés'}>${[0, 1, 2, 3].map(i => html`<i key=${i} className=${i < fait ? 'on' : ''}></i>`)}<span>${fait} / 4 · seul le poids est obligatoire</span></div>
+    <${BigNum} id="ci-poids" label="Poids ce matin" unit="kg" value=${d.poids} onChange=${up('poids')} step=${0.1} min=${40} max=${160} dec=${1} ph=${Math.round(lastW * 10) / 10}
+      hint=${d.poids == null ? 'Dernière pesée : ' + f1(lastW) + ' kg. Seule la moyenne 7 jours compte.' : (dw === 0 ? 'Identique à ta dernière pesée.' : sgn(dw) + ' kg vs ta dernière pesée (' + f1(lastW) + ' kg).')} />
+    <${BigNum} id="ci-sommeil" label="Sommeil" unit="h" value=${d.sommeil} onChange=${up('sommeil')} step=${0.25} min=${0} max=${16} dec=${2} ph=${7.5}
+      hint=${d.sommeil != null && d.sommeil < 7 ? 'Sous 7 h : récupération et faim en pâtissent.' : 'Objectif : 7 h ou plus.'} />
+    <${Lvl} label="Énergie" value=${d.energie} onChange=${up('energie')} />
+    <${Lvl} label="Force perçue à l’entraînement" value=${d.force} onChange=${up('force')} />
+    <button type="button" className="btn ghost sm ci-more" aria-expanded=${more} onClick=${() => setMore(!more)}>${more ? 'Masquer' : 'Plus de détails sur la nuit'}</button>
+    ${more && html`<div className="stack"><${Lvl} label="Qualité du sommeil" value=${d.sommeilQ} onChange=${up('sommeilQ')} />
+      <div className="stack"><span className="fld-l">Réveils dans la nuit</span><div className="chips">${[0, 1, 2, 3].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${d.reveils === n} onClick=${() => up('reveils')(n)}>${n === 3 ? '3 ou +' : n}</button>`)}</div></div></div>`}
+    ${photoDay && html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos.</b> Face, profil, dos avant de manger. Ajout dans l’onglet Analyse.</span></div></div>`}
+    <button type="button" className="btn pri wide" disabled=${d.poids == null} onClick=${save}><${Icon} n="check" s=${18} />${d.poids == null ? 'Entre ton poids pour valider' : 'Valider le debrief'}</button>
   <//>`;
 }
 
@@ -3559,7 +3598,7 @@ function ApportCard({ date, win }) {
   return html`<${ChartCard} cls="c5" title="Apport réel" sub="kcal par jour, repère = objectif du jour"
     legend=${data.length ? [['Jour de salle', 'var(--s2)', 'box'], ['Jour de repos', 'var(--s1)', 'box'], ['Objectif', 'var(--ink)']] : null}
     table=${data.length ? { cols: ['Date', 'Statut', 'Réel (kcal)', 'Objectif', 'Écart', 'Protéines (g)'], rows: data.slice().reverse().map(p => [dMid(p.d), p.name, f0(p.v), f0(p.t), sgn(p.v - p.t, f0), f0(p.p)]) } : null}>
-    <${BarChart} h=${250} data=${data} unit=" kcal" label="Apport calorique réel par jour" empty=${html`<span><b>Aucun bilan réel.</b> Coche tes repas ou saisis le bilan d’hier au check-in.</span>`} />
+    <${BarChart} h=${250} data=${data} unit=" kcal" label="Apport calorique réel par jour" empty=${html`<span><b>Aucun bilan réel.</b> Coche tes repas dans l’onglet Repas.</span>`} />
   <//>`;
 }
 
