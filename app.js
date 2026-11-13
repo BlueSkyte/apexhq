@@ -87,64 +87,66 @@ const Apex = (() => {
   const FOODS = {};
   const F = (id, n, c, r, k, p, g, l, f, d, u, etq) => { FOODS[id] = { id, n, c, r, k, p, g, l, f, d, u: u || null, etq: etq ? 1 : 0 }; };
   // protéines
-  F('poulet', 'Blanc de poulet', 'prot', 'P', 110, 23.5, 0, 1.6, 0, 180);
-  F('dinde', 'Escalope de dinde', 'prot', 'P', 105, 24, 0, 1, 0, 180);
-  F('bh5', 'Steak haché 5 %', 'prot', 'P', 125, 21, 0, 5, 0, 150);
-  F('boeuf', 'Bœuf maigre (rumsteck)', 'prot', 'P', 125, 22, 0, 4, 0, 150);
-  F('cheval', 'Viande de cheval', 'prot', 'P', 110, 21.5, 0.5, 2.5, 0, 180);
-  F('saumon', 'Saumon', 'prot', 'P', 200, 20, 0, 13.5, 0, 130);
-  F('cabillaud', 'Cabillaud', 'prot', 'P', 78, 18, 0, 0.7, 0, 200);
+  F('poulet', 'Blanc de poulet (cru)', 'prot', 'P', 110, 23.5, 0, 1.6, 0, 180);
+  F('dinde', 'Escalope de dinde (crue)', 'prot', 'P', 105, 24, 0, 1, 0, 180);
+  F('bh5', 'Steak haché 5 % MG (cru)', 'prot', 'P', 125, 21, 0, 5, 0, 150);
+  F('boeuf', 'Bœuf rumsteck maigre (cru)', 'prot', 'P', 125, 22, 0, 4, 0, 150);
+  F('cheval', 'Viande de cheval (crue)', 'prot', 'P', 110, 21.5, 0.5, 2.5, 0, 180);
+  F('saumon', 'Saumon frais (cru)', 'prot', 'P', 200, 20, 0, 13.5, 0, 130);
+  F('cabillaud', 'Cabillaud frais (cru)', 'prot', 'P', 78, 18, 0, 0.7, 0, 200);
   F('thon', 'Thon au naturel (égoutté)', 'prot', 'P', 110, 25.5, 0, 0.8, 0, 1, ['boîte', 112]);
-  F('crevettes', 'Crevettes cuites', 'prot', 'P', 94, 21.4, 0, 0.9, 0, 150);
-  F('oeuf', 'Œuf entier', 'prot', 'P', 140, 12.7, 0.3, 9.8, 0, 3, ['œuf', 53]);
-  F('blanc', 'Blanc d’œuf', 'prot', 'P', 48, 10.5, 0.7, 0.1, 0, 150);
+  F('crevettes', 'Crevettes cuites décortiquées', 'prot', 'P', 94, 21.4, 0, 0.9, 0, 150);
+  F('oeuf', 'Œuf entier (cru)', 'prot', 'P', 140, 12.7, 0.3, 9.8, 0, 3, ['œuf', 53]);
+  F('blanc', 'Blanc d’œuf (liquide)', 'prot', 'P', 48, 10.5, 0.7, 0.1, 0, 150);
   F('jambon', 'Jambon blanc dégraissé', 'prot', 'P', 107, 20.5, 0.6, 2.5, 0, 2, ['tranche', 40]);
   // laitages
-  F('skyr', 'Skyr nature', 'lait', 'P', 60, 10.5, 3.8, 0.2, 0, 200);
-  F('fb0', 'Fromage blanc 0 %', 'lait', 'P', 48, 7.6, 4, 0.2, 0, 250);
-  F('lait', 'Lait demi-écrémé', 'lait', '', 46, 3.3, 4.8, 1.5, 0, 200);
-  F('emmental', 'Emmental / comté râpé', 'lait', 'L', 380, 27.5, 0.5, 29.5, 0, 20);
-  F('vqr', 'Vache qui rit', 'lait', 'L', 240, 10.5, 6.5, 19, 0, 1, ['portion', 17]);
+  F('skyr', 'Skyr nature 0 %', 'lait', 'P', 60, 10.5, 3.8, 0.2, 0, 200);
+  F('fb0', 'Fromage blanc nature 0 %', 'lait', 'P', 48, 7.6, 4, 0.2, 0, 250);
+  F('lait', 'Lait demi-écrémé (1,5 % MG)', 'lait', '', 46, 3.3, 4.8, 1.5, 0, 200);
+  F('emmental', 'Emmental ou comté râpé', 'lait', 'L', 380, 27.5, 0.5, 29.5, 0, 20);
+  F('vqr', 'Vache qui rit (fromage fondu)', 'lait', 'L', 240, 10.5, 6.5, 19, 0, 1, ['portion', 17]);
   // suppléments (à caler sur l'étiquette)
   F('clearwhey', 'Clear Whey Isolate (Prozis)', 'supp', '', 352, 85, 1, 0.3, 0, 1, ['dose 25 g', 25], 1);
   F('wheychoco', 'Whey Ultimate Chocolate (Prozis)', 'supp', '', 385, 76, 7, 6, 2, 1, ['dose 30 g', 30], 1);
   F('barre', 'Barre protéinée', 'supp', '', 358, 33, 33, 12, 7, 1, ['barre 60 g', 60], 1);
   // féculents
-  F('riz', 'Riz basmati', 'feck', 'G', 350, 7.5, 77.5, 0.8, 1.4, 80);
-  F('pates', 'Pâtes', 'feck', 'G', 356, 12.5, 71, 1.8, 3, 80);
-  F('gnocchi', 'Gnocchi', 'feck', 'G', 165, 4, 35, 0.8, 1.5, 180);
-  F('pdt', 'Pommes de terre', 'feck', 'G', 80, 2, 16.5, 0.1, 2, 300);
-  F('patate', 'Patate douce', 'feck', 'G', 86, 1.6, 18, 0.1, 3, 250);
-  F('avoine', 'Flocons d’avoine', 'feck', 'G', 370, 13.5, 59, 7, 10, 60);
-  F('pain', 'Pain complet', 'feck', 'G', 247, 9, 43, 3, 7, 2, ['tranche', 30]);
-  F('galette', 'Galette de riz', 'feck', 'G', 385, 8, 81, 3, 3, 3, ['galette', 9]);
-  F('wrap', 'Wrap de blé', 'feck', 'G', 305, 8.5, 51, 6.5, 2.5, 1, ['wrap', 60]);
-  F('lentilles', 'Lentilles cuites', 'feck', 'G', 113, 8.3, 16.5, 0.5, 4.2, 150);
-  F('miel', 'Miel', 'feck', '', 327, 0.4, 81, 0, 0, 10);
+  F('riz', 'Riz basmati (cru)', 'feck', 'G', 350, 7.5, 77.5, 0.8, 1.4, 80);
+  F('pates', 'Pâtes blanches sèches (crues)', 'feck', 'G', 356, 12.5, 71, 1.8, 3, 80);
+  F('gnocchi', 'Gnocchi de pommes de terre (frais)', 'feck', 'G', 165, 4, 35, 0.8, 1.5, 180);
+  F('pdt', 'Pommes de terre (crues)', 'feck', 'G', 80, 2, 16.5, 0.1, 2, 300);
+  F('patate', 'Patate douce (crue)', 'feck', 'G', 86, 1.6, 18, 0.1, 3, 250);
+  F('avoine', 'Flocons d’avoine (secs)', 'feck', 'G', 370, 13.5, 59, 7, 10, 60);
+  F('pain', 'Pain complet (tranche)', 'feck', 'G', 247, 9, 43, 3, 7, 2, ['tranche', 30]);
+  F('galette', 'Galette de riz soufflé', 'feck', 'G', 385, 8, 81, 3, 3, 3, ['galette', 9]);
+  F('wrap', 'Wrap de blé (nature)', 'feck', 'G', 305, 8.5, 51, 6.5, 2.5, 1, ['wrap', 60]);
+  F('lentilles', 'Lentilles cuites en boîte (Cassegrain)', 'feck', 'G', 113, 8.3, 16.5, 0.5, 4.2, 150);
+  F('miel', 'Miel (toutes fleurs)', 'feck', '', 327, 0.4, 81, 0, 0, 10);
   // fruits
-  F('banane', 'Banane', 'fruit', 'G', 90, 1.1, 20, 0.2, 2, 1, ['banane', 120]);
-  F('pomme', 'Pomme', 'fruit', 'G', 53, 0.3, 11.7, 0.2, 2, 1, ['pomme', 150]);
-  F('kiwi', 'Kiwi', 'fruit', 'G', 60, 1.1, 11, 0.6, 2.4, 1, ['kiwi', 80]);
-  F('fruitsrouges', 'Fruits rouges', 'fruit', '', 45, 1, 8, 0.3, 4, 100);
+  F('banane', 'Banane (sans peau)', 'fruit', 'G', 90, 1.1, 20, 0.2, 2, 1, ['banane', 120]);
+  F('pomme', 'Pomme (avec peau)', 'fruit', 'G', 53, 0.3, 11.7, 0.2, 2, 1, ['pomme', 150]);
+  F('kiwi', 'Kiwi (sans peau)', 'fruit', 'G', 60, 1.1, 11, 0.6, 2.4, 1, ['kiwi', 80]);
+  F('fruitsrouges', 'Fruits rouges (mélange surgelé)', 'fruit', '', 45, 1, 8, 0.3, 4, 100);
   // légumes
-  F('brocoli', 'Brocoli', 'leg', '', 30, 3, 2.5, 0.5, 3, 200);
-  F('haricots', 'Haricots verts', 'leg', '', 30, 2, 4, 0.2, 3.5, 200);
-  F('courgette', 'Courgette', 'leg', '', 17, 1.2, 2, 0.2, 1.1, 200);
-  F('epinards', 'Épinards', 'leg', '', 23, 2.8, 1, 0.4, 2.5, 200);
-  F('tomate', 'Tomate', 'leg', '', 19, 0.9, 2.8, 0.2, 1.2, 150);
-  F('carotte', 'Carotte', 'leg', '', 38, 0.8, 6.5, 0.2, 2.7, 150);
-  F('poivron', 'Poivron', 'leg', '', 26, 0.9, 4.5, 0.2, 1.8, 200);
-  F('salade', 'Salade verte', 'leg', '', 14, 1.3, 1.2, 0.2, 1.5, 80);
-  F('poelee', 'Poêlée de légumes nature', 'leg', '', 45, 2, 5.5, 0.8, 3, 250);
-  F('champignons', 'Champignons', 'leg', '', 22, 3, 1, 0.3, 1.5, 150);
+  F('brocoli', 'Brocoli (cuit vapeur)', 'leg', '', 30, 3, 2.5, 0.5, 3, 200);
+  F('haricots', 'Haricots verts (cuits)', 'leg', '', 30, 2, 4, 0.2, 3.5, 200);
+  F('courgette', 'Courgette (cuite)', 'leg', '', 17, 1.2, 2, 0.2, 1.1, 200);
+  F('epinards', 'Épinards (cuits)', 'leg', '', 23, 2.8, 1, 0.4, 2.5, 200);
+  F('tomate', 'Tomate (crue)', 'leg', '', 19, 0.9, 2.8, 0.2, 1.2, 150);
+  F('carotte', 'Carotte (crue)', 'leg', '', 38, 0.8, 6.5, 0.2, 2.7, 150);
+  F('poivron', 'Poivron (cru)', 'leg', '', 26, 0.9, 4.5, 0.2, 1.8, 200);
+  F('salade', 'Salade verte (laitue)', 'leg', '', 14, 1.3, 1.2, 0.2, 1.5, 80);
+  F('poelee', 'Poêlée de légumes nature (surgelée)', 'leg', '', 45, 2, 5.5, 0.8, 3, 250);
+  F('champignons', 'Champignons de Paris (cuits)', 'leg', '', 22, 3, 1, 0.3, 1.5, 150);
   // lipides
-  F('huile', 'Huile d’olive', 'lip', 'L', 900, 0, 0, 100, 0, 8);
-  F('amandes', 'Amandes', 'lip', 'L', 615, 21, 8, 53, 10, 20);
-  F('noix', 'Noix', 'lip', 'L', 700, 14.5, 7, 67, 6.7, 20);
-  F('cajou', 'Noix de cajou', 'lip', 'L', 600, 18, 27, 47, 3.5, 20);
-  F('beurrecac', 'Beurre de cacahuète', 'lip', 'L', 615, 26, 12, 50, 7, 15);
-  F('avocat', 'Avocat', 'lip', 'L', 205, 1.6, 0.8, 20.6, 3.6, 80);
+  F('huile', 'Huile d’olive (vierge extra)', 'lip', 'L', 900, 0, 0, 100, 0, 8);
+  F('amandes', 'Amandes (nature, non salées)', 'lip', 'L', 615, 21, 8, 53, 10, 20);
+  F('noix', 'Noix (cerneaux)', 'lip', 'L', 700, 14.5, 7, 67, 6.7, 20);
+  F('cajou', 'Noix de cajou (nature)', 'lip', 'L', 600, 18, 27, 47, 3.5, 20);
+  F('beurrecac', 'Beurre de cacahuète (100 % cacahuète)', 'lip', 'L', 615, 26, 12, 50, 7, 15);
+  F('avocat', 'Avocat (chair)', 'lip', 'L', 205, 1.6, 0.8, 20.6, 3.6, 80);
   F('chocolat', 'Chocolat noir 85 %', 'lip', 'L', 600, 10, 20, 49, 13, 1, ['carré', 10]);
+  /* alias de recherche des aliments de base (noms précisés : le nom court reste trouvable) */
+  const ALIAS = {"lentilles":"lentille","pois":"pois chiche","fb0":"faisselle","poulet":"escalope poulet"}; Object.keys(ALIAS).forEach(k => { if (FOODS[k]) FOODS[k].al = ALIAS[k]; });
   // écarts (valeurs par portion : u = 100 g « virtuels » → q = nombre de portions)
   const E = (id, n, k, p, g, l, f, u) => F(id, n, 'ecart', '', k, p, g, l, f, 1, [u || 'portion', 100]);
   E('bigmac', 'Big Mac', 505, 26.5, 42, 25.5, 3, 'burger');
@@ -662,10 +664,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 
   /* ---------- aliments utiles aux régimes végétariens ---------- */
   const F = (id, n, c, r, k, p, g, l, f, d) => { A.FOODS[id] = { id, n, c, r, k, p, g, l, f, d, u: null, etq: 0 }; };
-  F('tofu', 'Tofu ferme', 'prot', 'P', 140, 15, 2, 8, 1, 150);
-  F('seitan', 'Seitan', 'prot', 'P', 120, 24, 4, 2, 1, 150);
-  F('soja', 'Protéines de soja texturées (sec)', 'prot', 'P', 330, 50, 20, 2, 13, 40);
-  F('pois', 'Pois chiches cuits', 'feck', 'G', 120, 8, 18, 2.5, 5, 150);
+  F('tofu', 'Tofu ferme (nature)', 'prot', 'P', 140, 15, 2, 8, 1, 150);
+  F('seitan', 'Seitan (nature)', 'prot', 'P', 120, 24, 4, 2, 1, 150);
+  F('soja', 'Protéines de soja texturées (sèches)', 'prot', 'P', 330, 50, 20, 2, 13, 40);
+  F('pois', 'Pois chiches cuits en boîte (Cassegrain)', 'feck', 'G', 120, 8, 18, 2.5, 5, 150);
 
   /* ---------- objectifs ---------- */
   const OBJECTIFS = [['seche', 'Sèche', 'Perdre du gras en gardant le muscle'], ['neutre', 'Maintien', 'Poids stable, recomposition'], ['masse', 'Prise de masse', 'Prendre du muscle avec peu de gras']];
@@ -1274,8 +1276,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ['baklava2', 'Baklavas ×2', 'patisserie orientale', 5, 36, 20, 2, 'portion'], ['loukoum3', 'Loukoums ×3', 'confiserie', 0.5, 38, 0, 0, 'portion'],
     ['magnum', 'Glace Magnum', 'glace baton', 3, 28, 15, 1, 'glace'], ['cornetto', 'Cornetto', 'glace cornet', 3, 28, 10, 1, 'glace'],
     ['ben_jerrys100', 'Glace Ben & Jerry’s (100 ml)', 'glace', 4, 24, 13, 0.5, 'portion'], ['sorbet2', 'Sorbet (2 boules)', 'glace fruits', 0.5, 38, 0, 1, 'portion'],
-    ['creme_dessert', 'Crème dessert (pot)', 'danette flan', 4, 22, 3, 0, 'pot'], ['yaourt_fruits', 'Yaourt aux fruits', 'yaourt', 4, 16, 2, 0, 'pot'],
-    ['yaourt_nature', 'Yaourt nature', 'yaourt', 5, 7, 2, 0, 'pot'], ['compote_pot', 'Compote (pot 100 g)', 'pomme', 0.4, 17, 0.2, 1.5, 'pot'],
+    ['creme_dessert', 'Crème dessert (pot)', 'danette flan', 4, 22, 3, 0, 'pot'], ['yaourt_fruits', 'Yaourt aux fruits (pot 125 g)', 'yaourt', 4, 16, 2, 0, 'pot'],
+    ['yaourt_nature', 'Yaourt nature (pot 125 g)', 'yaourt', 5, 7, 2, 0, 'pot'], ['compote_pot', 'Compote (pot 100 g)', 'pomme', 0.4, 17, 0.2, 1.5, 'pot'],
     ['crumble_pommes', 'Crumble aux pommes', 'dessert', 3, 45, 12, 2, 'portion'], ['beignet_pomme', 'Beignet aux pommes', 'fete foraine', 4, 30, 14, 1, 'pièce'],
     ['galette_rois_part', 'Galette des rois (part)', 'frangipane', 5, 35, 22, 1, 'part'], ['buche_part', 'Bûche de Noël (part)', 'noel', 4, 38, 18, 1, 'part'],
     ['panettone_part', 'Panettone (part)', 'noel italie', 4, 38, 10, 1, 'part'], ['cannele', 'Cannelé', 'bordeaux', 2, 18, 5, 0.5, 'pièce'],
@@ -1337,7 +1339,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       let s = 0; toks.forEach(t => { if (hay.indexOf(' ' + t) >= 0) s += 2; else if (t.length >= 5 && hay.indexOf(t) >= 0) s += 1; });
       if (s > 0) out.push([s, f]);
     });
-    return out.sort((a, b) => b[0] - a[0] || a[1].n.length - b[1].n.length).slice(0, max || 20).map(x => x[1]);
+    /* à score égal : les aliments de base (poids cru, valeurs fiables) avant les plats, puis le nom le plus court */
+    const base = f => (f.est || f.cq || f.c === 'ecart' ? 0 : 1);
+    return out.sort((a, b) => b[0] - a[0] || base(b[1]) - base(a[1]) || a[1].n.length - b[1].n.length).slice(0, max || 20).map(x => x[1]);
   }
   Object.assign(A, { chercherAliments });
 })();
