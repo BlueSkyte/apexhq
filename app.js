@@ -3733,11 +3733,15 @@ function HistoCard() {
   <//>`;
 }
 
-function Training({ date, setDate }) {
+function Training({ date, setDate, go }) {
   const cfg = useStore().cfg(), nS = Object.keys(cfg.planning || {}).filter(k => cfg.planning[k]).length, G = Apex.groupes(cfg), foc = Object.keys(G).map(k => G[k].n);
   const [view, setView] = useState(() => { const v = lsGet('train:view', 'seance'); return ['seance', 'prog', 'suivi'].indexOf(v) >= 0 ? v : 'seance'; });
   const pick = v => { setView(v); lsSet('train:view', v); };
+  const live = wkLive(useStore().get().seances), [fin, setFin] = useState(null);
+  useEffect(() => { const f = e => { setFin(e.detail && e.detail.date); pick('seance'); try { window.scrollTo(0, 0); } catch (x) { /* sans effet */ } }; window.addEventListener('train:done', f); return () => window.removeEventListener('train:done', f); }, []);
   useEffect(() => { const f = e => { pick(e.detail || 'seance'); setDate(Apex.today()); try { window.scrollTo(0, 0); } catch (x) { /* sans effet */ } }; window.addEventListener('train:view', f); return () => window.removeEventListener('train:view', f); }, []);
+  if (fin) return html`<${WorkoutDone} date=${fin} go=${go} onClose=${() => { setFin(null); setDate(fin); try { window.scrollTo(0, 0); } catch (x) { /* sans effet */ } }} />`;
+  if (live) return html`<div className="wo-focus"><div className="view-h"><h1>Séance en cours</h1><p>${live.type || 'Séance libre'} · coche chaque série, le repos se lance tout seul. Le reste de la muscu revient après le bilan.</p><${ChronoBtn} /></div><${Workout} date=${live.date} /></div>`;
   return html`<div>
     <div className="view-h"><h1>Muscu · ${dMid(date)}</h1><p>${nS} séance${nS > 1 ? 's' : ''} par semaine · ${Apex.types(cfg).join(', ')}.</p><${ChronoBtn} /></div>
     <div className="ttabs" role="tablist" aria-label="Espace muscu">${[['prog', 'Programme', 'sliders'], ['seance', 'Séance', 'dumbbell'], ['suivi', 'Suivi', 'chart']].map(t => html`<button key=${t[0]} type="button" role="tab" aria-selected=${view === t[0]} className="ttab" onClick=${() => pick(t[0])}><${Icon} n=${t[2]} s=${18} />${t[1]}</button>`)}</div>
@@ -3771,7 +3775,7 @@ function WkSet({ s, label, prev, phKg, phR, rpePh, onField, onCheck, onWarm, onF
     <button type="button" className="wo-p" disabled=${!prev || !(prev.r > 0)} aria-label=${prev && prev.r > 0 ? 'Reprendre la dernière séance : ' + wkPrec(prev) : 'Pas de séance précédente'} onClick=${onFillPrev}>${wkPrec(prev)}</button>
     <${Num} small id=${null} hint=${nom + ' série ' + label + ' : charge en kg'} value=${s.kg == null ? null : s.kg} onChange=${v => onField('kg', v)} dec=${2} min=${0} max=${600} placeholder=${phKg == null ? '' : fq(phKg)} />
     <${Num} small id=${null} hint=${nom + ' série ' + label + ' : répétitions'} value=${s.r == null ? null : s.r} onChange=${v => onField('r', v)} dec=${0} min=${0} max=${100} placeholder=${phR == null ? '' : String(phR)} />
-    <${Num} small id=${null} hint=${nom + ' série ' + label + ' : RPE'} value=${s.rpe == null ? null : s.rpe} onChange=${v => onField('rpe', v)} dec=${1} min=${1} max=${10} placeholder=${rpePh} />
+    <${Num} small id=${null} hint=${nom + ' série ' + label + ' : RIR (répétitions en réserve)'} value=${s.rpe == null ? null : Math.round((10 - s.rpe) * 10) / 10} onChange=${v => onField('rpe', v == null ? null : Math.round((10 - v) * 10) / 10)} dec=${1} min=${0} max=${9} placeholder=${rpePh} />
     <button type="button" className=${cx('wo-c', coche && 'on')} aria-pressed=${coche} aria-label=${(coche ? 'Décocher' : 'Valider') + ' la série ' + label} onClick=${onCheck}><${Icon} n="check" s=${20} w=${2.8} /></button>
   </div>`;
 }
@@ -3783,7 +3787,7 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
   const rest = Apex.restDe(e0, ex), sets = ex.sets || [], normales = sets.filter(s => !s.w), faites = sets.filter(Apex.setFait);
   const [ouvert, setOuvert] = useState(false), [note, setNote] = useState(!!ex.note), replie = !!ex.ok && !ouvert;
   const best = h.reduce((b, x) => Math.max(b, x.e1), 0), cur = sets.reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0), record = cur > best + 0.05 && best > 0;
-  let num = 0;
+  let num = 0; const toutCoche = normales.length > 0 && normales.every(s => Apex.setCoche(s));
   const maj = (k, patch) => onSets(sets.map((s, n) => (n === k ? Object.assign({}, s, patch) : s)));
   const champ = (k, f, v) => {
     const s = sets[k]; if (f === 'r' && v > 0 && !Apex.setCoche(s)) chronoApresSerie(s.w ? 45 : rest);
@@ -3810,6 +3814,7 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
     <div className="wo-xh" data-sort-zone="1">
       <span className="mfig-box" onClick=${onEdit}><${MuscleFig} m=${e.m} s=${e.s} h=${46} /></span>
       <button type="button" className="wo-xt" onClick=${onEdit} aria-label=${'Modifier ' + e.n}><b>${e.n}</b><span><i className="badge">${Apex.MUSCLES[e.m] || ''}</i>${e.uni ? html` <i className="badge uni">1 côté</i>` : ''}${record ? html` <i className="badge rec">Record</i>` : ''}</span></button>
+      <button type="button" className=${cx('wo-ok', toutCoche && 'pret')} aria-label=${'Exercice terminé : ' + e.n} onClick=${() => onOk(true)}><${Icon} n="check" s=${20} w=${2.8} /></button>
       <button type="button" className="ib" aria-label=${'Options : ' + e.n} onClick=${onEdit}><${Icon} n="more" s=${22} /></button>
     </div>
     <div className="wo-meta">
@@ -3818,14 +3823,14 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
         <button type="button" className="wo-rt" aria-label=${'Lancer le repos de ' + Apex.restTxt(rest)} onClick=${() => CHR.startRest(rest)}><${Icon} n="timer" s=${15} />${Apex.restTxt(rest)}</button>
         <button type="button" className="ib sm" aria-label="Plus 15 secondes de repos" onClick=${() => onPatch({ rest: Math.min(300, rest + 15) })}><${Icon} n="plus" s=${14} /></button>
       </div>
-      <span className="wo-obj">${last ? html`Dernière fois <b>${setsTxt(last.sets)}</b>` : 'Première fois'} · objectif <b>${obj.txt}</b></span>
+      <span className="wo-obj">${last ? html`Dernière fois <b>${setsTxt(last.sets)}</b>` : 'Première fois'} · objectif <b>${obj.txt}</b> · repos <b>${Apex.restTxt(rest)}</b></span>
     </div>
     ${(note || ex.note) && html`<textarea className="inp wo-note" rows="2" maxLength="300" placeholder="Note : réglage de la machine, sensation, douleur…" aria-label=${'Note : ' + e.n} defaultValue=${ex.note || ''} onBlur=${ev => onPatch({ note: ev.target.value.trim() || null })}></textarea>`}
     <div className="wo-sets">
-      <div className="wo-s wo-sh"><span>Série</span><span>Précédent</span><span>kg</span><span>Reps</span><span>RPE</span><span></span></div>
+      <div className="wo-s wo-sh"><span>Série</span><span>Précédent</span><span>kg</span><span>Reps</span><span>RIR</span><span></span></div>
       ${sets.map((s, k) => { if (!s.w) num++; const prev = prevDe(k);
         return html`<${WkSet} key=${k} s=${s} label=${s.w ? 'W' : num} prev=${prev} nom=${e.n}
-          phKg=${prev && prev.kg > 0 ? prev.kg : obj.kg} phR=${+ph[k] || +ph[ph.length - 1] || (e.lo + '-' + e.hi)} rpePh=${String(10 - e.rir)}
+          phKg=${prev && prev.kg > 0 ? prev.kg : obj.kg} phR=${+ph[k] || +ph[ph.length - 1] || (e.lo + '-' + e.hi)} rpePh=${String(e.rir)}
           onField=${(f, v) => champ(k, f, v)} onCheck=${() => cocher(k)} onWarm=${() => maj(k, { w: s.w ? null : true })}
           onFillPrev=${() => { if (!prev) return; const o = Object.assign({}, s, { kg: prev.kg, r: prev.r }); delete o.ok; onSets(sets.map((x, n) => (n === k ? o : x))); }} />`; })}
     </div>
@@ -3833,29 +3838,63 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
       <button type="button" className="btn sm" onClick=${() => onSets(sets.concat({}))}><${Icon} n="plus" s=${16} />Série</button>
       <button type="button" className="btn sm ghost" disabled=${sets.length <= 1} onClick=${() => onSets(sets.slice(0, -1))}><${Icon} n="minus" s=${16} />Série</button>
       <button type="button" className="btn sm ghost" aria-pressed=${note} onClick=${() => setNote(!note)}><${Icon} n="note" s=${16} />Note</button>
-      <button type="button" className=${cx('btn sm', normales.length > 0 && normales.every(s => Apex.setCoche(s)) && 'pri')} onClick=${() => onOk(true)}><${Icon} n="check" s=${16} />Exercice terminé</button>
     </div>
   </div>`;
 }
 
-/* Résumé de fin de séance : durée, séries, tonnage, records ; on termine ici. */
+const wkRecords = (S, se, date, exos) => (se.exos || []).map(x => { const best = Apex.histoExo(S.seances, x.e).filter(h => h.date < date).reduce((b, h) => Math.max(b, h.e1), 0), cur = (x.sets || []).reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0); return best > 0 && cur > best + 0.05 ? { n: (exos[x.e] || { n: x.e }).n, e1: cur, gain: cur - best } : null; }).filter(Boolean);
+const WK_ENERGIE = [[1, 'Vidé'], [2, 'Fatigué'], [3, 'Normal'], [4, 'En forme'], [5, 'Au top']], WK_DIFF = [[1, 'Facile'], [2, 'Bien dosée'], [3, 'Dure'], [4, 'Très dure']];
+const WK_GENE = [['epaule', 'Épaule'], ['coude', 'Coude'], ['poignet', 'Poignet'], ['dos', 'Dos'], ['genou', 'Genou'], ['hanche', 'Hanche']];
+
+/* Bilan de fin de séance : quelques questions rapides, le résumé, puis on termine. */
 function FinishSheet({ date, se, exos, onClose, onDone }) {
-  const S = Store.get(), r = Apex.resumeSeance(se), st = wkSeriesDe(se), [note, setNote] = useState(se.note || '');
-  const debut = se.debut ? new Date(se.debut).getTime() : null, duree = debut ? Date.now() - debut : null;
-  const records = (se.exos || []).map(x => { const best = Apex.histoExo(S.seances, x.e).filter(h => h.date < date).reduce((b, h) => Math.max(b, h.e1), 0), cur = (x.sets || []).reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0); return best > 0 && cur > best + 0.05 ? { n: (exos[x.e] || { n: x.e }).n, e1: cur, gain: cur - best } : null; }).filter(Boolean);
-  const vides = st.total - st.faites;
-  return html`<${Sheet} title="Terminer la séance" onClose=${onClose}>
+  const S = Store.get(), r = Apex.resumeSeance(se), st = wkSeriesDe(se), b0 = se.bilan || {};
+  const [energie, setEnergie] = useState(b0.energie || null), [diff, setDiff] = useState(b0.difficulte || null), [gene, setGene] = useState(b0.gene || []), [note, setNote] = useState(b0.note || se.note || '');
+  const debut = se.debut ? new Date(se.debut).getTime() : null, duree = debut ? Date.now() - debut : null, records = wkRecords(S, se, date, exos), vides = st.total - st.faites;
+  const toggleGene = k => setGene(g => (g.indexOf(k) >= 0 ? g.filter(x => x !== k) : g.concat(k)));
+  return html`<${Sheet} title="Bilan de la séance" onClose=${onClose}>
     <div className="wo-fin">
       <div><span>Durée</span><b>${duree ? wkTemps(duree) : '–'}</b></div><div><span>Séries</span><b>${r.sets}<small> / ${st.total}</small></b></div>
-      <div><span>Tonnage</span><b>${f0(r.tonnage)}<small> kg</small></b></div><div><span>RPE moyen</span><b>${r.rpe == null ? '–' : f1(r.rpe)}</b></div>
+      <div><span>Tonnage</span><b>${f0(r.tonnage)}<small> kg</small></b></div><div><span>RIR moyen</span><b>${r.rpe == null ? '–' : f1(10 - r.rpe)}</b></div>
     </div>
-    ${records.length > 0 && html`<div className="note acc"><${Icon} n="flame" /><div><b>${records.length} record${records.length > 1 ? 's' : ''} !</b>${records.map(x => html`<span key=${x.n}>${x.n} : e1RM ${f1(x.e1)} kg (+${f1(x.gain)})</span>`)}</div></div>`}
     ${vides > 0 && html`<div className="note"><${Icon} n="info" /><div><span>${vides} série${vides > 1 ? 's' : ''} non cochée${vides > 1 ? 's' : ''} : elle${vides > 1 ? 's' : ''} ne compte${vides > 1 ? 'nt' : ''} pas dans tes statistiques.</span></div></div>`}
-    <label className="fld" htmlFor="wo-note-fin"><span className="fld-l">Note de séance</span><textarea id="wo-note-fin" className="inp" rows="2" maxLength="400" placeholder="Forme, sensations, ce qu'il faut améliorer…" value=${note} onChange=${e => setNote(e.target.value)}></textarea></label>
-    <button type="button" className="btn pri wide" onClick=${() => onDone(note.trim())}><${Icon} n="check" s=${18} />Terminer la séance</button>
+    <div className="stack" style=${{ gap: 6 }}><span className="fld-l">Comment tu te sens ?</span>
+      <div className="chips" role="radiogroup" aria-label="Forme après la séance">${WK_ENERGIE.map(x => html`<button key=${x[0]} type="button" role="radio" aria-checked=${energie === x[0]} className="chip" aria-pressed=${energie === x[0]} onClick=${() => setEnergie(energie === x[0] ? null : x[0])}>${x[1]}</button>`)}</div></div>
+    <div className="stack" style=${{ gap: 6 }}><span className="fld-l">La séance était…</span>
+      <div className="chips" role="radiogroup" aria-label="Difficulté de la séance">${WK_DIFF.map(x => html`<button key=${x[0]} type="button" role="radio" aria-checked=${diff === x[0]} className="chip" aria-pressed=${diff === x[0]} onClick=${() => setDiff(diff === x[0] ? null : x[0])}>${x[1]}</button>`)}</div></div>
+    <div className="stack" style=${{ gap: 6 }}><span className="fld-l">Gêne ou douleur ?</span>
+      <div className="chips" role="group" aria-label="Zones douloureuses">${WK_GENE.map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${gene.indexOf(x[0]) >= 0} onClick=${() => toggleGene(x[0])}>${x[1]}</button>`)}</div></div>
+    <label className="fld" htmlFor="wo-note-fin"><span className="fld-l">Note (facultatif)</span><textarea id="wo-note-fin" className="inp" rows="2" maxLength="400" placeholder="Sensations, ce qu'il faut améliorer…" value=${note} onChange=${e => setNote(e.target.value)}></textarea></label>
+    <button type="button" className="btn pri wide" onClick=${() => onDone({ energie, difficulte: diff, gene, note: note.trim() })}><${Icon} n="check" s=${18} />Terminer la séance</button>
     <button type="button" className="btn ghost wide" onClick=${onClose}>Continuer la séance</button>
   <//>`;
 }
+
+/* Écran de fin : bravo, chiffres, records, bilan, prochaine séance ; « Retour à la muscu » rend l'interface normale. */
+function WorkoutDone({ date, onClose, go }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), se = S.seances[date];
+  if (!se) { setTimeout(onClose, 0); return null; }
+  const r = Apex.resumeSeance(se), sr = wkSeriesDe(se), records = wkRecords(S, se, date, exos), b = se.bilan || {}, debut = se.debut ? new Date(se.debut).getTime() : null, fin = se.finAt ? new Date(se.finAt).getTime() : Date.now();
+  let prochaine = null; for (let k = 1; k <= 7 && !prochaine; k++) { const d = Apex.addDays(date, k), t = cfg.planning && cfg.planning[Apex.dow(d)]; if (t && Apex.types(cfg).indexOf(t) >= 0) prochaine = { t, d }; }
+  const lab = (L, v) => (L.find(x => x[0] === v) || [])[1];
+  return html`<div className="wo-done">
+    <div className="wo-big" aria-hidden="true"><${Icon} n="check" s=${44} w=${2.6} /></div>
+    <h1>Séance terminée</h1><p className="mut">${se.type || 'Séance libre'} · ${dMid(date)}</p>
+    <div className="wo-fin">
+      <div><span>Durée</span><b>${debut ? wkTemps(fin - debut) : '–'}</b></div><div><span>Séries</span><b>${r.sets}<small> / ${sr.total}</small></b></div>
+      <div><span>Tonnage</span><b>${f0(r.tonnage)}<small> kg</small></b></div><div><span>RIR moyen</span><b>${r.rpe == null ? '–' : f1(10 - r.rpe)}</b></div>
+    </div>
+    ${records.length > 0 && html`<div className="note acc"><${Icon} n="flame" /><div><b>${records.length} record${records.length > 1 ? 's' : ''} !</b>${records.map(x => html`<span key=${x.n}>${x.n} : e1RM ${f1(x.e1)} kg (+${f1(x.gain)})</span>`)}</div></div>`}
+    ${(b.energie || b.difficulte || (b.gene || []).length > 0) && html`<div className="chips" aria-label="Ton bilan">${b.energie ? html`<span className="chip on">${lab(WK_ENERGIE, b.energie)}</span>` : ''}${b.difficulte ? html`<span className="chip on">${lab(WK_DIFF, b.difficulte)}</span>` : ''}${(b.gene || []).map(k => html`<span key=${k} className="chip on warn">Gêne : ${lab(WK_GENE, k).toLowerCase()}</span>`)}</div>`}
+    ${(b.gene || []).length > 0 && html`<div className="note"><${Icon} n="alert" /><div><span>Si la gêne dure, allège les exercices de cette zone et parle-en à un professionnel de santé. La prochaine adaptation de séance évitera cette zone.</span></div></div>`}
+    ${prochaine && html`<div className="note"><${Icon} n="dumbbell" /><div><span>Prochaine séance : <b>${prochaine.t}</b>, ${dLong(prochaine.d)}.</span></div></div>`}
+    <button type="button" className="btn pri wide" onClick=${onClose}><${Icon} n="dumbbell" s=${18} />Retour à la muscu</button>
+    <button type="button" className="btn wide" onClick=${() => { onClose(); if (go) go('repas'); }}><${Icon} n="utensils" s=${18} />Voir mes repas</button>
+  </div>`;
+}
+
+/* La séance démarrée la plus récente et pas terminée (depuis moins de 14 h) : c'est la « séance en cours ». */
+const wkLive = seances => { const lim = Date.now() - 14 * 3600 * 1000; let best = null; Object.keys(seances || {}).forEach(d => { const q = seances[d]; if (!q || q.fin || !q.debut || new Date(q.debut).getTime() < lim) return; if (!best || d > best.date) best = Object.assign({ date: d }, q); }); return best; };
 
 /* La séance du jour une fois démarrée (ou terminée). */
 function Workout({ date }) {
@@ -3867,7 +3906,7 @@ function Workout({ date }) {
   const r = Apex.resumeSeance(se), sr = wkSeriesDe(se), pc = sr.total ? Math.round(sr.faites / sr.total * 100) : 0, fini = !!se.fin, nOk = list.filter(x => x.ok).length;
   const swEx = sheet && sheet.t === 'swap' ? list[sheet.i] : null, edEx = sheet && sheet.t === 'edit' ? list[sheet.i] : null;
   const suite = i => { setTimeout(() => { const els = [...document.querySelectorAll('.wo-x')]; const nx = els.slice(i + 1).find(x => !x.classList.contains('fini')); if (nx) nx.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 450); };
-  const terminer = note => { CHR.resetRest(); Store.patch('seances', date, { date, fin: true, finAt: new Date().toISOString(), note: note || null }); setSheet(null); toast('Séance terminée : ' + r.sets + ' séries, ' + f0(r.tonnage) + ' kg'); };
+  const terminer = bilan => { CHR.resetRest(); Store.patch('seances', date, { date, fin: true, finAt: new Date().toISOString(), bilan: bilan || null, note: (bilan && bilan.note) || null }); setSheet(null); try { window.dispatchEvent(new CustomEvent('train:done', { detail: { date } })); } catch (e) { /* sans effet */ } };
   return html`<div className="wo c7">
     <div className=${cx('wo-top', fini && 'fini')}>
       <div className="wo-th"><div className="wo-tt"><b>${se.type || 'Séance libre'}</b><span>${fini ? 'Terminée' : 'En cours'} · ${dMid(date)}</span></div>
@@ -4504,7 +4543,7 @@ function Dispos({ min, setMin, eq, setEq, foc, setFoc, groupes }) {
 function AdaptSheet({ date, plan, type, onApply, onClose }) {
   const st = useStore(), cfg = st.cfg(), S = st.get(), j = S.journal[date] || {}, sample = st.caps().sample, exos = Apex.allExos(cfg), GR = Object.values(Apex.groupes(cfg));
   const [min, setMin] = useState(() => +lsGet('ad:min', (cfg.q && cfg.q.duree) || 60)); const [eq, setEq] = useState(() => lsGet('ad:eq', 'salle')); const [foc, setFoc] = useState([]);
-  const [more, setMore] = useState(false); const [dou, setDou] = useState(''); const [note, setNote] = useState(''); const [busy, setBusy] = useState(false); const [res, setRes] = useState(null);
+  const [more, setMore] = useState(false); const [dou, setDou] = useState(() => { /* gêne signalée au bilan de la dernière séance (3 jours) : zone sensible préremplie */ const S = Store.get(), lim = Apex.addDays(Apex.today(), -3), l = Object.keys(S.seances).filter(d => d >= lim && S.seances[d].bilan && (S.seances[d].bilan.gene || []).length).sort().pop(); return l ? S.seances[l].bilan.gene.join(', ') : ''; }); const [note, setNote] = useState(''); const [busy, setBusy] = useState(false); const [res, setRes] = useState(null);
   const forme = Apex.num(j.energie) ? j.energie : null;
   const run = async () => {
     lsSet('ad:min', min); lsSet('ad:eq', eq); setBusy(true); setRes(null);
