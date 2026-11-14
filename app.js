@@ -3062,22 +3062,16 @@ function PoidsCard({ date, win }) {
 }
 
 function Dashboard({ date, go, setDate }) {
-  const [win, setWin] = useState(90);
   return html`<div>
-    <div className="view-h"><h1>${dLong(date)}</h1><p>Check-in à jeun, cibles du jour, tendance.</p></div>
+    <div className="view-h"><h1>${dLong(date)}</h1><p>Check-in à jeun, cibles du jour.</p></div>
     <div className="grid">
       <div className="c12"><${WeekStrip} date=${date} setDate=${setDate} /></div>
       <${Hero} date=${date} go=${go} />
       <${CheckIn} date=${date} go=${go} />
       <${Lecture} date=${date} />
-      <div className="c12 row sb" style=${{ marginTop: 6 }}>
-        <span className="eyebrow">Tendance</span>
-        <${Seg} neutral label="Période des graphiques" value=${win} onChange=${setWin} options=${[[30, '30 j'], [90, '90 j'], [0, 'Tout']]} />
-      </div>
-      <${PoidsCard} date=${date} win=${win} />
       <div className="c4 stack" style=${{ alignContent: 'start', gap: 14 }}>
-        <${MensuCard} date=${date} win=${win} />
         <${Activite} date=${date} />
+        <button type="button" className="btn grow" onClick=${() => go('analytics')}><${Icon} n="chart" s=${18} />Courbes et progression</button>
       </div>
     </div>
   </div>`;
@@ -3831,7 +3825,7 @@ function Training({ date, setDate, go }) {
       <div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}><${MusclesSeance} date=${date} /></div>
     </div>`}
     ${view === 'prog' && html`<${ProgrammeTab} />`}
-    ${view === 'suivi' && html`<div className="grid"><div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}><${FatigueCard} date=${date} /><${FocusCard} date=${date} /></div><${HistoCard} /></div>`}
+    ${view === 'suivi' && html`<div className="grid"><div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}><${FatigueCard} date=${date} /></div><div className="c7 stack" style=${{ gap: 14, alignContent: 'start' }}><${FocusCard} date=${date} /><button type="button" className="btn grow" onClick=${() => go('analytics')}><${Icon} n="chart" s=${18} />Courbes de force et charges dans Analyse</button></div></div>`}
   </div>`;
 }
 
@@ -4531,9 +4525,12 @@ function Analytics({ date }) {
       <${Seg} neutral label="Période des graphiques" value=${win} onChange=${setWin} options=${[[30, '30 j'], [90, '90 j'], [0, 'Tout']]} /></div>
     <div className="grid">
       <${SecheCard} date=${date} />
+      <${PoidsCard} date=${date} win=${win} />
+      <div className="c4 stack" style=${{ alignContent: 'start', gap: 14 }}><${MensuCard} date=${date} win=${win} /></div>
       <${ProjectionCard} date=${date} win=${win} />
       <${ApportCard} date=${date} win=${win} />
       <${ForceCard} date=${date} win=${win} />
+      <${HistoCard} />
       <${AdherenceCard} date=${date} />
       <${VolumeCard} date=${date} />
       <${PhotosCard} date=${date} />
