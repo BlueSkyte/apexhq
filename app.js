@@ -507,7 +507,10 @@ const Apex = (() => {
   const groupes = cfg => { const a = cfg && Array.isArray(cfg.focus) ? cfg.focus : GROUPES_DEF, o = {}; a.forEach(g => { if (g && g.id && Array.isArray(g.m)) o[g.id] = g.m.some(m => MIGR[m]) ? Object.assign({}, g, { m: migrList(g.m) }) : g; }); return o; };
   const focusLabel = (cfg, muscle) => { const g = groupes(cfg); for (const k in g) if (g[k].m.indexOf(muscle) >= 0) return g[k].n; return ''; };
 
-  const setFait = s => !!s && s.r > 0;
+  /* Une série est « cochée » quand on a validé la case (ok) ou, comme avant, quand des répétitions sont saisies ; ok:false la décoche.
+     Les séries d'échauffement (w) se cochent mais ne comptent ni dans le volume, ni dans l'e1RM, ni dans le tonnage. */
+  const setCoche = s => !!s && s.ok !== false && (s.ok === true || s.r > 0);
+  const setFait = s => !!s && s.r > 0 && s.ok !== false && !s.w;
   const setDur = s => setFait(s) && (s.rpe == null || s.rpe >= 6.5);
   function e1rm(s) {
     if (!setFait(s) || !(s.kg > 0)) return 0;
@@ -651,7 +654,7 @@ const Apex = (() => {
     FOODS, CATS, allFoods, foodOf, grams, mac, totMeal, totJour, Z, add,
     MODELES, pas, arrondi, ajuster, planDuJour, swapOptions, boucler, lissage,
     serie, mm7, serieMM7, pente, tendance, verdictRythme, eta, tdee, adherence, navy, lecture,
-    MUSCLES, EXOS, PROG, GROUPES, allExos, progOf, setFait, setDur, e1rm, volumeEntre, volumePlanType, focusSemaine,
+    MUSCLES, EXOS, PROG, GROUPES, allExos, progOf, setFait, setCoche, setDur, e1rm, volumeEntre, volumePlanType, focusSemaine,
     histoExo, objectif, tendanceExo, liftCle, alertesFocus, fatigue, prochaineSeance, cardioKcal, resumeSeance,
   };
 })();
@@ -2661,6 +2664,9 @@ const IC = {
   chat: ['M4 5h16v11H9l-5 4z', 'M8 9.5h8', 'M8 12.5h5'],
   up: ['M6 14.5l6-6 6 6'],
   down: ['M6 9.5l6 6 6-6'],
+  more: [[5, 12, 1.4], [12, 12, 1.4], [19, 12, 1.4]],
+  skip: ['M6 5l9 7-9 7z', 'M18 5v14'],
+  note: ['M6 3.5h9l4 4V20.5H6z', 'M14.5 3.5v4.5H19', 'M9 12h6', 'M9 16h6'],
   grip: [[9, 6, 1.1], [15, 6, 1.1], [9, 12, 1.1], [15, 12, 1.1], [9, 18, 1.1], [15, 18, 1.1]],
   play: ['M8 5.5v13l11-6.5z'],
   pause: ['M8.5 5v14', 'M15.5 5v14'],
@@ -3571,7 +3577,6 @@ function Repas({ date }) {
 /* Macrova — onglet 3 : séance du jour, charges, points faibles (pecs, biceps, deltoïdes latéraux), fatigue. */
 const fl = e => Apex.focusLabel(Store.cfg(), e.m);
 const setsTxt = sets => { const g = {}; sets.forEach(s => { const k = fq(s.kg || 0); (g[k] = g[k] || []).push(s.r); }); return Object.keys(g).map(k => k + ' × ' + g[k].join('·')).join('  '); };
-const cleanSet = s => { const o = {}; ['kg', 'r', 'rpe'].forEach(k => { if (s[k] != null) o[k] = s[k]; }); return o; };
 
 function WeekStrip({ date, setDate }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), from = Apex.lundi(date), L = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -3601,53 +3606,6 @@ function ExoEditSheet({ e0, x, onPatch, onSwap, onRemove, onClose }) {
     </div>
     <button type="button" className="btn pri wide" onClick=${onClose}><${Icon} n="check" s=${18} />Terminé</button>
   <//>`;
-}
-
-function ExoBlock({ ex, exos, seances, date, onSets, onSwap, onDel, onOk, onRest, onEdit, i: pos, n: total, onMove }) {
-  const e0 = exos[ex.e] || { n: ex.e, m: '', s: [], lo: 8, hi: 12, inc: 2.5 }, e = Object.assign({}, e0, { rir: Apex.rirDefaut(e0) }, Apex.ovOf(ex));
-  const h = Apex.histoExo(seances, ex.e).filter(x => x.date < date), last = h.length ? h[h.length - 1] : null, obj = Apex.objectif(e, last);
-  const best = h.reduce((b, x) => Math.max(b, x.e1), 0), cur = (ex.sets || []).reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0), ph = String(obj.reps).split('·');
-  const rest = Apex.restDe(e0, ex), faites = (ex.sets || []).filter(Apex.setFait), tout = (ex.sets || []).length > 0 && faites.length === (ex.sets || []).length;
-  const [ouvert, setOuvert] = useState(false), replie = !!ex.ok && !ouvert;
-  const setAt = (i, k, v) => { if (k === 'r' && v > 0 && !(ex.sets[i] && ex.sets[i].r > 0)) chronoApresSerie(rest); onSets(ex.sets.map((s, n) => (n === i ? cleanSet(Object.assign({}, s, { [k]: v })) : s))); };
-  return html`<div className=${cx('exo', ex.ok && 'valide')} data-sort="1">
-    <div className="exo-h has-grip" data-sort-zone="1">
-      <${Mover} i=${pos} n=${total} label=${e.n} onMove=${onMove} />
-      <span className="mfig-box" onClick=${onEdit}><${MuscleFig} m=${e.m} s=${e.s} h=${62} /></span>
-      <div className="exo-t"><button type="button" className="exo-tt" aria-label=${'Modifier ' + e.n} onClick=${onEdit}><h3>${e.n}<span className="badge">${Apex.MUSCLES[e.m] || ''}</span>${e.uni && html`<span className="badge uni">1 côté</span>`}</h3></button>
-        <div className="exo-m" onClick=${() => ex.ok && setOuvert(!ouvert)}>
-          ${replie ? html`<span><b>${faites.length}</b> série${faites.length > 1 ? 's' : ''} faite${faites.length > 1 ? 's' : ''}${faites.length ? html` · <b>${setsTxt(faites)}</b>` : ''}</span>` : html`
-          <span>${last ? html`Dernier <b>${setsTxt(last.sets)}</b>` : 'Première fois'}</span>
-          <span>Objectif <b>${obj.txt}</b></span>
-          ${cur > 0 && html`<span>e1RM <b>${f1(cur)} kg</b></span>`}`}
-        </div></div>
-      <div className="exo-a">
-        ${cur > best + 0.05 && best > 0 && html`<${Pill} st="good">Record<//>`}
-        <button type="button" className=${cx('exo-ok', ex.ok && 'on', tout && !ex.ok && 'pret')} aria-pressed=${!!ex.ok} aria-label=${(ex.ok ? 'Exercice validé, rouvrir : ' : 'Valider l’exercice : ') + e.n} onClick=${() => { setOuvert(false); onOk(!ex.ok); }}><${Icon} n="check" s=${20} w=${2.6} /></button>
-      </div>
-    </div>
-    ${!replie && html`<div className="sets">
-      <div className="set set-h"><span>#</span><span>kg</span><span></span><span>rép.</span><span>RPE</span><span></span></div>
-      ${(ex.sets || []).map((s, i) => html`<div key=${i} className=${cx('set', Apex.setFait(s) && 'done')}>
-        <span>${i + 1}</span>
-        <${Num} small id=${'s-' + ex.e + '-' + i + '-kg'} hint=${e.n + ' série ' + (i + 1) + ' : charge en kg'} value=${s.kg == null ? null : s.kg} onChange=${v => setAt(i, 'kg', v)} dec=${2} min=${0} max=${600} placeholder=${obj.kg == null ? '' : fq(obj.kg)} />
-        <span>×</span>
-        <${Num} small id=${'s-' + ex.e + '-' + i + '-r'} hint=${e.n + ' série ' + (i + 1) + ' : répétitions'} value=${s.r == null ? null : s.r} onChange=${v => setAt(i, 'r', v)} dec=${0} min=${0} max=${100} placeholder=${ph[i] || ph[ph.length - 1] || ''} />
-        <${Num} small id=${'s-' + ex.e + '-' + i + '-rpe'} hint=${e.n + ' série ' + (i + 1) + ' : RPE'} value=${s.rpe == null ? null : s.rpe} onChange=${v => setAt(i, 'rpe', v)} dec=${1} min=${1} max=${10} placeholder=${String(10 - e.rir)} />
-        <button type="button" className="ib sm" aria-label=${'Retirer la série ' + (i + 1)} onClick=${() => onSets(ex.sets.filter((_, n) => n !== i))}><${Icon} n="x" s=${15} /></button>
-      </div>`)}
-    </div>
-    <div className="exo-rest" role="group" aria-label="Temps de repos de cet exercice">
-      <button type="button" className="ib sm" aria-label="Moins 15 secondes de repos" onClick=${() => onRest(Math.max(30, rest - 15))}><${Icon} n="minus" s=${14} /></button>
-      <button type="button" className="btn sm" aria-label=${'Lancer le repos de ' + Apex.restTxt(rest)} onClick=${() => CHR.startRest(rest)}><${Icon} n="timer" s=${16} />Repos ${Apex.restTxt(rest)}</button>
-      <button type="button" className="ib sm" aria-label="Plus 15 secondes de repos" onClick=${() => onRest(Math.min(300, rest + 15))}><${Icon} n="plus" s=${14} /></button>
-    </div>
-    <div className="row sb">
-      <div className="row"><button type="button" className="btn sm ghost" onClick=${() => onSets((ex.sets || []).concat({}))}><${Icon} n="plus" s=${16} />Série</button>
-        <button type="button" className="btn sm ghost" aria-label=${'Remplacer ' + e.n} onClick=${onSwap}><${Icon} n="swap" s=${16} />Remplacer</button></div>
-      <${Confirm} label="Retirer l’exercice" sure="Retirer ?" cls="ghost" onYes=${onDel} />
-    </div>`}
-  </div>`;
 }
 
 function ExoSheet({ exos, title, muscle, onPick, onClose }) {
@@ -3686,35 +3644,7 @@ function SeanceCard({ date }) {
       <button type="button" className="btn" onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: Apex.prochaineSeance(S.seances, cfg, date) })}><${Icon} n="dumbbell" s=${18} />Passer en jour de salle</button></div>
   <//>`;
   if (!se) return html`<${DayPlan} date=${date} />`;
-  const r = Apex.resumeSeance(se), swEx = sheet && sheet.t === 'swap' ? se.exos[sheet.i] : null, edEx = sheet && sheet.t === 'edit' ? se.exos[sheet.i] : null;
-  return html`<${Card} cls="c7" title=${'Séance ' + (se.type || '')} sub=${dMid(date) + (se.fin ? ' · terminée' : ' · en cours')} right=${html`<${Pill} st=${se.fin ? 'good' : 'warn'}>${se.fin ? 'Terminée' : 'En cours'}<//>`}>
-    ${se.note && html`<div className="note"><${Icon} n="info" /><div><span>${se.note}</span></div></div>`}
-    ${(se.exos || []).length > 0 && html`<div className="exo-prog" role="img" aria-label=${(se.exos || []).filter(x => x.ok).length + ' exercices validés sur ' + (se.exos || []).length}>
-      <div className="exo-prog-l"><span>Exercices validés</span><b>${(se.exos || []).filter(x => x.ok).length} / ${(se.exos || []).length}</b></div>
-      <div className="exo-prog-b"><i style=${{ width: (se.exos || []).filter(x => x.ok).length / (se.exos || []).length * 100 + '%' }}></i></div></div>`}
-    <${SortList} onMove=${(a, b) => putExos(moveIn(se.exos, a, b))}>${(se.exos || []).map((ex, i) => html`<${ExoBlock} key=${ex.e + '-' + i} ex=${ex} exos=${exos} seances=${S.seances} date=${date} i=${i} n=${(se.exos || []).length} onMove=${(a, b) => putExos(moveIn(se.exos, a, b))}
-      onSets=${sets => putExos(se.exos.map((x, n) => (n === i ? Object.assign({}, x, { sets }) : x)))}
-      onSwap=${() => setSheet({ t: 'swap', i })}
-      onEdit=${() => setSheet({ t: 'edit', i })}
-      onOk=${v => putExos(se.exos.map((x, n) => (n === i ? Object.assign({}, x, { ok: v ? true : null }) : x)))}
-      onRest=${v => putExos(se.exos.map((x, n) => (n === i ? Object.assign({}, x, { rest: v }) : x)))}
-      onDel=${() => putExos(se.exos.filter((_, n) => n !== i))} />`)}<//>
-    <button type="button" className="btn wide" onClick=${() => setSheet({ t: 'add' })}><${Icon} n="plus" s=${18} />Exercice</button>
-    <div className="tiles">
-      <div className="tile"><span>Séries faites</span><b>${r.sets}</b></div>
-      <div className="tile"><span>Tonnage</span><b>${f0(r.tonnage)}<small>kg</small></b></div>
-      <div className="tile"><span>RPE moyen</span><b>${r.rpe == null ? '–' : f1(r.rpe)}</b></div>
-    </div>
-    <div className="row">
-      <button type="button" className=${cx('btn grow', !se.fin && 'pri')} onClick=${() => { Store.patch('seances', date, { date, fin: se.fin ? null : true }); if (!se.fin) toast('Séance terminée : ' + r.sets + ' séries, ' + f0(r.tonnage) + ' kg'); }}><${Icon} n="check" s=${18} />${se.fin ? 'Rouvrir la séance' : 'Terminer la séance'}</button>
-      <${Confirm} label="Supprimer" sure="Supprimer la séance ?" icon="trash" onYes=${() => Store.del('seances', date)} />
-    </div>
-    ${sheet && sheet.t === 'add' && html`<${ExoSheet} exos=${exos} title="Ajouter un exercice" onClose=${() => setSheet(null)} onPick=${id => putExos((se.exos || []).concat({ e: id, sets: [{}, {}, {}] }))} />`}
-    ${edEx && html`<${ExoEditSheet} e0=${exos[edEx.e] || { n: edEx.e, m: '', s: [], lo: 8, hi: 12, inc: 2.5 }} x=${Object.assign({}, edEx, { n: (edEx.sets || []).length })} onClose=${() => setSheet(null)}
-      onSwap=${() => setSheet({ t: 'swap', i: sheet.i })} onRemove=${() => putExos(se.exos.filter((_, n) => n !== sheet.i))}
-      onPatch=${f => putExos(se.exos.map((x, n) => { if (n !== sheet.i) return x; if (f.n == null) return Object.assign({}, x, f); const sets = (x.sets || []).slice(0, f.n); while (sets.length < f.n) sets.push({}); return Object.assign({}, x, { sets }); }))} />`}
-    ${swEx && html`<${ExoSheet} exos=${exos} title=${'Remplacer · ' + ((exos[swEx.e] || {}).n || '')} muscle=${(exos[swEx.e] || {}).m} onClose=${() => setSheet(null)} onPick=${id => putExos(se.exos.map((x, n) => (n === sheet.i ? Object.assign({}, x, { e: id }) : x)))} />`}
-  <//>`;
+  return html`<${Workout} date=${date} />`;
 }
 
 /* Muscles travaillés par la séance du jour : le bonhomme allumé, et le nombre de séries par muscle. */
@@ -3807,6 +3737,7 @@ function Training({ date, setDate }) {
   const cfg = useStore().cfg(), nS = Object.keys(cfg.planning || {}).filter(k => cfg.planning[k]).length, G = Apex.groupes(cfg), foc = Object.keys(G).map(k => G[k].n);
   const [view, setView] = useState(() => { const v = lsGet('train:view', 'seance'); return ['seance', 'prog', 'suivi'].indexOf(v) >= 0 ? v : 'seance'; });
   const pick = v => { setView(v); lsSet('train:view', v); };
+  useEffect(() => { const f = e => { pick(e.detail || 'seance'); setDate(Apex.today()); try { window.scrollTo(0, 0); } catch (x) { /* sans effet */ } }; window.addEventListener('train:view', f); return () => window.removeEventListener('train:view', f); }, []);
   return html`<div>
     <div className="view-h"><h1>Muscu · ${dMid(date)}</h1><p>${nS} séance${nS > 1 ? 's' : ''} par semaine · ${Apex.types(cfg).join(', ')}.</p><${ChronoBtn} /></div>
     <div className="ttabs" role="tablist" aria-label="Espace muscu">${[['prog', 'Programme', 'sliders'], ['seance', 'Séance', 'dumbbell'], ['suivi', 'Suivi', 'chart']].map(t => html`<button key=${t[0]} type="button" role="tab" aria-selected=${view === t[0]} className="ttab" onClick=${() => pick(t[0])}><${Icon} n=${t[2]} s=${18} />${t[1]}</button>`)}</div>
@@ -3817,8 +3748,168 @@ function Training({ date, setDate }) {
     </div>`}
     ${view === 'prog' && html`<${ProgrammeTab} />`}
     ${view === 'suivi' && html`<div className="grid"><div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}><${FatigueCard} date=${date} /><${FocusCard} date=${date} /></div><${HistoCard} /></div>`}
-    <${Chrono} />
   </div>`;
+}
+
+/* ---- 51-ui-workout.js ---- */
+/* Macrova — la séance en cours, façon Lyfta / Hevy / Strong :
+   barre du haut (durée, séries faites, tonnage), un bloc par exercice avec son tableau de séries
+   (série · précédent · kg · reps · RPE · ✓), repos lancé tout seul quand on coche une série, fin d'exercice automatique,
+   résumé de fin de séance avec les records. Les données restent celles de Apex.seances (sets {kg, r, rpe, ok, w}). */
+
+const useTick = ms => { const [, f] = useState(0); useEffect(() => { const t = setInterval(() => f(x => x + 1), ms); return () => clearInterval(t); }, [ms]); };
+const wkTemps = ms => { const t = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s; };
+function Elapsed({ debut, fin }) { useTick(1000); const a = debut ? new Date(debut).getTime() : 0; if (!a) return '–'; return wkTemps((fin ? new Date(fin).getTime() : Date.now()) - a); }
+const wkSeriesDe = se => { let total = 0, faites = 0; ((se && se.exos) || []).forEach(x => (x.sets || []).forEach(s => { if (s.w) return; total++; if (Apex.setCoche(s)) faites++; })); return { total, faites }; };
+const wkPrec = s => (s && s.r > 0 ? (s.kg > 0 ? fq(s.kg) + ' × ' + s.r : s.r + ' rép') : '–');
+
+/* Une ligne du tableau de séries. */
+function WkSet({ s, label, prev, phKg, phR, rpePh, onField, onCheck, onWarm, onFillPrev, nom }) {
+  const coche = Apex.setCoche(s);
+  return html`<div className=${cx('wo-s', coche && 'on', s.w && 'w')}>
+    <button type="button" className="wo-n" aria-label=${'Série ' + label + (s.w ? ' (échauffement)' : '') + ' : toucher pour passer en échauffement ou en série normale'} onClick=${onWarm}>${s.w ? 'W' : label}</button>
+    <button type="button" className="wo-p" disabled=${!prev || !(prev.r > 0)} aria-label=${prev && prev.r > 0 ? 'Reprendre la dernière séance : ' + wkPrec(prev) : 'Pas de séance précédente'} onClick=${onFillPrev}>${wkPrec(prev)}</button>
+    <${Num} small id=${null} hint=${nom + ' série ' + label + ' : charge en kg'} value=${s.kg == null ? null : s.kg} onChange=${v => onField('kg', v)} dec=${2} min=${0} max=${600} placeholder=${phKg == null ? '' : fq(phKg)} />
+    <${Num} small id=${null} hint=${nom + ' série ' + label + ' : répétitions'} value=${s.r == null ? null : s.r} onChange=${v => onField('r', v)} dec=${0} min=${0} max=${100} placeholder=${phR == null ? '' : String(phR)} />
+    <${Num} small id=${null} hint=${nom + ' série ' + label + ' : RPE'} value=${s.rpe == null ? null : s.rpe} onChange=${v => onField('rpe', v)} dec=${1} min=${1} max=${10} placeholder=${rpePh} />
+    <button type="button" className=${cx('wo-c', coche && 'on')} aria-pressed=${coche} aria-label=${(coche ? 'Décocher' : 'Valider') + ' la série ' + label} onClick=${onCheck}><${Icon} n="check" s=${20} w=${2.8} /></button>
+  </div>`;
+}
+
+/* Un exercice de la séance. */
+function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSuite }) {
+  const e0 = exos[ex.e] || { n: ex.e, m: '', s: [], lo: 8, hi: 12, inc: 2.5 }, e = Object.assign({}, e0, { rir: Apex.rirDefaut(e0) }, Apex.ovOf(ex));
+  const h = Apex.histoExo(seances, ex.e).filter(x => x.date < date), last = h.length ? h[h.length - 1] : null, obj = Apex.objectif(e, last), ph = String(obj.reps).split('·');
+  const rest = Apex.restDe(e0, ex), sets = ex.sets || [], normales = sets.filter(s => !s.w), faites = sets.filter(Apex.setFait);
+  const [ouvert, setOuvert] = useState(false), [note, setNote] = useState(!!ex.note), replie = !!ex.ok && !ouvert;
+  const best = h.reduce((b, x) => Math.max(b, x.e1), 0), cur = sets.reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0), record = cur > best + 0.05 && best > 0;
+  let num = 0;
+  const maj = (k, patch) => onSets(sets.map((s, n) => (n === k ? Object.assign({}, s, patch) : s)));
+  const champ = (k, f, v) => {
+    const s = sets[k]; if (f === 'r' && v > 0 && !Apex.setCoche(s)) chronoApresSerie(s.w ? 45 : rest);
+    const o = Object.assign({}, s, { [f]: v }); if (f === 'kg' || f === 'r') delete o.ok; // saisir une valeur re-coche la série
+    onSets(sets.map((x, n) => (n === k ? o : x)));
+  };
+  const cocher = k => {
+    const s = sets[k];
+    if (Apex.setCoche(s)) { maj(k, { ok: false }); return; }
+    const prev = last && last.sets[sets.slice(0, k).filter(x => !x.w).length], o = Object.assign({}, s, { ok: true });
+    if (!s.w) { if (!(o.r > 0)) { const r = +ph[k] || +ph[ph.length - 1] || (prev && prev.r) || e.hi; if (r > 0) o.r = Math.round(r); } if (o.kg == null) { const kg = prev && prev.kg > 0 ? prev.kg : obj.kg; if (kg > 0) o.kg = kg; } }
+    const nv = sets.map((x, n) => (n === k ? o : x)); onSets(nv);
+    chronoApresSerie(s.w ? 45 : rest);
+    if (nv.every(x => Apex.setCoche(x))) { setTimeout(() => { onOk(true); if (onSuite) onSuite(i); }, 350); }
+  };
+  const prevDe = k => last && last.sets[sets.slice(0, k).filter(x => !x.w).length];
+  if (replie) return html`<div className="wo-x fini" data-sort="1">
+    <div className="wo-xh" data-sort-zone="1">
+      <span className="mfig-box" onClick=${() => setOuvert(true)}><${MuscleFig} m=${e.m} s=${e.s} h=${40} /></span>
+      <button type="button" className="wo-xt" onClick=${() => setOuvert(true)} aria-label=${'Rouvrir ' + e.n}><b>${e.n}</b><span>${faites.length} série${faites.length > 1 ? 's' : ''}${faites.length ? ' · ' + setsTxt(faites) : ''}${record ? ' · record' : ''}</span></button>
+      <button type="button" className="wo-ok on" aria-label=${'Exercice terminé, rouvrir : ' + e.n} onClick=${() => { setOuvert(false); onOk(false); }}><${Icon} n="check" s=${20} w=${2.8} /></button>
+    </div></div>`;
+  return html`<div className="wo-x" data-sort="1">
+    <div className="wo-xh" data-sort-zone="1">
+      <span className="mfig-box" onClick=${onEdit}><${MuscleFig} m=${e.m} s=${e.s} h=${46} /></span>
+      <button type="button" className="wo-xt" onClick=${onEdit} aria-label=${'Modifier ' + e.n}><b>${e.n}</b><span><i className="badge">${Apex.MUSCLES[e.m] || ''}</i>${e.uni ? html` <i className="badge uni">1 côté</i>` : ''}${record ? html` <i className="badge rec">Record</i>` : ''}</span></button>
+      <button type="button" className="ib" aria-label=${'Options : ' + e.n} onClick=${onEdit}><${Icon} n="more" s=${22} /></button>
+    </div>
+    <div className="wo-meta">
+      <div className="wo-rest" role="group" aria-label="Temps de repos de cet exercice">
+        <button type="button" className="ib sm" aria-label="Moins 15 secondes de repos" onClick=${() => onPatch({ rest: Math.max(30, rest - 15) })}><${Icon} n="minus" s=${14} /></button>
+        <button type="button" className="wo-rt" aria-label=${'Lancer le repos de ' + Apex.restTxt(rest)} onClick=${() => CHR.startRest(rest)}><${Icon} n="timer" s=${15} />${Apex.restTxt(rest)}</button>
+        <button type="button" className="ib sm" aria-label="Plus 15 secondes de repos" onClick=${() => onPatch({ rest: Math.min(300, rest + 15) })}><${Icon} n="plus" s=${14} /></button>
+      </div>
+      <span className="wo-obj">${last ? html`Dernière fois <b>${setsTxt(last.sets)}</b>` : 'Première fois'} · objectif <b>${obj.txt}</b></span>
+    </div>
+    ${(note || ex.note) && html`<textarea className="inp wo-note" rows="2" maxLength="300" placeholder="Note : réglage de la machine, sensation, douleur…" aria-label=${'Note : ' + e.n} defaultValue=${ex.note || ''} onBlur=${ev => onPatch({ note: ev.target.value.trim() || null })}></textarea>`}
+    <div className="wo-sets">
+      <div className="wo-s wo-sh"><span>Série</span><span>Précédent</span><span>kg</span><span>Reps</span><span>RPE</span><span></span></div>
+      ${sets.map((s, k) => { if (!s.w) num++; const prev = prevDe(k);
+        return html`<${WkSet} key=${k} s=${s} label=${s.w ? 'W' : num} prev=${prev} nom=${e.n}
+          phKg=${prev && prev.kg > 0 ? prev.kg : obj.kg} phR=${+ph[k] || +ph[ph.length - 1] || (e.lo + '-' + e.hi)} rpePh=${String(10 - e.rir)}
+          onField=${(f, v) => champ(k, f, v)} onCheck=${() => cocher(k)} onWarm=${() => maj(k, { w: s.w ? null : true })}
+          onFillPrev=${() => { if (!prev) return; const o = Object.assign({}, s, { kg: prev.kg, r: prev.r }); delete o.ok; onSets(sets.map((x, n) => (n === k ? o : x))); }} />`; })}
+    </div>
+    <div className="wo-add">
+      <button type="button" className="btn sm" onClick=${() => onSets(sets.concat({}))}><${Icon} n="plus" s=${16} />Série</button>
+      <button type="button" className="btn sm ghost" disabled=${sets.length <= 1} onClick=${() => onSets(sets.slice(0, -1))}><${Icon} n="minus" s=${16} />Série</button>
+      <button type="button" className="btn sm ghost" aria-pressed=${note} onClick=${() => setNote(!note)}><${Icon} n="note" s=${16} />Note</button>
+      <button type="button" className=${cx('btn sm', normales.length > 0 && normales.every(s => Apex.setCoche(s)) && 'pri')} onClick=${() => onOk(true)}><${Icon} n="check" s=${16} />Exercice terminé</button>
+    </div>
+  </div>`;
+}
+
+/* Résumé de fin de séance : durée, séries, tonnage, records ; on termine ici. */
+function FinishSheet({ date, se, exos, onClose, onDone }) {
+  const S = Store.get(), r = Apex.resumeSeance(se), st = wkSeriesDe(se), [note, setNote] = useState(se.note || '');
+  const debut = se.debut ? new Date(se.debut).getTime() : null, duree = debut ? Date.now() - debut : null;
+  const records = (se.exos || []).map(x => { const best = Apex.histoExo(S.seances, x.e).filter(h => h.date < date).reduce((b, h) => Math.max(b, h.e1), 0), cur = (x.sets || []).reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0); return best > 0 && cur > best + 0.05 ? { n: (exos[x.e] || { n: x.e }).n, e1: cur, gain: cur - best } : null; }).filter(Boolean);
+  const vides = st.total - st.faites;
+  return html`<${Sheet} title="Terminer la séance" onClose=${onClose}>
+    <div className="wo-fin">
+      <div><span>Durée</span><b>${duree ? wkTemps(duree) : '–'}</b></div><div><span>Séries</span><b>${r.sets}<small> / ${st.total}</small></b></div>
+      <div><span>Tonnage</span><b>${f0(r.tonnage)}<small> kg</small></b></div><div><span>RPE moyen</span><b>${r.rpe == null ? '–' : f1(r.rpe)}</b></div>
+    </div>
+    ${records.length > 0 && html`<div className="note acc"><${Icon} n="flame" /><div><b>${records.length} record${records.length > 1 ? 's' : ''} !</b>${records.map(x => html`<span key=${x.n}>${x.n} : e1RM ${f1(x.e1)} kg (+${f1(x.gain)})</span>`)}</div></div>`}
+    ${vides > 0 && html`<div className="note"><${Icon} n="info" /><div><span>${vides} série${vides > 1 ? 's' : ''} non cochée${vides > 1 ? 's' : ''} : elle${vides > 1 ? 's' : ''} ne compte${vides > 1 ? 'nt' : ''} pas dans tes statistiques.</span></div></div>`}
+    <label className="fld" htmlFor="wo-note-fin"><span className="fld-l">Note de séance</span><textarea id="wo-note-fin" className="inp" rows="2" maxLength="400" placeholder="Forme, sensations, ce qu'il faut améliorer…" value=${note} onChange=${e => setNote(e.target.value)}></textarea></label>
+    <button type="button" className="btn pri wide" onClick=${() => onDone(note.trim())}><${Icon} n="check" s=${18} />Terminer la séance</button>
+    <button type="button" className="btn ghost wide" onClick=${onClose}>Continuer la séance</button>
+  <//>`;
+}
+
+/* La séance du jour une fois démarrée (ou terminée). */
+function Workout({ date }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), se = S.seances[date]; const [sheet, setSheet] = useState(null);
+  useEffect(() => { const t = document.querySelector('header.top'); if (t) document.documentElement.style.setProperty('--toph', t.offsetHeight + 'px'); }, []);
+  if (!se) return null;
+  const list = se.exos || [], putExos = ex => Store.patch('seances', date, { date, exos: ex });
+  const put = (i, f) => putExos(list.map((x, n) => (n === i ? Object.assign({}, x, f) : x)));
+  const r = Apex.resumeSeance(se), sr = wkSeriesDe(se), pc = sr.total ? Math.round(sr.faites / sr.total * 100) : 0, fini = !!se.fin, nOk = list.filter(x => x.ok).length;
+  const swEx = sheet && sheet.t === 'swap' ? list[sheet.i] : null, edEx = sheet && sheet.t === 'edit' ? list[sheet.i] : null;
+  const suite = i => { setTimeout(() => { const els = [...document.querySelectorAll('.wo-x')]; const nx = els.slice(i + 1).find(x => !x.classList.contains('fini')); if (nx) nx.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 450); };
+  const terminer = note => { CHR.resetRest(); Store.patch('seances', date, { date, fin: true, finAt: new Date().toISOString(), note: note || null }); setSheet(null); toast('Séance terminée : ' + r.sets + ' séries, ' + f0(r.tonnage) + ' kg'); };
+  return html`<div className="wo c7">
+    <div className=${cx('wo-top', fini && 'fini')}>
+      <div className="wo-th"><div className="wo-tt"><b>${se.type || 'Séance libre'}</b><span>${fini ? 'Terminée' : 'En cours'} · ${dMid(date)}</span></div>
+        <div className="wo-time" role="timer" aria-label="Durée de la séance"><${Icon} n="clock" s=${16} /><${Elapsed} debut=${se.debut} fin=${fini ? se.finAt : null} /></div>
+        ${fini ? html`<button type="button" className="btn sm" onClick=${() => Store.patch('seances', date, { date, fin: null })}><${Icon} n="refresh" s=${16} />Rouvrir</button>`
+          : html`<button type="button" className="btn pri sm" onClick=${() => setSheet({ t: 'fin' })}><${Icon} n="check" s=${16} />Terminer</button>`}</div>
+      <div className="wo-st"><span><b>${sr.faites}</b> / ${sr.total} séries</span><span><b>${f0(r.tonnage)}</b> kg</span><span><b>${nOk}</b> / ${list.length} exos</span></div>
+      <div className="wo-pb" aria-hidden="true"><i style=${{ width: pc + '%' }}></i></div>
+    </div>
+    ${se.note && fini && html`<div className="note"><${Icon} n="info" /><div><span>${se.note}</span></div></div>`}
+    <${SortList} className="wo-list" onMove=${(a, b) => putExos(moveIn(list, a, b))}>${list.map((ex, i) => html`<${WkExo} key=${ex.e + '-' + i} ex=${ex} i=${i} exos=${exos} seances=${S.seances} date=${date}
+      onSets=${sets => put(i, { sets })} onPatch=${f => put(i, f)} onEdit=${() => setSheet({ t: 'edit', i })} onOk=${v => put(i, { ok: v ? true : null })} onSuite=${suite} />`)}<//>
+    ${!list.length && html`<div className="empty"><span><b>Séance vide.</b> Ajoute un premier exercice.</span></div>`}
+    <button type="button" className="btn wide" onClick=${() => setSheet({ t: 'add' })}><${Icon} n="plus" s=${18} />Ajouter un exercice</button>
+    ${!fini && html`<div className="row"><button type="button" className="btn grow" onClick=${() => CHR.open()}><${Icon} n="timer" s=${18} />Chrono</button>
+      <${Confirm} label="Annuler la séance" sure="Tout effacer ?" icon="trash" cls="ghost" onYes=${() => { CHR.resetRest(); Store.del('seances', date); }} /></div>`}
+    ${fini && html`<div className="row"><${Confirm} label="Supprimer la séance" sure="Supprimer ?" icon="trash" cls="ghost" onYes=${() => Store.del('seances', date)} /></div>`}
+    ${sheet && sheet.t === 'add' && html`<${ExoSheet} exos=${exos} title="Ajouter un exercice" onClose=${() => setSheet(null)} onPick=${id => putExos(list.concat({ e: id, sets: [{}, {}, {}] }))} />`}
+    ${edEx && html`<${ExoEditSheet} e0=${exos[edEx.e] || { n: edEx.e, m: '', s: [], lo: 8, hi: 12, inc: 2.5 }} x=${Object.assign({}, edEx, { n: (edEx.sets || []).length })} onClose=${() => setSheet(null)}
+      onSwap=${() => setSheet({ t: 'swap', i: sheet.i })} onRemove=${() => putExos(list.filter((_, n) => n !== sheet.i))}
+      onPatch=${f => putExos(list.map((x, n) => { if (n !== sheet.i) return x; if (f.n == null) return Object.assign({}, x, f); const sets = (x.sets || []).slice(0, f.n); while (sets.length < f.n) sets.push({}); return Object.assign({}, x, { sets }); }))} />`}
+    ${swEx && html`<${ExoSheet} exos=${exos} title=${'Remplacer · ' + ((exos[swEx.e] || {}).n || '')} muscle=${(exos[swEx.e] || {}).m} onClose=${() => setSheet(null)} onPick=${id => putExos(list.map((x, n) => (n === sheet.i ? Object.assign({}, x, { e: id }) : x)))} />`}
+    ${sheet && sheet.t === 'fin' && html`<${FinishSheet} date=${date} se=${se} exos=${exos} onClose=${() => setSheet(null)} onDone=${terminer} />`}
+  </div>`;
+}
+
+/* Démarre la séance « type » du programme à cette date (depuis l'onglet Programme, comme une routine Lyfta). */
+function demarrerSeance(type, date) {
+  const cfg = Store.cfg(), liste = Apex.progItems(cfg)[type] || [];
+  Store.patch('journal', date, { date, statut: 'salle', seance: type, plan: null, planNote: null });
+  Store.patch('seances', date, { date, type, debut: new Date().toISOString(), exos: liste.map(x => Object.assign({ e: x.e, sets: Array.from({ length: x.n }, () => ({})) }, Apex.ovOf(x))) });
+  toast('Séance ' + type + ' ouverte');
+  try { window.dispatchEvent(new CustomEvent('train:view', { detail: 'seance' })); } catch (e) { /* sans effet */ }
+}
+
+/* Petite pastille « séance en cours » sur les autres onglets : on reprend en un geste. */
+function SessionPill({ tab, go }) {
+  const st = useStore(), S = st.get(), today = Apex.today(), se = S.seances[today]; useTick(1000);
+  if (!se || se.fin || tab === 'training') return null;
+  const sr = wkSeriesDe(se);
+  return html`<button type="button" className="sess-pill" aria-label=${'Reprendre la séance ' + (se.type || '') + ', ' + sr.faites + ' séries faites sur ' + sr.total} onClick=${() => go('training')}>
+    <${Icon} n="dumbbell" s=${18} /><b>${se.type || 'Séance'}</b><span><${Elapsed} debut=${se.debut} /></span><em>${sr.faites}/${sr.total}</em><i>Reprendre</i></button>`;
 }
 
 /* ---- 52-ui-programme.js ---- */
@@ -3913,6 +4004,12 @@ function PlanningCard({ cfg }) {
   <//>`;
 }
 
+/* Bouton « Démarrer » d'une séance du programme : lance la séance aujourd'hui (si aucune n'est en cours). */
+function StartRoutine({ type, n }) {
+  const st = useStore(), S = st.get(), today = Apex.today(), se = S.seances[today], live = !!se;
+  if (live) return html`<${Confirm} label=${(se.fin ? 'Remplacer la séance terminée par « ' : 'Remplacer la séance en cours par « ') + type + ' »'} sure="Remplacer ?" icon="play" cls="wide" onYes=${() => demarrerSeance(type, today)} />`;
+  return html`<button type="button" className="btn pri wide" disabled=${!n} onClick=${() => demarrerSeance(type, today)}><${Icon} n="play" s=${18} />Démarrer « ${type} » aujourd’hui</button>`;
+}
 function SeanceProg({ type, items, exos, cfg, open, onToggle, onParams, onAdd }) {
   const list = items[type] || [], sets = list.reduce((s, x) => s + x.n, 0), dur = Apex.dureeSeance(list.map(x => ({ e: x.e, n: x.n })), exos);
   const ms = {}; list.forEach(x => { const e = exos[x.e]; if (e) ms[e.m] = (ms[e.m] || 0) + x.n; });
@@ -3926,6 +4023,7 @@ function SeanceProg({ type, items, exos, cfg, open, onToggle, onParams, onAdd })
       <${Icon} n=${open ? 'up' : 'down'} s=${18} /></button>
     ${open && html`<div className="sp-b">
       ${nbJours === 0 && html`<p className="mut" style=${{ fontSize: 12 }}>Pas placée dans la semaine : elle n’est pas comptée dans le volume.</p>`}
+      <${StartRoutine} type=${type} n=${list.length} />
       <${SortList} className="pr-list" onMove=${(a, b) => upd(it => Apex.deplacerExo(it, type, a, b))}>${list.map((x, i) => { const e = exos[x.e] || { n: x.e, m: '', lo: 8, hi: 12 }, p = Apex.paramsDe(e, x), foc = Apex.focusLabel(cfg, e.m); return html`<div key=${x.e + '-' + i} className="pr" data-sort="1">
         <span className="mfig-box"><${MuscleFig} m=${e.m} s=${e.s} h=${64} /></span>
         <button type="button" className="pr-n" onClick=${() => onParams(i)} aria-label=${'Régler ' + e.n}>
@@ -4023,7 +4121,7 @@ const CHR = (() => {
     startWatch: () => { unlock(); if (!s.startAt) { s.startAt = Date.now(); emit(); } },
     pauseWatch: () => { if (s.startAt) { s.acc += Date.now() - s.startAt; s.startAt = null; emit(); } },
     resetWatch: () => { s.startAt = null; s.acc = 0; emit(); },
-    auto: () => { try { return localStorage.getItem('apexhq:chrono:auto') === '1'; } catch (e) { return false; } },
+    auto: () => { try { return localStorage.getItem('apexhq:chrono:auto') !== '0'; } catch (e) { return true; } },
     setAuto: v => { try { localStorage.setItem('apexhq:chrono:auto', v ? '1' : '0'); } catch (e) { /* non mémorisé */ } emit(); },
   };
   /* Horloge globale : détecte la fin du repos même si le chrono est replié ou si on est sur un autre onglet. */
@@ -4051,6 +4149,12 @@ function Chrono() {
     : (s.startAt ? html`<button type="button" className="btn pri chr-go" onClick=${c.pauseWatch}><${Icon} n="pause" s=${20} />Pause</button>`
       : html`<button type="button" className="btn pri chr-go" onClick=${c.startWatch}><${Icon} n="play" s=${20} />${s.acc > 0 ? 'Reprendre' : 'Démarrer'}</button>`);
   if (!open && !run && !(s.left === 0 && repos)) return null;
+  if (!open && repos && (run || fini)) return html`<div className="chr"><div className=${cx('chr-bar', low && 'low', fini && 'done')} role="timer" aria-label=${fini ? 'Repos terminé' : 'Repos en cours'}>
+    <i className="chr-fill" aria-hidden="true" style=${{ width: (fini ? 100 : tot ? Math.max(0, Math.min(100, l / tot * 100)) : 0) + '%' }}></i>
+    <button type="button" className="ib" aria-label="Moins 15 secondes" onClick=${() => c.adjust(-15)} disabled=${fini}>−15</button>
+    <button type="button" className="chr-bt" aria-label="Ouvrir le chrono" onClick=${c.toggle}><small>${fini ? 'Repos terminé' : 'Repos'}</small><b>${fini ? 'Série suivante' : chrFmt(t)}</b></button>
+    <button type="button" className="ib" aria-label="Plus 15 secondes" onClick=${() => c.adjust(15)} disabled=${fini}>+15</button>
+    <button type="button" className="chr-skip" aria-label=${fini ? 'Fermer' : 'Passer le repos'} onClick=${c.resetRest}><${Icon} n=${fini ? 'check' : 'skip'} s=${18} />${fini ? 'OK' : 'Passer'}</button></div></div>`;
   return html`<div className=${cx('chr', open && 'open')}>
     ${open && html`<section className="chr-p" role="dialog" aria-label="Chrono">
       <div className="row sb"><${Seg} neutral label="Type de chrono" value=${s.mode} onChange=${c.mode} options=${[['repos', 'Repos'], ['chrono', 'Chrono']]} />
@@ -5456,6 +5560,7 @@ function App() {
       </div>`}
     </div></header>
     <main className="wrap"><${InstallBanner} /><${IABanner} /><${Boundary} key=${tab}><${View} date=${tab === 'coach' ? today : date} setDate=${setDate} go=${go} /><//></main>
+    <div className="dock"><${SessionPill} tab=${tab} go=${go} /><${Chrono} /></div>
     <nav className="tabs" aria-label="Sections" style=${{ gridTemplateColumns: 'repeat(' + tabs.length + ', 1fr)' }}>${tabs.map(t => html`<button key=${t[0]} type="button" aria-current=${tab === t[0] ? 'page' : undefined} onClick=${() => go(t[0])}><${Icon} n=${t[2]} s=${22} />${t[1]}</button>`)}</nav>
     ${open && html`<${SettingsSheet} onClose=${() => setOpen(false)} />`}
     ${wiz && html`<${Wizard} redo=${cfg.onboarded === false} onClose=${() => {}} />`}
