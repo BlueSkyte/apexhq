@@ -209,8 +209,9 @@ const Apex = (() => {
       { id: 'din', nom: 'Dîner', h: '20:00', items: [['cabillaud', 200, 1], ['gnocchi', 130, 1], ['poivron', 200], ['huile', 8, 1]] },
     ],
   };
-  function bornes(f) {
-    const base = f.d || (f.u ? 1 : 100);
+  /* échelle : grosses cibles (corpulence, prise de masse) → les portions maximales montent avec les kcal du jour */
+  function bornes(f, e) {
+    const base = (f.d || (f.u ? 1 : 100)) * (e || 1);
     if (f.r === 'P') return [f.u ? 1 : 60, base * 2.2];
     return [0, base * 3.5];
   }
@@ -220,7 +221,7 @@ const Apex = (() => {
   /* Recale les quantités ajustables (adj) pour viser la cible du jour.
      Les repas mangés (ok) et les items non ajustables comptent comme fixes. */
   function ajuster(meals, cible, foods, opts) {
-    opts = opts || {};
+    opts = opts || {}; const ech = Math.max(1, Math.min(2.4, opts.echelle || 1));
     const ms = meals.map(m => Object.assign({}, m, { items: (m.items || []).map(i => Object.assign({}, i)) }));
     const fixe = Z(), adj = [];
     ms.forEach(m => m.items.forEach(it => {
@@ -239,7 +240,7 @@ const Apex = (() => {
       }
       const need = target - (tot()[key] - contrib);
       const fac = Math.max(0, Math.min(4, need / contrib));
-      its.forEach(a => { const b = bornes(a.f); a.it.q = Math.max(b[0], Math.min(b[1], a.it.q * fac)); });
+      its.forEach(a => { const b = bornes(a.f, ech); a.it.q = Math.max(b[0], Math.min(b[1], a.it.q * fac)); });
     };
     for (let i = 0; i < 14; i++) { scale('P', 'p', cible.p); scale('L', 'l', cible.l); scale('G', 'g', cible.g); }
     scale('G', 'k', cible.kcal);
@@ -250,7 +251,7 @@ const Apex = (() => {
       if (cK <= 0) return;
       const room = Math.max(0, tot()[key] - (floor || 0));
       const fac = Math.max(0, 1 - over / cK, cM > 0 ? 1 - room / cM : 0);
-      its.forEach(a => { const b = bornes(a.f); a.it.q = Math.max(b[0], Math.min(b[1], a.it.q * fac)); });
+      its.forEach(a => { const b = bornes(a.f, ech); a.it.q = Math.max(b[0], Math.min(b[1], a.it.q * fac)); });
     };
     cutK('L', 'l', cible.lMin); cutK('P', 'p', cible.pMin || cible.p * 0.9);
     adj.forEach(a => { a.it.q = arrondi(a.it.q, a.f); });
@@ -692,6 +693,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     const list = intensites(obj), it = list.find(x => x[0] === q.intensite) || list[0];
     let delta = obj === 'seche' ? -tdee * it[2] : obj === 'masse' ? tdee * it[2] : 0;
     if (obj === 'seche') { const cap = 0.01 * kg * 7700 / 7; if (-delta > cap) { delta = -cap; warn.push('Déficit plafonné à 1 % du poids par semaine.'); } }
+    if (obj === 'seche' && q.age < 18) { const lim = -tdee * 0.1; if (delta < lim) delta = lim; warn.push('Moins de 18 ans : tu es en pleine croissance, le déficit est limité à 10 % et une perte de poids se fait avec l’avis d’un médecin ou d’un diététicien.'); }
+    if (q.age >= 65 && obj === 'seche') warn.push('Après 65 ans, garde au moins 1,2 g de protéines par kg et parle-en à ton médecin avant une perte de poids.');
     const floor = Math.max(q.sexe === 'F' ? 1200 : 1500, 0.9 * bmr);
     let avg = tdee + delta;
     if (avg < floor) { avg = floor; delta = avg - tdee; warn.push('Calories relevées au plancher de sécurité (' + rd(floor) + ' kcal).'); }
@@ -803,7 +806,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   const splitBase = q => { const p = q.split === 'perso' && Array.isArray(q.splitPerso) ? q.splitPerso.filter(t => SPLIT_TYPES.indexOf(t) >= 0) : []; return p.length ? p : ((SPLITS[q.split] || SPLITS.ppl_ul)[1].length ? (SPLITS[q.split] || SPLITS.ppl_ul)[1] : SPLITS.ppl_ul[1]); };
   const JOURS_ENT = { 1: [1], 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 5, 6], 6: [1, 2, 3, 4, 5, 6], 7: [1, 2, 3, 4, 5, 6, 0] };
   const FULL = [['squat', 3], ['dc', 3], ['tractions', 3], ['dm_halt', 2], ['rdl', 2], ['curl_inc', 2], ['tri_corde', 2], ['el_halt', 3]];
-  const ISO = { pecH: 'ec_bh', pec: 'pec_deck', dLat: 'el_halt', dAnt: 'dm_halt', dPost: 'face_pull', bic: 'curl_inc', tri: 'tri_corde', lats: 'tir_neutre', dosH: 'tir_horiz', trap: 'shrug', lomb: 'lombaires', avb: 'curl_poignets', quad: 'leg_ext', isch: 'leg_curl', fess: 'rdl', adduc: 'adduction', abduc: 'abduction', mol: 'mollets', abd: 'crunch' };
+  const ISO = { pecH: 'ec_bh', pec: 'pec_deck', dLat: 'el_halt', dAnt: 'dm_halt', dPost: 'face_pull', bic: 'curl_inc', tri: 'tri_corde', lats: 'tir_neutre', dosH: 'tir_horiz', trap: 'shrug', lomb: 'lombaires', avb: 'curl_poignets', quad: 'leg_ext', isch: 'leg_curl', fess: 'hip_thrust', adduc: 'adduction', abduc: 'abduction', mol: 'mollets', abd: 'crunch' };
   const SUBISO = { pecH: 'di_halt' };
   const LEGM = ['quad', 'isch', 'fess', 'adduc', 'abduc', 'mol'];
   const splitSuggere = n => (n <= 0 ? 'aucun' : n <= 3 ? 'fb' : n === 4 ? 'ulul' : n === 5 ? 'ppl_ul' : n === 7 ? 'ulppl' : 'pplppl');
@@ -837,13 +840,44 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
           const cand = []; used.forEach(t => prog[t].forEach(x => { if (ex[x.e] && mus.indexOf(ex[x.e].m) >= 0 && x.n < MAX_SERIES) cand.push([t, x]); }));
           if (cand.length) { cand.sort((a, b) => a[1].n - b[1].n || occ[b[0]] - occ[a[0]]); cand[0][1].n++; continue; }
         }
-        const isoId = mus.map(m => ISO[m]).find(id => id && ex[id]); if (!isoId) break;
+        // exercice à ajouter : l'isolation de référence d'abord, puis les autres exercices du muscle (un second exercice si la séance a déjà le premier)
+        const cands = mus.reduce((l, m) => l.concat([ISO[m]], Object.keys(ex).filter(id => ex[id].m === m && id !== ISO[m])), []).filter(id => id && ex[id]); if (!cands.length) break;
         const jambes = t => /^(Legs|Lower|Full body)$/.test(t), legish = mus.every(m => LEGM.indexOf(m) >= 0), okT = t => !legish || jambes(t) || !used.some(jambes); // un muscle de jambe va sur une séance de jambes si elle existe
-        const tg = used.filter(t => okT(t) && !has(t, mus) && !prog[t].some(x => x.e === isoId)).sort((a, b) => occ[b] - occ[a])[0] || used.filter(t => okT(t) && !prog[t].some(x => x.e === isoId)).sort((a, b) => occ[b] - occ[a])[0];
-        if (!tg) break; prog[tg].push({ e: isoId, n: 3 });
+        const nbMus = t => prog[t].filter(x => ex[x.e] && mus.indexOf(ex[x.e].m) >= 0).length, ordre = used.filter(t => okT(t) && nbMus(t) < 2).sort((x, y) => (has(x, mus) ? 1 : 0) - (has(y, mus) ? 1 : 0) || occ[y] - occ[x]); let place = false;
+        for (const t of ordre) { const id = cands.find(c => !prog[t].some(x => x.e === c)); if (id) { prog[t].push({ e: id, n: 3 }); place = true; break; } }
+        if (!place) break;
       }
     });
-    return plafonnerVolume({ seanceTypes: used, programme: prog, planning }, groupes, cfg, q);
+    let res = plafonnerVolume({ seanceTypes: used, programme: prog, planning }, groupes, cfg, q);
+    if (!q.persoVide) { res = adapterMateriel(res, cfg, q.equip); if (q.duree > 0) res = ajusterDuree(res, groupes, cfg, q.duree); res = limiterNombre(res, groupes, cfg, 12); }
+    return res;
+  }
+  /* Remplace les exercices dont le matériel manque (maison, salle limitée…) par un exercice du même muscle, sinon les retire. */
+  function adapterMateriel(res, cfg, equip) {
+    if (!equip || equip === 'salle') return res;
+    const ex = A.allExos(cfg), prog = {};
+    Object.keys(res.programme).forEach(t => {
+      const out = [];
+      res.programme[t].forEach(x => {
+        const e = ex[x.e]; if (!e) return;
+        if (A.eqOk(equip, e)) { out.push(Object.assign({}, x)); return; }
+        const pris = id => out.some(y => y.e === id) || res.programme[t].some(y => y.e === id);
+        const alt = Object.keys(ex).filter(id => ex[id].m === e.m && A.eqOk(equip, ex[id]) && !pris(id)).sort((a, b) => (Math.abs(ex[a].lo - e.lo) + Math.abs(ex[a].hi - e.hi)) - (Math.abs(ex[b].lo - e.lo) + Math.abs(ex[b].hi - e.hi)))[0];
+        if (alt) { const o = Object.assign({}, x, { e: alt }); ['lo', 'hi', 'rest'].forEach(k => { delete o[k]; }); out.push(o); }
+      });
+      prog[t] = out;
+    });
+    return Object.assign({}, res, { programme: prog });
+  }
+  /* Pas plus de `max` exercices par séance : on retire d'abord ceux qui ne sont pas des points faibles, en partant de la fin. */
+  function limiterNombre(res, groupes, cfg, max) {
+    const ex = A.allExos(cfg), foc = {}, prog = {}; (groupes || []).forEach(g => g.m.forEach(m => { foc[m] = 1; }));
+    Object.keys(res.programme).forEach(t => {
+      const l = res.programme[t].map(x => Object.assign({}, x));
+      while (l.length > max) { let i = -1; for (let k = l.length - 1; k >= 0 && i < 0; k--) if (!(ex[l[k].e] && foc[ex[l[k].e].m])) i = k; l.splice(i < 0 ? l.length - 1 : i, 1); }
+      prog[t] = l;
+    });
+    return Object.assign({}, res, { programme: prog });
   }
   /* Plafonne le volume hebdomadaire de CHAQUE muscle (pas seulement des points faibles) à la cible des études : les modèles de séances
      ou l'IA en mettent souvent trop (ex. 14 séries de biceps alors que 8 à 13 suffisent, tirages du dos compris). On retire d'abord des
@@ -903,7 +937,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   }
 
   /* ---------- régime, exclusions, plan repas ---------- */
-  const norm0 = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const norm0 = s => String(s).toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '');
   const KEYW = {
     poisson: ['cabillaud', 'saumon', 'thon', 'crevettes'], viande: ['poulet', 'dinde', 'bh5', 'boeuf', 'cheval', 'jambon'], porc: ['jambon'], boeuf: ['bh5', 'boeuf'], volaille: ['poulet', 'dinde'],
     oeuf: ['oeuf', 'blanc'], oeufs: ['oeuf', 'blanc'], laitage: ['skyr', 'fb0', 'lait', 'emmental', 'vqr'], laitages: ['skyr', 'fb0', 'lait', 'emmental', 'vqr'], lait: ['skyr', 'fb0', 'lait', 'emmental', 'vqr'], lactose: ['skyr', 'fb0', 'lait', 'emmental', 'vqr'],
@@ -987,6 +1021,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
         if (rm && prog[t].length > 4) { prog[t].splice(rm[1], 1); continue; }
         const f = prog[t].filter(x => x.n > 3).sort((a, b) => b.n - a.n)[0];
         if (f) { f.n--; continue; }
+        const g = prog[t].filter(x => x.n > 2).sort((a, b) => b.n - a.n)[0]; // séance très courte : même les points faibles descendent à 2 séries…
+        if (g) { g.n--; continue; }
+        if (prog[t].length > 3) { prog[t].pop(); continue; } // … puis on garde 3 exercices au minimum
         break;
       }
     });
@@ -1129,6 +1166,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ['marche_laterale', 'Marche latérale avec bande', 'abduc', ['fess'], 12, 25, 1, 'corps'], ['abduction_machine_buste', 'Abduction machine penché en avant', 'abduc', ['fess'], 10, 15, 2.5, 'machine'],
     ['fente_arriere', 'Fente arrière haltères', 'fess', ['quad'], 8, 12, 2, 'halteres'],
     ['mollets_presse', 'Mollets à la presse', 'mol', [], 10, 20, 5, 'machine'], ['mollets_unil', 'Mollets unilatéral haltère', 'mol', [], 12, 20, 2, 'halteres'],
+    // à la maison / sans matériel : de quoi travailler chaque muscle avec haltères, sac à dos, serviette, table ou chaise
+    ['pullover_lats', 'Pull-over haltère (dorsaux)', 'lats', ['pec', 'tri'], 10, 15, 2, 'halteres'], ['row_halt_coude', 'Rowing haltère coude collé', 'lats', ['bic', 'dosH'], 8, 12, 2, 'halteres'],
+    ['rowing_table_sup', 'Rowing inversé sous une table (prise supination)', 'lats', ['bic', 'dosH'], 6, 15, 2.5, 'corps'], ['row_sac', 'Rowing sac à dos chargé', 'lats', ['bic', 'dosH'], 10, 20, 2.5, 'corps'],
+    ['el_lat_sac', 'Élévations latérales avec sacs ou bouteilles', 'dLat', [], 12, 25, 1, 'corps'], ['oiseau_sol', 'Oiseau au sol (Y-T-W)', 'dPost', ['dosH'], 10, 20, 1, 'corps'],
+    ['curl_serviette', 'Curl avec serviette (résistance isométrique)', 'bic', ['avb'], 10, 20, 1, 'corps'], ['curl_sac', 'Curl avec sac à dos chargé', 'bic', ['avb'], 10, 20, 2.5, 'corps'],
+    ['dips_chaise', 'Dips entre deux chaises', 'tri', ['pec', 'dAnt'], 8, 20, 2.5, 'corps'], ['ext_tri_sac', 'Extension triceps au-dessus de la tête avec sac', 'tri', [], 10, 20, 2.5, 'corps'],
+    ['poignets_sac', 'Curl de poignets avec sac à dos', 'avb', [], 12, 25, 2.5, 'corps'], ['shrug_sac', 'Haussements d’épaules avec sacs chargés', 'trap', [], 12, 25, 2.5, 'corps'],
+    ['leg_curl_glisse', 'Leg curl au sol avec serviette (glissé)', 'isch', ['fess'], 8, 15, 2.5, 'corps'], ['pont_unil_pdc', 'Pont fessier unilatéral', 'fess', ['isch'], 10, 20, 2.5, 'corps'],
+    ['mollets_unil_pdc', 'Mollets unilatéral sur marche', 'mol', [], 12, 25, 2.5, 'corps'], ['row_inv_pdc', 'Rowing inversé sous une table (prise large)', 'dosH', ['dPost', 'bic'], 6, 15, 2.5, 'corps'],
     // abdos
     ['releve_jambes', 'Relevé de jambes suspendu', 'abd', [], 8, 15, 2.5, 'barrefixe'], ['crunch_sol', 'Crunch au sol', 'abd', [], 12, 25, 2.5, 'corps'],
     ['roue_abdo', 'Roue abdominale', 'abd', [], 6, 15, 2.5, 'corps'], ['woodchop', 'Bûcheron à la poulie', 'abd', [], 10, 15, 2.5, 'poulie'],
@@ -1137,7 +1183,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   NEW.forEach(x => { X(x[0], x[1], x[2], x[3], x[4], x[5], x[6]); A.EXOS[x[0]].eq = x[7]; });
   /* Exercices unilatéraux (un côté après l'autre) : case « Unilatéral » dans la recherche d'exercices. */
   const UNI = ['row_uni', 'row_poulie_unil', 'row_halt_unil', 'tirage_unil_haut', 'el_unil_poulie', 'ec_poulie_bas', 'curl_conc', 'curl_spider', 'kickback', 'presse_unil', 'step_up', 'leg_curl_debout', 'mollets_unil', 'fente_arriere', 'fentes', 'fentes_pdc', 'kickback_poulie',
-    'curl_larry', 'curl_incl_unil', 'tri_unil_oh', 'el_incl_unil', 'rdl_unil', 'leg_curl_allonge_unil', 'abduction_poulie', 'crunch_poulie_unil', 'fentes_smith', 'fente_laterale', 'meadows', 'row_incl_halt', 'dm_unil', 'tri_unil_poulie', 'curl_unil_poulie', 'dc_unil', 'leg_ext_unil', 'hip_thrust_unil', 'curl_bay', 'curl_halt', 'adduction_poulie', 'adduction_couche', 'copenhague', 'abduction_couche', 'clamshell'];
+    'curl_larry', 'curl_incl_unil', 'tri_unil_oh', 'el_incl_unil', 'rdl_unil', 'leg_curl_allonge_unil', 'abduction_poulie', 'crunch_poulie_unil', 'fentes_smith', 'fente_laterale', 'meadows', 'row_incl_halt', 'dm_unil', 'tri_unil_poulie', 'curl_unil_poulie', 'dc_unil', 'leg_ext_unil', 'hip_thrust_unil', 'curl_bay', 'curl_halt', 'adduction_poulie', 'adduction_couche', 'copenhague', 'abduction_couche', 'clamshell', 'pont_unil_pdc', 'mollets_unil_pdc'];
   UNI.forEach(id => { if (A.EXOS[id]) A.EXOS[id].uni = 1; });
 
   const EQUIP = [['salle', 'Salle complète', 'Barres, machines, poulies, haltères.'], ['limite', 'Salle limitée', 'Haltères, poulie, barre de traction.'], ['maison', 'Maison avec haltères', 'Haltères et ton poids du corps.'], ['zero', 'Sans matériel', 'Poids du corps seulement.']];
@@ -1149,7 +1195,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   const dureeSeance = (plan, exos) => Math.round(6 + (plan || []).reduce((s, x) => s + x.n * (LOURDS.indexOf(x.e) >= 0 ? 3 : 2.2), 0));
 
   /* ---------- zones sensibles ---------- */
-  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const norm = s => String(s || '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '');
   const ZONES = [['epaule', ['dAnt', 'dLat', 'dPost']], ['coude', ['tri', 'bic']], ['poignet', ['tri', 'bic', 'avb']], ['genou', ['quad']], ['hanche', ['fess', 'adduc', 'abduc']], ['dos', ['lats', 'dosH', 'trap']], ['lombaire', ['isch', 'lomb']], ['pec', ['pec', 'pecH']]];
   const zonesSensibles = txt => { const t = norm(txt), m = []; ZONES.forEach(z => { if (t.indexOf(z[0]) >= 0) z[1].forEach(x => { if (m.indexOf(x) < 0) m.push(x); }); }); return m; };
 
@@ -1418,7 +1464,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   A.CATS.splice(i < 0 ? A.CATS.length : i, 0, ['fast', 'Fast-food'], ['plat', 'Plats du monde'], ['dessert', 'Desserts'], ['boisson', 'Boissons'], ['snack', 'Snacks']);
 
   /* ---------- recherche dans la base : sert à l'écran d'ajout et au coach (qui ne reçoit que les correspondances) ---------- */
-  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const norm = s => String(s || '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '');
   const MOTS_VIDES = ['j', 'ai', 'mange', 'manger', 'bu', 'pris', 'un', 'une', 'le', 'la', 'les', 'de', 'du', 'des', 'et', 'avec', 'sans', 'ce', 'cet', 'cette', 'midi', 'soir', 'matin', 'hier', 'aujourd', 'hui', 'petit', 'grand', 'dejeuner', 'diner', 'repas', 'dans', 'sur', 'pour', 'en', 'au', 'aux', 'mon', 'ma', 'mes', 'avant', 'apres', 'gr', 'kcal', 'qui', 'que', 'pas', 'quelque', 'chose', 'existe', 'n', 'est', 'sont', 'plat', 'plats', 'tout', 'tous', 'bien', 'trop', 'encore', 'comme', 'fait', 'faire'];
   function chercherAliments(foods, texte, max) {
     const toks = Array.from(new Set(norm(texte).split(/[^a-z0-9]+/).filter(t => t.length >= 3 && MOTS_VIDES.indexOf(t) < 0 && !/^\d+$/.test(t))));
@@ -1426,7 +1472,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     const out = [];
     Object.keys(foods).forEach(k => {
       const f = foods[k], hay = ' ' + norm(f.n + ' ' + (f.al || '')) + ' ';
-      let s = 0; toks.forEach(t => { if (hay.indexOf(' ' + t) >= 0) s += 2; else if (t.length >= 5 && hay.indexOf(t) >= 0) s += 1; });
+      let s = 0; toks.forEach(t => { const sg = t.length > 3 ? t.replace(/[sx]$/, '') : t; /* pluriel : « oeufs » trouve « œuf » */ if (hay.indexOf(' ' + t) >= 0 || hay.indexOf(' ' + sg) >= 0) s += 2; else if (t.length >= 5 && hay.indexOf(t) >= 0) s += 1; });
       if (s > 0) out.push([s, f]);
     });
     /* à score égal : les aliments de base (poids cru, valeurs fiables) avant les plats, puis le nom le plus court */
@@ -1861,19 +1907,20 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return q.objectif === 'seche' ? 'prot' : 'equilibre';
   }
 
-  const SUBST = { P: ['poulet', 'dinde', 'saumon', 'cabillaud', 'thon', 'oeuf', 'skyr', 'fb0', 'tofu', 'seitan'], G: ['riz', 'pdt', 'pates', 'gnocchi', 'patate', 'avoine', 'lentilles'], L: ['huile', 'amandes', 'noix', 'avocat', 'beurrecac', 'cajou'] };
+  const SUBST = { P: ['poulet', 'dinde', 'saumon', 'cabillaud', 'thon', 'skyr', 'fb0', 'seitan', 'soja', 'blanc', 'tofu', 'oeuf'], G: ['riz', 'pdt', 'pates', 'gnocchi', 'patate', 'avoine', 'lentilles'], L: ['huile', 'amandes', 'noix', 'avocat', 'beurrecac', 'cajou'] };
   /* Menu d'un jour (dow 0 = dimanche) d'un programme : tableau de repas {id, nom, h, items:[{a,q,adj}]}, régime et exclusions appliqués. */
   function programmeJour(cfg, progId, dow) {
     const p = PROGRAMMES[progId]; if (!p) return null;
     const foods = A.allFoods(cfg), q = (cfg && cfg.q) || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {}, idx = SEMAINE.indexOf(dow);
+    const emploi = {}; // combien de fois chaque remplaçant sert dans la journée : on varie (pas des œufs partout)
     return p.repas.map((r, mi) => {
       const v = r.variantes[(idx + mi) % r.variantes.length], its = [];
       v.forEach(x => {
         const id = x[0], f = foods[id]; if (!f) return;
         if (!ex[id]) { its.push({ a: id, q: x[1], adj: x[2] ? 1 : 0 }); return; }
         const role = f.r; if (!role || !SUBST[role]) return;
-        const nid = SUBST[role].find(i => !ex[i] && foods[i] && !its.some(y => y.a === i) && !v.some(y => y[0] === i));
-        if (nid) { const nf = foods[nid]; its.push({ a: nid, q: nf.d || (nf.u ? 1 : 100), adj: 1 }); }
+        const cand = SUBST[role].filter(i => !ex[i] && foods[i] && !its.some(y => y.a === i) && !v.some(y => y[0] === i)), nid = cand.sort((a, b) => (emploi[a] || 0) - (emploi[b] || 0))[0];
+        if (nid) { emploi[nid] = (emploi[nid] || 0) + 1; const nf = foods[nid]; its.push({ a: nid, q: nf.d || (nf.u ? 1 : 100), adj: 1 }); }
       });
       return { id: 'm' + (mi + 1), nom: r.nom, h: r.h, items: its };
     });
@@ -1900,8 +1947,30 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   function planDuJour(cfg, statut, cible, date) {
     const foods = A.allFoods(cfg), tpl = modeleDuJour(cfg, statut, date);
     const meals = tpl.map(m => ({ id: m.id, nom: m.nom, h: m.h, ok: false, items: m.items.map(x => itemDe(x, foods)).filter(Boolean) }));
-    const aj = A.ajuster(meals, cible, foods, { tous: true });
-    return cfg.repasMode === 'perso' ? optimiserJour(aj, cible, foods) : aj;
+    const perso = cfg.repasMode === 'perso', calc = ms => A.ajuster(ms, cible, foods, { tous: true, echelle: cible.kcal / 2200 });
+    let aj = calc(meals);
+    if (!perso && (cfg.repasMode || 'programme') === 'programme' && cfg.repasProg && PROGRAMMES[cfg.repasProg]) aj = completerProteines(meals, aj, cfg, cible, foods, calc); // menu de l'app : complété si les protéines n'y sont pas (grosse corpulence) ; jamais le menu fait par l'utilisateur
+    aj = perso ? optimiserJour(aj, cible, foods) : aj;
+    return aj.map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0) })).filter(m => m.items.length); // jamais de ligne à 0 g
+  }
+  /* Protéines sous la cible : ajoute un complément (whey, skyr, fromage blanc) à un repas adapté, puis recale (max 3 ajouts). */
+  function completerProteines(meals, aj, cfg, c, foods, calc) {
+    const somme = ms => ms.reduce((s, m) => A.add(s, A.totMeal(m, foods)), A.Z()), q = cfg.q || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {}, wheyOk = (!cfg.q || !!q.whey) && !!foods[WHEY];
+    const bonus = [[WHEY, 1, 0], ['skyr', 150, 1], ['fb0', 150, 1]].filter(b => foods[b[0]] && !ex[b[0]] && (b[0] !== WHEY || wheyOk));
+    let t = somme(aj); const q0 = new Map();
+    for (let k = 0; k < 6&& c.p > 0 && t.p < Math.max(c.pMin || 0, c.p * 0.95); k++) {
+      const b = bonus.find(x => !meals.some(m => m.items.some(it => it.a === x[0])));
+      if (b) {
+        const cible = meals.find(m => SLOT(m.nom) === 'post') || meals.find(m => SLOT(m.nom) === 'pdj') || meals.find(m => SLOT(m.nom) === 'col') || meals[0];
+        cible.items = cible.items.concat({ id: A.uid(), a: b[0], q: b[1], adj: b[2] && foods[b[0]].r ? 1 : 0 });
+      } else { // déjà tout au menu : on augmente la portion de la source de protéines la plus dense (+35 %, 2,2 fois le menu type au plus)
+        const src = []; meals.forEach(m => m.items.forEach(it => { const f = it.a ? foods[it.a] : null; if (!f || f.r !== 'P' || ex[f.id]) return; if (!q0.has(it)) q0.set(it, it.q); if (it.q < q0.get(it) * 2.1) src.push([it, f]); }));
+        src.sort((x, y) => y[1].p / Math.max(1, y[1].k) - x[1].p / Math.max(1, x[1].k)); if (!src.length) break;
+        const it = src[0][0], f = src[0][1], st = A.pas(f, it.q); it.q = Math.round(Math.min(q0.get(it) * 2.2, Math.max(it.q + st, Math.round(it.q * 1.35 / st) * st)) * 100) / 100;
+      }
+      aj = calc(meals); t = somme(aj);
+    }
+    return aj;
   }
   /* Copie un programme dans « ma semaine » (7 menus modifiables jour par jour). */
   function semaineDepuis(cfg, progId) {
@@ -2037,6 +2106,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       const e = (v, t) => (t > 0 ? ((v - t) / t) * ((v - t) / t) : 0);
       let j = 5 * e(T.k, c.kcal) + (T.p < c.p ? 4 : 0.5) * e(T.p, c.p) + 4 * e(T.g, c.g) + 3 * e(T.l, c.l);
       if (c.pMin && T.p < c.pMin) j += 50 * e(T.p, c.pMin);
+      if (T.p > c.p * 1.2) j += 6 * e(T.p, c.p * 1.2); // pas de surplus de protéines pour « boucher » les calories
       ms.forEach((m, i) => { const sh = mk[i] / c.kcal, cap = PART_MAX[kind[i]]; if (cap && sh > cap) j += 40 * (sh - cap) * (sh - cap); if (kind[i] === 'main' && sh < 0.27) j += 15 * (0.27 - sh) * (0.27 - sh); });
       vars.forEach(v => { const r = v.it.q / v.q0 - 1; j += 0.002 * r * r; });
       return j;
@@ -2067,24 +2137,29 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ms.forEach(m => { m.items = m.items.filter(it => it.x || it.q > 0); });
     return ms.filter(m => m.items.length);
   }
+  /* Menu sans assez de féculents (l'IA en met parfois un seul, ou aucun) : glucides et calories sous la cible → on ajoute un féculent
+     au déjeuner ou au dîner (riz, pâtes, pommes de terre…), jamais un aliment exclu, puis on recale. */
+  function completerGlucides(meals, aj, cfg, c, foods, calc) {
+    const somme = ms => ms.reduce((s, m) => A.add(s, A.totMeal(m, foods)), A.Z()), q = cfg.q || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {};
+    const cands = ['riz', 'pates', 'pdt', 'patate', 'gnocchi', 'avoine', 'pain'].filter(id => foods[id] && !ex[id]);
+    let t = somme(aj);
+    for (let k = 0; k < 3 && c.kcal > 0 && t.k < c.kcal * 0.93 && t.g < c.g * 0.92 && cands.length; k++) {
+      const id = cands.find(x => !meals.some(m => m.items.some(it => it.a === x))); if (!id) break;
+      const mains = meals.filter(m => SLOT(m.nom) === 'main'), cible = mains.slice().sort((x, y) => x.items.filter(it => it.a && foods[it.a] && foods[it.a].r === 'G').length - y.items.filter(it => it.a && foods[it.a] && foods[it.a].r === 'G').length)[0] || meals[meals.length - 1];
+      cible.items = cible.items.concat({ id: A.uid(), a: id, q: foods[id].d || (foods[id].u ? 1 : 100), adj: 1 });
+      aj = calc(meals); t = somme(aj);
+    }
+    return aj;
+  }
   function etalonnerSemaine(cfg, semaine) {
     const foods = A.allFoods(cfg), lun = A.lundi(A.today()), res = {}, totaux = {};
     SEMAINE.forEach((d, i) => {
       const tpl = semaine[d]; if (!tpl) return;
       const c = A.cibleDuJour(cfg, null, A.addDays(lun, i));
       const meals = tpl.map(m => ({ id: m.id, nom: m.nom, h: m.h, ok: false, items: m.items.map(it => (it.x ? { id: A.uid(), q: it.q, x: it.x } : { id: A.uid(), a: it.a, q: it.q, adj: it.adj ? 1 : 0 })) }));
-      const calc = ms => A.ajuster(ms, c, foods, { tous: true }).map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0) })).filter(m => m.items.length);
+      const calc = ms => A.ajuster(ms, c, foods, { tous: true, echelle: c.kcal / 2200 }).map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0) })).filter(m => m.items.length);
       const somme = ms => ms.reduce((s, m) => A.add(s, A.totMeal(m, foods)), A.Z());
-      let aj = calc(meals), t = somme(aj);
-      /* protéines sous la cible : ajoute un complément (whey, skyr, fromage blanc) à un repas adapté, puis recale */
-      const q = cfg.q || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {}, wheyOk = (!cfg.q || !!q.whey) && !!foods[WHEY];
-      const bonus = [[WHEY, 1, 0], ['skyr', 150, 1], ['fb0', 150, 1]].filter(b => foods[b[0]] && !ex[b[0]] && (b[0] !== WHEY || wheyOk));
-      for (let k = 0; k < 3 && c.p > 0 && t.p < c.p * 0.95 && bonus.length; k++) {
-        const b = bonus.find(x => !meals.some(m => m.items.some(it => it.a === x[0]))); if (!b) break;
-        const cible = meals.find(m => SLOT(m.nom) === 'post') || meals.find(m => SLOT(m.nom) === 'pdj') || meals.find(m => SLOT(m.nom) === 'col') || meals[0];
-        cible.items = cible.items.concat({ id: A.uid(), a: b[0], q: b[1], adj: b[2] && foods[b[0]].r ? 1 : 0 });
-        aj = calc(meals); t = somme(aj);
-      }
+      let aj = completerGlucides(meals, completerProteines(meals, calc(meals), cfg, c, foods, calc), cfg, c, foods, calc), t = somme(aj); // protéines sous la cible : complément (whey, skyr, fromage blanc), puis recale
       aj = optimiserJour(aj, c, foods); t = somme(aj);
       res[d] = repasEnModele(aj, foods); totaux[d] = { k: Math.round(t.k), p: Math.round(t.p), g: Math.round(t.g), l: Math.round(t.l), cible: c };
     });
@@ -2182,9 +2257,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   }
   /* Retrouve un exercice par id ou par nom (insensible aux accents et à la casse). */
   function trouverExo(cfg, ref) {
-    const exos = A.allExos(cfg), ks = Object.keys(exos), q = String(ref || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const exos = A.allExos(cfg), ks = Object.keys(exos), q = String(ref || '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
     if (!q) return null; if (exos[ref]) return ref;
-    const n = id => exos[id].n.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const n = id => exos[id].n.toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '');
     return ks.find(k => n(k) === q) || ks.find(k => q.length > 3 && (n(k).indexOf(q) >= 0 || q.indexOf(n(k)) >= 0)) || null;
   }
 
@@ -3121,7 +3196,7 @@ function CheckIn({ date, go }) {
 /* Macrova — onglet 2 : plan repas, swap, recalage, écarts, macros résiduelles, suppléments. */
 const unitOf = f => (f.u ? f.u[0] : 'g');
 const macTxt = m => 'P ' + f0(m.p) + ' · G ' + f0(m.g) + ' · L ' + f0(m.l);
-const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const norm = s => String(s).toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '');
 const aiErr = e => aiMsg(e);
 const nomRepas = () => { const h = new Date().getHours(); return h < 10 ? 'Petit-déj' : h < 15 ? 'Déjeuner' : h < 18 ? 'Collation' : 'Dîner'; };
 const heure = () => { const d = new Date(); return Apex.pad(d.getHours()) + ':' + Apex.pad(d.getMinutes()); };
@@ -3210,7 +3285,12 @@ function AddSheet({ foods, title, onAdd, onClose }) {
   const [fr, setFr] = useState({ n: '', k: null, p: null, g: null, l: null });
   const [ai, setAi] = useState({ txt: '', busy: false, res: null, err: '', keep: true });
   const sample = Store.caps().sample;
-  const list = Object.keys(foods).map(k => foods[k]).filter(f => (!cat || f.c === cat) && (!q || norm(f.n + ' ' + (f.al || '')).indexOf(norm(q)) >= 0));
+  /* recherche classée : le mot cherché d'abord au début d'un nom, les aliments de base avant les plats (« pomme » → Pomme, pas gnocchi) ; puis le reste des correspondances partielles */
+  const list = (() => {
+    const tous = Object.keys(foods).map(k => foods[k]).filter(f => !cat || f.c === cat); if (!q) return tous;
+    const nq = norm(q), classes = Apex.chercherAliments(foods, q, 400).filter(f => !cat || f.c === cat), vus = {}; classes.forEach(f => { vus[f.id] = 1; });
+    return classes.concat(tous.filter(f => !vus[f.id] && norm(f.n + ' ' + (f.al || '')).indexOf(nq) >= 0));
+  })();
   const pick = f => { onAdd({ a: f.id, q: f.d || (f.u ? 1 : 100) }); onClose(); };
   const addFree = () => {
     if (!fr.n.trim() || fr.k == null) return;
