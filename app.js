@@ -6005,10 +6005,22 @@ function SanteBody() {
   useEffect(() => { let ok = true; Sante.dispo().then(r => { if (ok) setD(r); }); return () => { ok = false; }; }, []);
   const ios = Sante.plateforme() === 'ios', nom = ios ? 'Apple Santé' : 'Health Connect';
   const sources = ios ? 'iPhone, Apple Watch, Garmin, Oura, Withings… (tout ce qui écrit dans Apple Santé)' : 'Samsung Health, Google Fit, Fitbit, Garmin, Oura, Withings… (tout ce qui écrit dans Health Connect)';
-  if (!Sante.natif()) return html`<${React.Fragment}>
+  if (!Sante.natif()) {
+    const ua = navigator.userAgent || '', android = /Android/i.test(ua), iphone = /iPhone|iPad|iPod/i.test(ua);
+    return html`<${React.Fragment}>
     <h3>Santé et montres</h3>
-    <div className="note"><${Icon} n="info" /><div><span><b>Disponible dans l’app Android et iPhone.</b> Apple Santé et Health Connect ne sont accessibles qu’à l’app installée, pas à la version web ouverte dans le navigateur. Dans l’app Macrolya installée, tu pourras relier ta montre ou ton téléphone : pas, sommeil et fréquence cardiaque au repos se rempliront tout seuls.</span></div></div>
+    ${android ? html`<div className="note acc"><${Icon} n="heart" /><div><span><b>Relie Health Connect avec l’app Android.</b> Cette version-ci tourne dans le navigateur : Android ne lui donne pas accès à tes données santé. L’app Macrolya pour Android, elle, lit tes pas, ton sommeil et ta fréquence cardiaque au repos (Samsung Health, Google Fit, Fitbit, Garmin…).</span></div></div>
+      <a className="btn pri wide" href="macrolya-android.apk" download="Macrolya.apk"><${Icon} n="download" s=${18} />Télécharger l’app Android</a>
+      <ol className="sante-et">
+        <li>Ouvre le fichier téléchargé (notification ou dossier Téléchargements).</li>
+        <li>Si Android le demande, autorise l’installation depuis ton navigateur.</li>
+        <li>Ouvre Macrolya et connecte-toi avec ton compte : tes données reviennent.</li>
+        <li>Réglages › Santé › « Connecter Health Connect ».</li>
+      </ol>
+      <p className="mut" style=${{ fontSize: 12 }}>Version de test, installée hors Play Store. Sur Android 13 ou moins, installe aussi l’app « Health Connect » depuis le Play Store. Tu peux ensuite retirer la version web de ton écran d’accueil.</p>`
+    : html`<div className="note"><${Icon} n="info" /><div><span><b>${iphone ? 'Bientôt dans l’app iPhone.' : 'Disponible dans l’app Android et iPhone.'}</b> Apple Santé et Health Connect ne sont accessibles qu’aux apps installées, pas à la version web. ${iphone ? 'La version iPhone de Macrolya arrive : tu pourras y relier Apple Santé (Apple Watch, Garmin, Oura…).' : 'Ouvre cette page sur ton téléphone Android pour télécharger l’app.'}</span></div></div>`}
   <//>`;
+  }
   const go = async () => { setBusy(true); setMsg(''); try { const ok = await Sante.connecter(); setMsg(ok ? 'Connecté : les 14 derniers jours sont importés.' : ''); } catch (er) { setMsg((er && er.message) || 'Connexion impossible.'); } setBusy(false); };
   const sync = async () => { setBusy(true); try { const n = await Sante.synchro(14); setMsg(n ? n + ' valeur' + (n > 1 ? 's' : '') + ' mise' + (n > 1 ? 's' : '') + ' à jour.' : 'Déjà à jour.'); } catch (er) { setMsg('Synchro impossible.'); } setBusy(false); };
   const last = e.last ? new Date(e.last).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : null;
