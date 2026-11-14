@@ -2958,7 +2958,6 @@ function ChartCard({ title, sub, cls, legend, table, children }) {
 
 /* ---- 30-ui-dashboard.js ---- */
 /* Macrova — onglet 1 : statut du jour, check-in matinal à jeun, lecture, poids, mensurations. */
-const MESURES = [['taille', 'Tour de taille'], ['poitrine', 'Poitrine'], ['epaules', 'Épaules'], ['bras', 'Bras contracté'], ['cuisse', 'Cuisse'], ['cou', 'Cou']];
 const ST_LAB = { vert: 'good', orange: 'warn', rouge: 'crit' };
 
 function Hero({ date, go }) {
@@ -3059,31 +3058,6 @@ function PoidsCard({ date, win }) {
     <${LineChart} h=${230} unit=" kg" from=${from} label="Poids : pesées et moyenne mobile 7 jours"
       series=${[{ name: 'Pesée', c: 'var(--ink-3)', type: 'dots', pts: raw }, { name: 'Moy. 7 j', c: 'var(--acc-hi)', type: 'line', area: true, end: true, pts: mm }]}
       empty=${html`<span><b>Aucune pesée.</b> Pèse-toi au réveil, à jeun, après les toilettes, et valide le check-in. La moyenne 7 jours se trace dès la 1re pesée ; la tendance est fiable après 2 semaines.</span>`} />
-  <//>`;
-}
-
-function MensuCard({ date, win, cls }) {
-  const st = useStore(), S = st.get(), cfg = st.cfg(); const [open, setOpen] = useState(false);
-  const ds = Object.keys(S.mensurations).sort(), from = win ? Apex.addDays(date, -win) : '';
-  const bf = (() => { for (let i = ds.length - 1; i >= 0; i--) { const m = S.mensurations[ds[i]], v = Apex.navy(m.taille, m.cou, cfg.profil.taille); if (v) return { v, d: ds[i] }; } return null; })();
-  return html`<${Card} cls=${cls} title="Mensurations" sub="cm, ruban à plat, matin" right=${html`<button className="btn sm" onClick=${() => setOpen(true)}><${Icon} n="ruler" s=${16} />Mesurer</button>`}>
-    ${ds.length ? html`<div>${MESURES.map(([k, lab]) => {
-      const pts = ds.filter(d => d >= from && Apex.num(S.mensurations[d][k])).map(d => S.mensurations[d][k]); if (!pts.length) return null;
-      const dl = pts.length > 1 ? pts[pts.length - 1] - pts[0] : null;
-      return html`<div key=${k} className="mini"><span>${lab}</span><${Spark} vals=${pts} /><b>${f1(pts[pts.length - 1])}<small>${dl == null ? '1 mesure' : sgn(dl) + ' cm'}</small></b></div>`;
-    })}
-    ${bf && html`<div className="mini"><span>Masse grasse (US Navy)</span><span></span><b>${f1(bf.v)} %<small>${dTiny(bf.d)}</small></b></div>`}</div>`
-    : html`<div className="empty"><span><b>Aucune mesure.</b> Prends la baseline : taille au nombril, poitrine, épaules, bras contracté, cuisse, cou. Taille + cou donnent le % de masse grasse (US Navy).</span></div>`}
-    ${open && html`<${MensuSheet} date=${date} onClose=${() => setOpen(false)} />`}
-  <//>`;
-}
-function MensuSheet({ date, onClose }) {
-  const cur = Store.get().mensurations[date] || {}; const [d, setD] = useState(() => Object.assign({}, cur));
-  const save = () => { const o = { date }; let n = 0; MESURES.forEach(([k]) => { o[k] = d[k] == null ? null : d[k]; if (d[k] != null) n++; }); if (!n) { onClose(); return; } Store.patch('mensurations', date, o); toast('Mensurations enregistrées'); onClose(); };
-  return html`<${Sheet} title=${'Mensurations · ' + dMid(date)} onClose=${onClose}>
-    <div className="form">${MESURES.map(([k, lab]) => html`<${Num} key=${k} id=${'ms-' + k} label=${lab} unit="cm" value=${d[k] == null ? null : d[k]} onChange=${v => setD(x => Object.assign({}, x, { [k]: v }))} dec=${1} min=${10} max=${200} />`)}</div>
-    <p className="mut" style=${{ fontSize: 12 }}>Taille : au nombril, ventre relâché, fin d’expiration. Bras : contracté, au plus large. Même heure à chaque fois.</p>
-    <button className="btn pri wide" onClick=${save}>Enregistrer</button>
   <//>`;
 }
 
@@ -3195,6 +3169,92 @@ function CheckIn({ date, go }) {
       <div className="stack"><span className="fld-l">Réveils dans la nuit</span><div className="chips">${[0, 1, 2, 3].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${d.reveils === n} onClick=${() => up('reveils')(n)}>${n === 3 ? '3 ou +' : n}</button>`)}</div></div></div>`}
     ${photoDay && html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos.</b> Face, profil, dos avant de manger. Ajout dans l’onglet Analyse.</span></div></div>`}
     <button type="button" className="btn pri wide" disabled=${d.poids == null} onClick=${save}><${Icon} n="check" s=${18} />${d.poids == null ? 'Entre ton poids pour valider' : 'Valider le debrief'}</button>
+  <//>`;
+}
+
+/* ---- 32-ui-mensu.js ---- */
+/* Macrova — mensurations : on choisit la mesure directement sur le bonhomme (trait rouge à l'endroit exact du ruban),
+   bras, avant-bras, cuisse et mollet des DEUX côtés pour voir les asymétries, plus le tour de fesses.
+   Données : un doc par date dans Apex.mensurations, champs à plat (taille, cou, …, bras_g, bras_d, …). Les anciens « bras » et « cuisse »
+   (un seul côté) restent lus. Coordonnées des traits : repère du bonhomme (face 0–208, dos décalé de 220, hauteur 400). */
+const ZONES_MES = [
+  { k: 'cou', n: 'Cou', m: ['trap'], l: [[92, 59, 116, 59]], ou: 'Juste sous la pomme d’Adam, ruban à peine incliné vers l’avant, sans serrer.' },
+  { k: 'epaules', n: 'Épaules', m: ['dLat', 'dAnt'], l: [[44, 90, 164, 90]], ou: 'Tour complet au plus large des deltoïdes, bras le long du corps, épaules relâchées.' },
+  { k: 'poitrine', n: 'Poitrine', m: ['pec', 'pecH'], l: [[60, 104, 148, 104]], ou: 'Sous les aisselles, au niveau des tétons, ruban bien horizontal, fin d’expiration.' },
+  { k: 'taille', n: 'Tour de taille', m: ['abd'], l: [[72, 156, 136, 156]], ou: 'Au nombril, ventre relâché (ne pas rentrer le ventre), fin d’expiration.' },
+  { k: 'fesses', n: 'Tour de fesses', m: ['fess'], l: [[286, 202, 362, 202]], ou: 'Au plus large des fesses, pieds joints, ruban horizontal tout autour.' },
+  { k: 'bras', n: 'Bras', cote: true, m: ['bic', 'tri'], g: [[144, 128, 170, 116]], d: [[38, 116, 64, 128]], ou: 'Bras fléchi et contracté, au plus gros du biceps.' },
+  { k: 'avb', n: 'Avant-bras', cote: true, m: ['avb'], g: [[164, 166, 184, 158]], d: [[23, 158, 43, 166]], ou: 'Bras tendu, poing serré, au plus large sous le coude.' },
+  { k: 'cuisse', n: 'Cuisse', cote: true, m: ['quad', 'adduc', 'isch'], g: [[104, 254, 130, 250]], d: [[77, 250, 103, 254]], ou: 'Debout, poids sur les deux jambes, à mi-distance entre l’aine et le genou.' },
+  { k: 'mollet', n: 'Mollet', cote: true, m: ['mol'], g: [[107, 332, 134, 328]], d: [[73, 328, 100, 332]], ou: 'Debout, au plus gros du mollet.' },
+];
+/* liste à plat [clé, libellé] : sert à l'enregistrement et au coach ; « bras » et « cuisse » seuls = anciennes mesures (un côté) */
+const MESURES = ZONES_MES.reduce((l, z) => (z.cote ? l.concat([[z.k + '_g', z.n + ' gauche'], [z.k + '_d', z.n + ' droit']]) : l.concat([[z.k, z.n]])), []).concat([['bras', 'Bras contracté'], ['cuisse', 'Cuisse']]);
+/* valeur d'une zone dans un relevé : côté, moyenne des deux côtés, ou ancienne mesure unique */
+const mesVal = (m, z, cote) => { if (!m) return null; if (!z.cote) return Apex.num(m[z.k]) ? m[z.k] : null; if (cote) return Apex.num(m[z.k + '_' + cote]) ? m[z.k + '_' + cote] : null; const g = m[z.k + '_g'], d = m[z.k + '_d']; return Apex.num(g) && Apex.num(d) ? (g + d) / 2 : Apex.num(g) ? g : Apex.num(d) ? d : Apex.num(m[z.k]) ? m[z.k] : null; };
+const mesAsym = (g, d) => (Apex.num(g) && Apex.num(d) && g + d > 0 ? { dcm: d - g, pct: (d - g) / ((g + d) / 2) * 100 } : null);
+const asymTxt = a => (Math.abs(a.dcm) < 0.05 ? 'symétrique' : (a.dcm > 0 ? 'droit' : 'gauche') + ' +' + fq(Math.round(Math.abs(a.dcm) * 10) / 10) + ' cm (' + fq(Math.round(Math.abs(a.pct) * 10) / 10) + ' %)');
+
+/* Le bonhomme des mensurations : face + dos, traits rouges sur chaque zone ; un trait se touche pour choisir la mesure. */
+function MensuFig({ sel, vals, onPick, h = 330 }) {
+  const z0 = ZONES_MES.find(z => z.k === sel.k) || ZONES_MES[0], W = FIG_VUES.face.w + FIG_VUES.dos.w + 12;
+  const traits = []; ZONES_MES.forEach(z => { (z.cote ? [['g', z.g], ['d', z.d]] : [[null, z.l]]).forEach(([c, L]) => L.forEach((p, i) => traits.push({ z, c, p, key: z.k + (c || '') + i }))); });
+  const fait = t => (t.c ? Apex.num(vals[t.z.k + '_' + t.c]) : Apex.num(vals[t.z.k]));
+  return html`<svg className="mfig both mfig-mes" viewBox=${'0 0 ' + W + ' ' + FIG_H} height=${h} width=${Math.round(h * W / FIG_H)} role="img" aria-label=${'Bonhomme : mesure sélectionnée ' + z0.n + (sel.c ? (sel.c === 'g' ? ' gauche' : ' droit') : '')}>
+    <${FigBody} vue="face" m=${z0.m} s=${[]} x=${0} /><${FigBody} vue="dos" m=${z0.m} s=${[]} x=${FIG_VUES.face.w + 12} />
+    <text x="104" y="396" className="mes-v">FACE</text><text x=${FIG_VUES.face.w + 12 + 104} y="396" className="mes-v">DOS</text>
+    <text x="20" y="20" className="mes-cote">D</text><text x="188" y="20" className="mes-cote">G</text>
+    ${traits.map(t => { const on = t.z.k === sel.k && (!t.z.cote || t.c === sel.c), proche = t.z.k === sel.k && !on;
+      return html`<g key=${t.key} className=${cx('mes-t', on && 'on', proche && 'proche', fait(t) && 'fait')} onClick=${() => onPick({ k: t.z.k, c: t.c })}>
+        <line className="mes-hit" x1=${t.p[0]} y1=${t.p[1]} x2=${t.p[2]} y2=${t.p[3]} />
+        <line className="mes-halo" x1=${t.p[0]} y1=${t.p[1]} x2=${t.p[2]} y2=${t.p[3]} />
+        <line className="mes-l" x1=${t.p[0]} y1=${t.p[1]} x2=${t.p[2]} y2=${t.p[3]} />
+        ${fait(t) && html`<circle className="mes-ok" cx=${t.p[2]} cy=${t.p[3]} r="3.4" />`}</g>`; })}
+  </svg>`;
+}
+
+function MensuSheet({ date, onClose }) {
+  const S = Store.get(), cur = S.mensurations[date] || {}, [d, setD] = useState(() => Object.assign({}, cur)), [sel, setSel] = useState({ k: 'taille', c: null });
+  const avant = Object.keys(S.mensurations).filter(x => x < date).sort().pop(), prev = avant ? S.mensurations[avant] : null;
+  const z = ZONES_MES.find(x => x.k === sel.k) || ZONES_MES[0], idx = ZONES_MES.indexOf(z);
+  const setV = (k, v) => setD(x => Object.assign({}, x, { [k]: v }));
+  const save = () => { const o = { date }; let n = 0; MESURES.forEach(([k]) => { if (d[k] != null) { o[k] = d[k]; n++; } else if (cur[k] != null) o[k] = null; }); if (!n) { onClose(); return; } Store.patch('mensurations', date, o); toast('Mensurations enregistrées'); onClose(); };
+  const champ = (k, lab, cote) => html`<div className=${cx('mes-in', cote && sel.c === cote && 'on')} onFocusCapture=${() => cote && setSel({ k: z.k, c: cote })}>
+    <${Num} id=${'ms-' + k} label=${lab} unit="cm" value=${d[k] == null ? null : d[k]} onChange=${v => setV(k, v)} dec=${1} min=${10} max=${220} placeholder=${prev && Apex.num(prev[k]) ? fq(prev[k]) : ''} />
+    ${prev && Apex.num(prev[k]) && html`<small>Dernière : ${fq(prev[k])} cm (${dTiny(avant)})</small>`}</div>`;
+  const a = z.cote ? mesAsym(d[z.k + '_g'], d[z.k + '_d']) : null, faits = ZONES_MES.filter(x => mesVal(d, x) != null).length;
+  return html`<${Sheet} title=${'Mensurations · ' + dMid(date)} onClose=${onClose}>
+    <div className="mes-fig"><${MensuFig} sel=${sel} vals=${d} onPick=${p => setSel({ k: p.k, c: p.c })} /></div>
+    <div className="chips mes-chips" role="tablist" aria-label="Mesure">${ZONES_MES.map(x => html`<button key=${x.k} type="button" role="tab" className=${cx('chip', mesVal(d, x) != null && 'fait')} aria-pressed=${x.k === z.k} aria-selected=${x.k === z.k} onClick=${() => setSel({ k: x.k, c: x.cote ? 'd' : null })}>${x.n}</button>`)}</div>
+    <div className="mes-p">
+      <div className="mes-ph"><b>${z.n}</b><span>${faits} / ${ZONES_MES.length} zones</span></div>
+      <p className="mes-ou"><i aria-hidden="true"></i>${z.ou}</p>
+      ${z.cote ? html`<div className="mes-lr">${champ(z.k + '_g', 'Gauche', 'g')}${champ(z.k + '_d', 'Droit', 'd')}</div>
+        ${a && html`<div className=${cx('note', Math.abs(a.pct) >= 3 && 'acc')}><${Icon} n=${Math.abs(a.pct) >= 3 ? 'alert' : 'check'} /><div><span><b>Asymétrie : ${asymTxt(a)}.</b> ${Math.abs(a.pct) >= 3 ? 'Plus de 3 % d’écart : commence par le côté faible et fais-lui une série unilatérale de plus.' : 'Moins de 3 % : normal, rien à corriger.'}</span></div></div>`}`
+        : champ(z.k, z.n)}
+      <div className="row"><button type="button" className="btn grow" disabled=${idx === 0} onClick=${() => { const x = ZONES_MES[idx - 1]; setSel({ k: x.k, c: x.cote ? 'd' : null }); }}><${Icon} n="chevL" s=${18} />Précédente</button>
+        <button type="button" className="btn grow" disabled=${idx === ZONES_MES.length - 1} onClick=${() => { const x = ZONES_MES[idx + 1]; setSel({ k: x.k, c: x.cote ? 'd' : null }); }}>Suivante<${Icon} n="chevR" s=${18} /></button></div>
+    </div>
+    <p className="mut" style=${{ fontSize: 12 }}>Ruban à plat, sans serrer, même heure à chaque fois (le matin à jeun). Gauche et droit = TON côté gauche et TON côté droit (sur le bonhomme vu de face, ton côté droit est à gauche).</p>
+    <button type="button" className="btn pri wide" onClick=${save}><${Icon} n="check" s=${18} />Enregistrer</button>
+  <//>`;
+}
+
+function MensuCard({ date, win, cls }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(); const [open, setOpen] = useState(false);
+  const ds = Object.keys(S.mensurations).sort(), from = win ? Apex.addDays(date, -win) : '', dern = ds.length ? S.mensurations[ds[ds.length - 1]] : null;
+  const bf = (() => { for (let i = ds.length - 1; i >= 0; i--) { const m = S.mensurations[ds[i]], v = Apex.navy(m.taille, m.cou, cfg.profil.taille); if (v) return { v, d: ds[i] }; } return null; })();
+  const asyms = ZONES_MES.filter(z => z.cote).map(z => { let a = null; for (let i = ds.length - 1; i >= 0 && !a; i--) { const m = S.mensurations[ds[i]]; a = mesAsym(m[z.k + '_g'], m[z.k + '_d']); } return a ? { z, a } : null; }).filter(Boolean);
+  return html`<${Card} cls=${cls} title="Mensurations" sub="cm, ruban à plat, matin" right=${html`<button type="button" className="btn sm" onClick=${() => setOpen(true)}><${Icon} n="ruler" s=${16} />Mesurer</button>`}>
+    ${ds.length ? html`<div>${ZONES_MES.map(z => {
+      const pts = ds.filter(x => x >= from && mesVal(S.mensurations[x], z) != null).map(x => mesVal(S.mensurations[x], z)); if (!pts.length) return null;
+      const dl = pts.length > 1 ? pts[pts.length - 1] - pts[0] : null, g = mesVal(dern, z, 'g'), dd = mesVal(dern, z, 'd');
+      return html`<div key=${z.k} className="mini"><span>${z.n}${z.cote && g != null && dd != null ? html`<small className="mes-gd">G ${fq(g)} · D ${fq(dd)}</small>` : ''}</span><${Spark} vals=${pts} /><b>${f1(pts[pts.length - 1])}<small>${dl == null ? '1 mesure' : sgn(dl) + ' cm'}</small></b></div>`;
+    })}
+    ${bf && html`<div className="mini"><span>Masse grasse (US Navy)</span><span></span><b>${f1(bf.v)} %<small>${dTiny(bf.d)}</small></b></div>`}
+    ${asyms.length > 0 && html`<div className="mes-asy"><b>Asymétries</b>${asyms.map(x => html`<span key=${x.z.k} className=${cx('pill-m', Math.abs(x.a.pct) >= 3 && 'warn')}>${x.z.n} : ${asymTxt(x.a)}</span>`)}</div>`}</div>`
+    : html`<div className="empty"><span><b>Aucune mesure.</b> Prends ta base : touche une zone sur le bonhomme, le trait rouge montre où placer le ruban. Bras, avant-bras, cuisses et mollets se mesurent des deux côtés pour voir les asymétries ; taille + cou donnent le % de masse grasse (US Navy).</span></div>`}
+    ${open && html`<${MensuSheet} date=${date} onClose=${() => setOpen(false)} />`}
   <//>`;
 }
 
@@ -4869,8 +4929,8 @@ function coachTools(ref, push) {
         push({ lab: 'Programme · ' + notes.join(' ; '), undo: [u] });
         return { ok: true, modifications: notes, exercices_par_seance: Object.keys(items).reduce((o, k) => { o[k] = items[k].length; return o; }, {}) };
       } },
-    { name: 'noter_mensurations', description: 'Enregistre des mensurations en cm : tour de taille au nombril, cou, poitrine, épaules, bras contracté, cuisse. Renvoie le % de masse grasse US Navy si taille et cou sont connus.',
-      inputSchema: { type: 'object', properties: { date: DATE, taille: NB('tour de taille cm'), cou: NB('cm'), poitrine: NB('cm'), epaules: NB('cm'), bras: NB('bras contracté cm'), cuisse: NB('cm') } },
+    { name: 'noter_mensurations', description: 'Enregistre des mensurations en cm : tour de taille au nombril, cou, poitrine, épaules, tour de fesses, et des DEUX côtés si précisé : bras contracté (bras_g, bras_d), avant-bras (avb_g, avb_d), cuisse (cuisse_g, cuisse_d), mollet (mollet_g, mollet_d). Côté non précisé : utilise bras ou cuisse. Renvoie le % de masse grasse US Navy si taille et cou sont connus.',
+      inputSchema: { type: 'object', properties: { date: DATE, taille: NB('tour de taille cm'), cou: NB('cm'), poitrine: NB('cm'), epaules: NB('cm'), fesses: NB('tour de fesses cm'), bras_g: NB('bras gauche contracté cm'), bras_d: NB('bras droit contracté cm'), avb_g: NB('avant-bras gauche cm'), avb_d: NB('avant-bras droit cm'), cuisse_g: NB('cm'), cuisse_d: NB('cm'), mollet_g: NB('cm'), mollet_d: NB('cm'), bras: NB('bras contracté cm, côté non précisé'), cuisse: NB('cuisse cm, côté non précisé') } },
       execute: inp => { const d = dOf(inp.date), f = { date: d }; MESURES.forEach(m => { const v = n(inp[m[0]], 10, 220); if (v != null) f[m[0]] = v; }); if (Object.keys(f).length < 2) throw new Error('Aucune mesure valide.');
         const u = snap('mensurations', d); Store.patch('mensurations', d, f); push({ lab: 'Mensurations · ' + Object.keys(f).filter(k => k !== 'date').join(', '), undo: [u] });
         const m = S().mensurations[d], bf = Apex.navy(m.taille, m.cou, C().profil.taille); return { ok: true, masse_grasse_navy_pct: bf ? +bf.toFixed(1) : null }; } },
