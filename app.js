@@ -3173,70 +3173,90 @@ function CheckIn({ date, go }) {
 }
 
 /* ---- 32-ui-mensu.js ---- */
-/* Macrova — mensurations : on choisit la mesure directement sur le bonhomme (trait rouge à l'endroit exact du ruban),
-   bras, avant-bras, cuisse et mollet des DEUX côtés pour voir les asymétries, plus le tour de fesses.
+/* Macrova — mensurations : on choisit la mesure sur le bonhomme ; seule la zone choisie est tracée, sur la face ET sur le dos
+   (un tour de ruban fait le tour du corps), et des deux côtés pour les membres. Bras, avant-bras, cuisse et mollet se mesurent
+   à gauche et à droite pour voir les asymétries ; tour de fesses en plus.
    Données : un doc par date dans Apex.mensurations, champs à plat (taille, cou, …, bras_g, bras_d, …). Les anciens « bras » et « cuisse »
-   (un seul côté) restent lus. Coordonnées des traits : repère du bonhomme (face 0–208, dos décalé de 220, hauteur 400). */
+   (un seul côté) restent lus. Coordonnées : repère du bonhomme vu de FACE (0–208 × 0–400) ; la vue de dos (décalée de 220) est déduite. */
 const ZONES_MES = [
-  { k: 'cou', n: 'Cou', m: ['trap'], l: [[92, 59, 116, 59]], ou: 'Juste sous la pomme d’Adam, ruban à peine incliné vers l’avant, sans serrer.' },
-  { k: 'epaules', n: 'Épaules', m: ['dLat', 'dAnt'], l: [[44, 90, 164, 90]], ou: 'Tour complet au plus large des deltoïdes, bras le long du corps, épaules relâchées.' },
-  { k: 'poitrine', n: 'Poitrine', m: ['pec', 'pecH'], l: [[60, 104, 148, 104]], ou: 'Sous les aisselles, au niveau des tétons, ruban bien horizontal, fin d’expiration.' },
-  { k: 'taille', n: 'Tour de taille', m: ['abd'], l: [[72, 156, 136, 156]], ou: 'Au nombril, ventre relâché (ne pas rentrer le ventre), fin d’expiration.' },
-  { k: 'fesses', n: 'Tour de fesses', m: ['fess'], l: [[286, 202, 362, 202]], ou: 'Au plus large des fesses, pieds joints, ruban horizontal tout autour.' },
-  { k: 'bras', n: 'Bras', cote: true, m: ['bic', 'tri'], g: [[144, 128, 170, 116]], d: [[38, 116, 64, 128]], ou: 'Bras fléchi et contracté, au plus gros du biceps.' },
-  { k: 'avb', n: 'Avant-bras', cote: true, m: ['avb'], g: [[164, 166, 184, 158]], d: [[23, 158, 43, 166]], ou: 'Bras tendu, poing serré, au plus large sous le coude.' },
-  { k: 'cuisse', n: 'Cuisse', cote: true, m: ['quad', 'adduc', 'isch'], g: [[104, 254, 130, 250]], d: [[77, 250, 103, 254]], ou: 'Debout, poids sur les deux jambes, à mi-distance entre l’aine et le genou.' },
-  { k: 'mollet', n: 'Mollet', cote: true, m: ['mol'], g: [[107, 332, 134, 328]], d: [[73, 328, 100, 332]], ou: 'Debout, au plus gros du mollet.' },
+  { k: 'cou', n: 'Cou', m: ['trap'], l: [92, 59, 116, 59], ou: 'Juste sous la pomme d’Adam, ruban à peine incliné vers l’avant, sans serrer.' },
+  { k: 'epaules', n: 'Épaules', m: ['dLat', 'dAnt', 'dPost'], l: [44, 90, 164, 90], ou: 'Au plus large des deltoïdes, bras le long du corps, épaules relâchées.' },
+  { k: 'poitrine', n: 'Poitrine', m: ['pec', 'pecH'], l: [60, 104, 148, 104], ou: 'Sous les aisselles, au niveau des tétons, ruban horizontal, en fin d’expiration.' },
+  { k: 'taille', n: 'Tour de taille', m: ['abd', 'lomb'], l: [72, 156, 136, 156], ou: 'Au nombril, ventre relâché (sans le rentrer), en fin d’expiration.' },
+  { k: 'fesses', n: 'Tour de fesses', m: ['fess', 'abduc'], l: [66, 202, 142, 202], ou: 'Au plus large des fesses, pieds joints, ruban horizontal tout autour.' },
+  { k: 'bras', n: 'Bras', cote: true, m: ['bic', 'tri'], d: [38, 116, 64, 128], ou: 'Bras fléchi et contracté, au plus gros du biceps.' },
+  { k: 'avb', n: 'Avant-bras', cote: true, m: ['avb'], d: [23, 158, 43, 166], ou: 'Bras tendu, poing serré, au plus large sous le coude.' },
+  { k: 'cuisse', n: 'Cuisse', cote: true, m: ['quad', 'adduc', 'isch'], d: [77, 250, 103, 254], ou: 'Debout, poids réparti, à mi-distance entre l’aine et le genou.' },
+  { k: 'mollet', n: 'Mollet', cote: true, m: ['mol'], d: [73, 328, 100, 332], ou: 'Debout, au plus gros du mollet.' },
 ];
+const MES_DX = 220, MES_AXE = 207; // décalage de la vue de dos ; x' = 207 − x donne le côté opposé (symétrie du bonhomme)
+const mesMiroir = p => [MES_AXE - p[0], p[1], MES_AXE - p[2], p[3]];
+const mesDecal = p => [p[0] + MES_DX, p[1], p[2] + MES_DX, p[3]];
+/* traits d'une zone : face + dos, côté gauche et droit (vu de face, ton côté droit est à gauche ; vu de dos, il est à droite) */
+const mesTraits = z => {
+  if (!z.cote) return [{ c: null, p: z.l }, { c: null, p: mesDecal(z.l) }];
+  const g = mesMiroir(z.d);
+  return [{ c: 'd', p: z.d }, { c: 'g', p: g }, { c: 'd', p: mesDecal(g) }, { c: 'g', p: mesDecal(z.d) }];
+};
 /* liste à plat [clé, libellé] : sert à l'enregistrement et au coach ; « bras » et « cuisse » seuls = anciennes mesures (un côté) */
 const MESURES = ZONES_MES.reduce((l, z) => (z.cote ? l.concat([[z.k + '_g', z.n + ' gauche'], [z.k + '_d', z.n + ' droit']]) : l.concat([[z.k, z.n]])), []).concat([['bras', 'Bras contracté'], ['cuisse', 'Cuisse']]);
 /* valeur d'une zone dans un relevé : côté, moyenne des deux côtés, ou ancienne mesure unique */
 const mesVal = (m, z, cote) => { if (!m) return null; if (!z.cote) return Apex.num(m[z.k]) ? m[z.k] : null; if (cote) return Apex.num(m[z.k + '_' + cote]) ? m[z.k + '_' + cote] : null; const g = m[z.k + '_g'], d = m[z.k + '_d']; return Apex.num(g) && Apex.num(d) ? (g + d) / 2 : Apex.num(g) ? g : Apex.num(d) ? d : Apex.num(m[z.k]) ? m[z.k] : null; };
 const mesAsym = (g, d) => (Apex.num(g) && Apex.num(d) && g + d > 0 ? { dcm: d - g, pct: (d - g) / ((g + d) / 2) * 100 } : null);
 const asymTxt = a => (Math.abs(a.dcm) < 0.05 ? 'symétrique' : (a.dcm > 0 ? 'droit' : 'gauche') + ' +' + fq(Math.round(Math.abs(a.dcm) * 10) / 10) + ' cm (' + fq(Math.round(Math.abs(a.pct) * 10) / 10) + ' %)');
+const mesFaite = (vals, z) => (z.cote ? Apex.num(vals[z.k + '_g']) && Apex.num(vals[z.k + '_d']) : Apex.num(vals[z.k]));
 
-/* Le bonhomme des mensurations : face + dos, traits rouges sur chaque zone ; un trait se touche pour choisir la mesure. */
-function MensuFig({ sel, vals, onPick, h = 330 }) {
-  const z0 = ZONES_MES.find(z => z.k === sel.k) || ZONES_MES[0], W = FIG_VUES.face.w + FIG_VUES.dos.w + 12;
-  const traits = []; ZONES_MES.forEach(z => { (z.cote ? [['g', z.g], ['d', z.d]] : [[null, z.l]]).forEach(([c, L]) => L.forEach((p, i) => traits.push({ z, c, p, key: z.k + (c || '') + i }))); });
-  const fait = t => (t.c ? Apex.num(vals[t.z.k + '_' + t.c]) : Apex.num(vals[t.z.k]));
-  return html`<svg className="mfig both mfig-mes" viewBox=${'0 0 ' + W + ' ' + FIG_H} height=${h} width=${Math.round(h * W / FIG_H)} role="img" aria-label=${'Bonhomme : mesure sélectionnée ' + z0.n + (sel.c ? (sel.c === 'g' ? ' gauche' : ' droit') : '')}>
-    <${FigBody} vue="face" m=${z0.m} s=${[]} x=${0} /><${FigBody} vue="dos" m=${z0.m} s=${[]} x=${FIG_VUES.face.w + 12} />
-    <text x="104" y="396" className="mes-v">FACE</text><text x=${FIG_VUES.face.w + 12 + 104} y="396" className="mes-v">DOS</text>
-    <text x="20" y="20" className="mes-cote">D</text><text x="188" y="20" className="mes-cote">G</text>
-    ${traits.map(t => { const on = t.z.k === sel.k && (!t.z.cote || t.c === sel.c), proche = t.z.k === sel.k && !on;
-      return html`<g key=${t.key} className=${cx('mes-t', on && 'on', proche && 'proche', fait(t) && 'fait')} onClick=${() => onPick({ k: t.z.k, c: t.c })}>
-        <line className="mes-hit" x1=${t.p[0]} y1=${t.p[1]} x2=${t.p[2]} y2=${t.p[3]} />
-        <line className="mes-halo" x1=${t.p[0]} y1=${t.p[1]} x2=${t.p[2]} y2=${t.p[3]} />
-        <line className="mes-l" x1=${t.p[0]} y1=${t.p[1]} x2=${t.p[2]} y2=${t.p[3]} />
-        ${fait(t) && html`<circle className="mes-ok" cx=${t.p[2]} cy=${t.p[3]} r="3.4" />`}</g>`; })}
+/* Le bonhomme : face + dos ; la zone choisie est tracée sur les deux vues (et les deux côtés), les autres sont de simples points à toucher. */
+function MensuFig({ sel, vals, onPick, h = 300 }) {
+  const z0 = ZONES_MES.find(z => z.k === sel) || ZONES_MES[0], W = FIG_VUES.face.w + FIG_VUES.dos.w + 12;
+  return html`<svg className="mfig both mfig-mes" viewBox=${'0 0 ' + W + ' ' + FIG_H} height=${h} width=${Math.round(h * W / FIG_H)} role="img" aria-label=${'Bonhomme : ' + z0.n}>
+    <${FigBody} vue="face" m=${z0.m} s=${[]} x=${0} /><${FigBody} vue="dos" m=${z0.m} s=${[]} x=${MES_DX} />
+    ${ZONES_MES.filter(z => z.k !== z0.k).map(z => { const p = z.cote ? z.d : z.l, cx0 = (p[0] + p[2]) / 2, cy0 = (p[1] + p[3]) / 2, ok = mesFaite(vals, z);
+      return html`<g key=${z.k} className=${cx('mes-pt', ok && 'fait')} onClick=${() => onPick(z.k)} role="button" aria-label=${'Mesurer : ' + z.n}>
+        <circle className="mes-hit" cx=${cx0} cy=${cy0} r="13" /><circle className="mes-dot" cx=${cx0} cy=${cy0} r=${ok ? 3.6 : 3} /></g>`; })}
+    ${mesTraits(z0).map((t, i) => html`<g key=${i} className="mes-sel"><line className="mes-halo" x1=${t.p[0]} y1=${t.p[1]} x2=${t.p[2]} y2=${t.p[3]} /><line className="mes-l" x1=${t.p[0]} y1=${t.p[1]} x2=${t.p[2]} y2=${t.p[3]} /></g>`)}
+    <text x="104" y="397" className="mes-v">FACE</text><text x=${MES_DX + 104} y="397" className="mes-v">DOS</text>
   </svg>`;
 }
 
-function MensuSheet({ date, onClose }) {
-  const S = Store.get(), cur = S.mensurations[date] || {}, [d, setD] = useState(() => Object.assign({}, cur)), [sel, setSel] = useState({ k: 'taille', c: null });
-  const avant = Object.keys(S.mensurations).filter(x => x < date).sort().pop(), prev = avant ? S.mensurations[avant] : null;
-  const z = ZONES_MES.find(x => x.k === sel.k) || ZONES_MES[0], idx = ZONES_MES.indexOf(z);
-  const setV = (k, v) => setD(x => Object.assign({}, x, { [k]: v }));
-  const save = () => { const o = { date }; let n = 0; MESURES.forEach(([k]) => { if (d[k] != null) { o[k] = d[k]; n++; } else if (cur[k] != null) o[k] = null; }); if (!n) { onClose(); return; } Store.patch('mensurations', date, o); toast('Mensurations enregistrées'); onClose(); };
-  const champ = (k, lab, cote) => html`<div className=${cx('mes-in', cote && sel.c === cote && 'on')} onFocusCapture=${() => cote && setSel({ k: z.k, c: cote })}>
-    <${Num} id=${'ms-' + k} label=${lab} unit="cm" value=${d[k] == null ? null : d[k]} onChange=${v => setV(k, v)} dec=${1} min=${10} max=${220} placeholder=${prev && Apex.num(prev[k]) ? fq(prev[k]) : ''} />
-    ${prev && Apex.num(prev[k]) && html`<small>Dernière : ${fq(prev[k])} cm (${dTiny(avant)})</small>`}</div>`;
-  const a = z.cote ? mesAsym(d[z.k + '_g'], d[z.k + '_d']) : null, faits = ZONES_MES.filter(x => mesVal(d, x) != null).length;
-  return html`<${Sheet} title=${'Mensurations · ' + dMid(date)} onClose=${onClose}>
-    <div className="mes-fig"><${MensuFig} sel=${sel} vals=${d} onPick=${p => setSel({ k: p.k, c: p.c })} /></div>
-    <div className="chips mes-chips" role="tablist" aria-label="Mesure">${ZONES_MES.map(x => html`<button key=${x.k} type="button" role="tab" className=${cx('chip', mesVal(d, x) != null && 'fait')} aria-pressed=${x.k === z.k} aria-selected=${x.k === z.k} onClick=${() => setSel({ k: x.k, c: x.cote ? 'd' : null })}>${x.n}</button>`)}</div>
-    <div className="mes-p">
-      <div className="mes-ph"><b>${z.n}</b><span>${faits} / ${ZONES_MES.length} zones</span></div>
-      <p className="mes-ou"><i aria-hidden="true"></i>${z.ou}</p>
-      ${z.cote ? html`<div className="mes-lr">${champ(z.k + '_g', 'Gauche', 'g')}${champ(z.k + '_d', 'Droit', 'd')}</div>
-        ${a && html`<div className=${cx('note', Math.abs(a.pct) >= 3 && 'acc')}><${Icon} n=${Math.abs(a.pct) >= 3 ? 'alert' : 'check'} /><div><span><b>Asymétrie : ${asymTxt(a)}.</b> ${Math.abs(a.pct) >= 3 ? 'Plus de 3 % d’écart : commence par le côté faible et fais-lui une série unilatérale de plus.' : 'Moins de 3 % : normal, rien à corriger.'}</span></div></div>`}`
-        : champ(z.k, z.n)}
-      <div className="row"><button type="button" className="btn grow" disabled=${idx === 0} onClick=${() => { const x = ZONES_MES[idx - 1]; setSel({ k: x.k, c: x.cote ? 'd' : null }); }}><${Icon} n="chevL" s=${18} />Précédente</button>
-        <button type="button" className="btn grow" disabled=${idx === ZONES_MES.length - 1} onClick=${() => { const x = ZONES_MES[idx + 1]; setSel({ k: x.k, c: x.cote ? 'd' : null }); }}>Suivante<${Icon} n="chevR" s=${18} /></button></div>
+/* Une valeur à saisir : grand chiffre, −/+ 0,5 cm, dernière mesure et écart. */
+function MesVal({ k, lab, d, setV, prev, avant }) {
+  const v = d[k], p = prev && Apex.num(prev[k]) ? prev[k] : null, dl = Apex.num(v) && p != null ? v - p : null;
+  const pas = s => setV(k, Math.max(10, Math.round(((Apex.num(v) ? v : p != null ? p : 30) + s) * 2) / 2));
+  return html`<div className="mes-val">
+    <span className="mes-vl">${lab}</span>
+    <div className="mes-vc">
+      <button type="button" className="ib sm" aria-label=${lab + ' : moins 0,5 cm'} onClick=${() => pas(-0.5)}><${Icon} n="minus" s=${16} /></button>
+      <span className="mes-vi"><${Num} small id=${'ms-' + k} hint=${lab + ' en cm'} value=${v == null ? null : v} onChange=${x => setV(k, x)} dec=${1} min=${10} max=${220} placeholder=${p != null ? fq(p) : '–'} /><small>cm</small></span>
+      <button type="button" className="ib sm" aria-label=${lab + ' : plus 0,5 cm'} onClick=${() => pas(0.5)}><${Icon} n="plus" s=${16} /></button>
     </div>
-    <p className="mut" style=${{ fontSize: 12 }}>Ruban à plat, sans serrer, même heure à chaque fois (le matin à jeun). Gauche et droit = TON côté gauche et TON côté droit (sur le bonhomme vu de face, ton côté droit est à gauche).</p>
-    <button type="button" className="btn pri wide" onClick=${save}><${Icon} n="check" s=${18} />Enregistrer</button>
+    <span className="mes-vp">${p == null ? 'Première mesure' : dl == null ? 'Dernière : ' + fq(p) + ' cm' : html`<b className=${dl > 0 ? 'up' : dl < 0 ? 'down' : ''}>${dl > 0 ? '+' : dl < 0 ? '−' : '±'}${fq(Math.round(Math.abs(dl) * 10) / 10)} cm</b> depuis le ${dTiny(avant)}`}</span>
+  </div>`;
+}
+
+function MensuSheet({ date, onClose }) {
+  const S = Store.get(), cur = S.mensurations[date] || {}, [d, setD] = useState(() => Object.assign({}, cur)), [sel, setSel] = useState('taille');
+  const avant = Object.keys(S.mensurations).filter(x => x < date).sort().pop(), prev = avant ? S.mensurations[avant] : null;
+  const z = ZONES_MES.find(x => x.k === sel) || ZONES_MES[0], idx = ZONES_MES.indexOf(z), faits = ZONES_MES.filter(x => mesFaite(d, x)).length;
+  const setV = (k, v) => setD(x => Object.assign({}, x, { [k]: v }));
+  const aller = i => setSel(ZONES_MES[(i + ZONES_MES.length) % ZONES_MES.length].k);
+  const save = () => { const o = { date }; let n = 0; MESURES.forEach(([k]) => { if (d[k] != null) { o[k] = d[k]; n++; } else if (cur[k] != null) o[k] = null; }); if (!n) { onClose(); return; } Store.patch('mensurations', date, o); toast('Mensurations enregistrées'); onClose(); };
+  const a = z.cote ? mesAsym(d[z.k + '_g'], d[z.k + '_d']) : null, fort = a && Math.abs(a.pct) >= 3;
+  return html`<${Sheet} title=${'Mensurations · ' + dMid(date)} onClose=${onClose}>
+    <div className="mes-fig"><${MensuFig} sel=${z.k} vals=${d} onPick=${setSel} />
+      <div className="mes-tag"><b>${z.n}</b>${z.cote ? html`<span>gauche + droit</span>` : html`<span>tour complet</span>`}</div></div>
+    <div className="mes-prog"><span><b>${faits}</b> / ${ZONES_MES.length} zones mesurées</span><div aria-hidden="true"><i style=${{ width: faits / ZONES_MES.length * 100 + '%' }}></i></div></div>
+    <div className="mes-zones" role="tablist" aria-label="Zone à mesurer">${ZONES_MES.map(x => html`<button key=${x.k} type="button" role="tab" aria-selected=${x.k === z.k} className=${cx('mes-z', x.k === z.k && 'on', mesFaite(d, x) && 'fait')} onClick=${() => setSel(x.k)}>${mesFaite(d, x) && html`<${Icon} n="check" s=${13} w=${3} />`}${x.n}</button>`)}</div>
+    <div className="mes-p">
+      <p className="mes-ou"><${Icon} n="ruler" s=${17} /><span>${z.ou}</span></p>
+      ${z.cote ? html`<div className="mes-lr"><${MesVal} k=${z.k + '_g'} lab="Gauche" d=${d} setV=${setV} prev=${prev} avant=${avant} /><${MesVal} k=${z.k + '_d'} lab="Droit" d=${d} setV=${setV} prev=${prev} avant=${avant} /></div>
+        ${a && html`<div className=${cx('mes-asym', fort && 'fort')}><${Icon} n=${fort ? 'alert' : 'check'} s=${16} /><span><b>${Math.abs(a.dcm) < 0.05 ? 'Symétrique' : 'Écart : ' + asymTxt(a)}</b>${fort ? ' · commence par le côté faible et ajoute-lui une série unilatérale.' : ' · moins de 3 %, c’est normal.'}</span></div>`}`
+        : html`<${MesVal} k=${z.k} lab=${z.n} d=${d} setV=${setV} prev=${prev} avant=${avant} />`}
+      <div className="row"><button type="button" className="btn grow ghost" onClick=${() => aller(idx - 1)}><${Icon} n="chevL" s=${18} />${ZONES_MES[(idx + ZONES_MES.length - 1) % ZONES_MES.length].n}</button>
+        <button type="button" className="btn grow" onClick=${() => aller(idx + 1)}>${ZONES_MES[(idx + 1) % ZONES_MES.length].n}<${Icon} n="chevR" s=${18} /></button></div>
+    </div>
+    <p className="mut" style=${{ fontSize: 12, textAlign: 'center' }}>Ruban à plat, sans serrer, le matin à jeun. Gauche et droit = tes côtés à toi.</p>
+    <button type="button" className="btn pri wide" onClick=${save}><${Icon} n="check" s=${18} />Enregistrer${faits ? ' · ' + faits + ' zone' + (faits > 1 ? 's' : '') : ''}</button>
   <//>`;
 }
 
@@ -3253,7 +3273,7 @@ function MensuCard({ date, win, cls }) {
     })}
     ${bf && html`<div className="mini"><span>Masse grasse (US Navy)</span><span></span><b>${f1(bf.v)} %<small>${dTiny(bf.d)}</small></b></div>`}
     ${asyms.length > 0 && html`<div className="mes-asy"><b>Asymétries</b>${asyms.map(x => html`<span key=${x.z.k} className=${cx('pill-m', Math.abs(x.a.pct) >= 3 && 'warn')}>${x.z.n} : ${asymTxt(x.a)}</span>`)}</div>`}</div>`
-    : html`<div className="empty"><span><b>Aucune mesure.</b> Prends ta base : touche une zone sur le bonhomme, le trait rouge montre où placer le ruban. Bras, avant-bras, cuisses et mollets se mesurent des deux côtés pour voir les asymétries ; taille + cou donnent le % de masse grasse (US Navy).</span></div>`}
+    : html`<div className="empty"><span><b>Aucune mesure.</b> Prends ta base : choisis une zone sur le bonhomme, le trait montre où placer le ruban. Bras, avant-bras, cuisses et mollets se mesurent des deux côtés pour voir les asymétries ; taille + cou donnent le % de masse grasse (US Navy).</span></div>`}
     ${open && html`<${MensuSheet} date=${date} onClose=${() => setOpen(false)} />`}
   <//>`;
 }
