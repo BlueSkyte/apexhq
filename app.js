@@ -2802,7 +2802,7 @@ const Sante = (() => {
   const subs = new Set();
   let etat = { on: false, last: 0, err: '', busy: false };
   try { etat = Object.assign(etat, JSON.parse(localStorage.getItem(LK) || '{}'), { busy: false }); } catch (e) { /* stockage indisponible */ }
-  const save = () => { try { localStorage.setItem(LK, JSON.stringify({ on: etat.on, last: etat.last, err: etat.err })); } catch (e) { /* sans effet */ } };
+  const save = () => { try { localStorage.setItem(LK, JSON.stringify({ on: etat.on, last: etat.last, err: etat.err, diag: etat.diag })); } catch (e) { /* sans effet */ } };
   const emit = () => subs.forEach(f => { try { f(); } catch (e) { /* abonné fautif ignoré */ } });
   const set = o => { etat = Object.assign({}, etat, o); save(); emit(); };
 
@@ -2862,15 +2862,27 @@ const Sante = (() => {
     const h = H(); if (!h || !etat.on || etat.busy) return 0;
     set({ busy: true });
     const n = jours || 7, debut = debutJour(n - 1).toISOString(), fin = new Date().toISOString();
-    let modifs = 0; const err = [];
-    const essai = async (nom, f) => { try { await f(); } catch (e) { err.push(nom); } };
+    let modifs = 0; const err = [], diag = { t: Date.now() };
+    const essai = async (nom, f) => { try { await f(); } catch (e) { err.push(nom); diag[nom] = Object.assign(diag[nom] || {}, { err: String((e && (e.message || e.code)) || e).slice(0, 160) }); } };
+    try { const a = await h.checkAuthorization({ read: LIRE, write: [] }); diag.ok = a.readAuthorized || []; diag.refus = a.readDenied || []; } catch (e) { diag.auth = String((e && e.message) || e).slice(0, 120); }
     await essai('pas', async () => {
+      /* Cumul par jour ; si Health Connect ne renvoie rien en cumul, on additionne les enregistrements bruts. */
+      const parJour = {};
       const r = await h.queryAggregated({ dataType: 'steps', startDate: debut, endDate: fin, bucket: 'day', aggregation: 'sum' });
-      (r.samples || []).forEach(s => { const v = Math.round(s.value || 0); if (v > 0) modifs += poser(jour(s.startDate), { pas: v }); });
+      (r.samples || []).forEach(s => { const v = Math.round(s.value || 0); if (v > 0) parJour[jour(s.startDate)] = v; });
+      let mode = 'cumul';
+      if (!Object.keys(parJour).length) {
+        mode = 'brut'; const b = await h.readSamples({ dataType: 'steps', startDate: debut, endDate: fin, limit: 5000, ascending: true });
+        (b.samples || []).forEach(s => { const d = jour(s.startDate); parJour[d] = (parJour[d] || 0) + (s.value || 0); });
+        diag.pas = { brut: (b.samples || []).length, sources: [...new Set((b.samples || []).map(s => s.sourceName).filter(Boolean))].slice(0, 4) };
+      }
+      Object.keys(parJour).forEach(d => { const v = Math.round(parJour[d]); if (v > 0) modifs += poser(d, { pas: v }); });
+      diag.pas = Object.assign(diag.pas || {}, { mode, jours: Object.keys(parJour).length, auj: parJour[jour(new Date())] || 0 });
     });
     await essai('sommeil', async () => {
       const r = await h.readSamples({ dataType: 'sleep', startDate: debutJour(n).toISOString(), endDate: fin, limit: 1000, ascending: true });
       const nuits = sommeilParNuit(r.samples); Object.keys(nuits).forEach(d => { modifs += poser(d, { sommeil: nuits[d] }); });
+      diag.sommeil = { brut: (r.samples || []).length, nuits: Object.keys(nuits).length };
     });
     await essai('fc', async () => {
       const r = await h.queryAggregated({ dataType: 'restingHeartRate', startDate: debut, endDate: fin, bucket: 'day', aggregation: 'average' });
@@ -2881,7 +2893,8 @@ const Sante = (() => {
       const der = {}; (r.samples || []).forEach(s => { if (s.value >= 30 && s.value <= 250) der[jour(s.startDate)] = Math.round(s.value * 10) / 10; });
       Object.keys(der).forEach(d => { const j = Store.get().journal[d] || {}; if (j.poids == null) modifs += poser(d, { poids: der[d] }); });
     });
-    set({ busy: false, last: Date.now(), err: err.length === 4 ? 'Lecture impossible : vérifie les autorisations.' : '' });
+    diag.erreurs = err;
+    set({ busy: false, last: Date.now(), diag, err: err.length === 4 ? 'Lecture impossible : vérifie les autorisations.' : '' });
     return modifs;
   }
   /* À l'ouverture et au retour dans l'app : au plus une synchro toutes les 10 minutes. */
@@ -6038,7 +6051,27 @@ function SanteBody() {
       ${!ios && html`<button type="button" className="btn ghost wide" onClick=${() => { try { const c = window.Capacitor; (c.Plugins.Health || c.registerPlugin('Health')).openHealthConnectSettings(); } catch (er) { /* sans effet */ } }}><${Icon} n="sliders" s=${18} />Gérer les autorisations</button>`}
       <button type="button" className="btn ghost wide dan-t" onClick=${() => { Sante.deconnecter(); setMsg('Synchro arrêtée. Pour retirer l’accès, va dans ' + (ios ? 'Réglages › Santé › Accès aux données.' : 'Health Connect.')); }}><${Icon} n="x" s=${18} />Arrêter la synchro</button>`}
     ${(msg || e.err) && html`<p className="sec" role="status" style=${{ fontSize: 13 }}>${msg || e.err}</p>`}
+    ${e.on && e.diag && html`<${SanteDiag} d=${e.diag} ios=${ios} />`}
   <//>`;
+}
+
+/* Ce que la synchro a réellement lu : de quoi comprendre un « 0 pas » sans outil de développeur. */
+function SanteDiag({ d, ios }) {
+  const p = d.pas || {}, refusPas = (d.refus || []).indexOf('steps') >= 0, vide = !p.err && !p.jours;
+  const ligne = (lab, txt, ok) => html`<div className="sd-l"><span>${lab}</span><b className=${ok ? 'ok' : 'ko'}>${txt}</b></div>`;
+  return html`<div className="sd">
+    <b className="sd-t">Diagnostic de la dernière synchro</b>
+    ${ligne('Pas', p.err ? 'erreur : ' + p.err : refusPas ? 'accès refusé' : p.jours ? p.jours + ' jour' + (p.jours > 1 ? 's' : '') + ' · aujourd’hui ' + (p.auj || 0).toLocaleString('fr-FR') : 'aucune donnée', !!p.jours)}
+    ${ligne('Sommeil', d.sommeil ? (d.sommeil.err ? 'erreur' : d.sommeil.nuits + ' nuit' + (d.sommeil.nuits > 1 ? 's' : '')) : '–', d.sommeil && d.sommeil.nuits > 0)}
+    ${ligne('Autorisations', (d.ok || []).length + ' accordée' + ((d.ok || []).length > 1 ? 's' : '') + ((d.refus || []).length ? ' · ' + d.refus.length + ' refusée' + (d.refus.length > 1 ? 's' : '') : ''), !(d.refus || []).length)}
+    ${refusPas && html`<p className="sd-a"><b>L’accès aux pas est refusé.</b> ${ios ? 'Réglages iPhone › Santé › Accès aux données › Macrolya : active « Pas ».' : 'Touche « Gérer les autorisations » ci-dessus et active « Pas ».'}</p>`}
+    ${!refusPas && vide && html`<p className="sd-a"><b>${ios ? 'Apple Santé' : 'Health Connect'} ne contient aucun pas.</b> ${ios ? 'Vérifie que ton iPhone ou ta montre enregistre bien les pas dans l’app Santé.' : 'L’app qui compte tes pas doit les partager avec Health Connect :'}</p>`}
+    ${!ios && !refusPas && vide && html`<ul className="sd-u">
+      <li><b>Samsung Health</b> : Paramètres › Health Connect › autoriser Samsung Health à <i>écrire</i> les pas.</li>
+      <li><b>Google Fit</b> : Profil › Paramètres › « Synchroniser Fit avec Health Connect ».</li>
+      <li><b>Montre (Garmin, Fitbit, Xiaomi…)</b> : dans son app, active le partage vers Health Connect.</li>
+      <li>Puis reviens ici et touche « Synchroniser maintenant ».</li></ul>`}
+  </div>`;
 }
 
 /* ---- 70-ui-app.js ---- */
