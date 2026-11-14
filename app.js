@@ -3111,22 +3111,26 @@ function Confirm({ label, sure, onYes, cls, icon }) {
 }
 
 /* ---------- jauges ---------- */
+/* Barre de macro : au-delà de la cible, la barre s'étire (échelle = le plus grand des deux), un repère marque la cible
+   et la partie en trop passe en rouge. */
 function Meter({ label, v, v2, max, c, unit = 'g' }) {
-  const pc = x => Math.max(0, Math.min(100, max ? x / max * 100 : 0)) + '%';
-  return html`<div className="mt" style=${{ '--c': c }}>
-    <div className="mt-h"><span><i></i>${label}</span><b>${f0(v)}<small> / ${f0(max)} ${unit}</small></b></div>
-    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(v) }}></i></div>
+  const tot = Math.max(max || 0, v || 0, v2 || 0) || 1, pc = x => Math.max(0, Math.min(100, x / tot * 100)) + '%';
+  const sur = max && v > max ? v - max : 0, pct = max ? Math.round(v / max * 100) : 0;
+  return html`<div className=${cx('mt', sur > 0 && 'mt-over')} style=${{ '--c': c }}>
+    <div className="mt-h"><span><i></i>${label}</span><b><span className="mt-v">${f0(v)}<small> / ${f0(max)} ${unit}${sur > 0 ? '' : max && v > 0 ? ' · ' + pct + ' %' : ''}</small></span>${sur > 0 && html`<em className="mt-x">+${f0(sur)} ${unit} · ${pct} %</em>`}</b></div>
+    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(Math.min(v, max || v)) }}></i>${sur > 0 && html`<b style=${{ left: pc(max), width: pc(sur) }}></b>`}${max && tot > max && html`<em style=${{ left: pc(max) }}></em>`}</div>
   </div>`;
 }
+/* Anneau : un tour = la cible ; au-delà, un second tour rouge montre le surplus (jusqu'à 2× la cible). */
 function Ring({ v, v2, max, size = 150, sw = 11, children }) {
   const r = (size - sw) / 2, c = 2 * Math.PI * r, h = size / 2;
   const p = Math.max(0, Math.min(1, max ? v / max : 0)), p2 = Math.max(0, Math.min(1, max ? (v2 || 0) / max : 0));
-  const over = max && v > max * 1.03, col = over ? 'var(--crit)' : 'var(--acc-hi)';
-  const arc = (q, o) => html`<circle cx=${h} cy=${h} r=${r} fill="none" stroke=${col} strokeOpacity=${o} strokeWidth=${sw} strokeLinecap="round" strokeDasharray=${c * q + ' ' + c} transform=${'rotate(-90 ' + h + ' ' + h + ')'} />`;
-  return html`<div className="ring" style=${{ width: size, height: size }}>
+  const pOver = max ? Math.max(0, Math.min(1, v / max - 1)) : 0, p2Over = max ? Math.max(0, Math.min(1, (v2 || 0) / max - 1)) : 0;
+  const arc = (q, o, col, w) => html`<circle cx=${h} cy=${h} r=${r} fill="none" stroke=${col} strokeOpacity=${o} strokeWidth=${w || sw} strokeLinecap="round" strokeDasharray=${c * q + ' ' + c} transform=${'rotate(-90 ' + h + ' ' + h + ')'} />`;
+  return html`<div className=${cx('ring', pOver > 0 && 'ring-over')} style=${{ width: size, height: size }}>
     <svg width=${size} height=${size} viewBox=${'0 0 ' + size + ' ' + size} aria-hidden="true">
       <circle cx=${h} cy=${h} r=${r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth=${sw} />
-      ${p2 > p && arc(p2, 0.3)}${p > 0 && arc(p, 1)}
+      ${p2 > p && arc(p2, 0.3, 'var(--acc-hi)')}${p > 0 && arc(p, pOver > 0 ? 0.55 : 1, 'var(--acc-hi)')}${p2Over > pOver + 0.005 && arc(p2Over, 0.35, 'var(--crit)')}${pOver > 0.005 && arc(pOver, 1, 'var(--crit)', Number(sw) + 1)}
     </svg>
     <div className="ring-c">${children}</div>
   </div>`;
@@ -3268,7 +3272,7 @@ function Hero({ date, go }) {
         <div className="hero-n">${f0(c.kcal)}<small>kcal</small></div>
         <div className="hero-s">${c.ajust !== 0 ? 'dont ' + sgn(c.ajust, f0) + ' de lissage (base ' + f0(c.base) + ')' : 'objectif du jour'}</div>
       </div>
-      <${Ring} v=${reel.k} v2=${man ? 0 : t.plan.k} max=${c.kcal} size=118 sw=10><b style=${{ fontSize: 28 }}>${reel.k > 0 ? pc + ' %' : '–'}</b><span>mangé</span><//>
+      <${Ring} v=${reel.k} v2=${man ? 0 : t.plan.k} max=${c.kcal} size=118 sw=10><b style=${{ fontSize: 28 }}>${reel.k > 0 ? pc + ' %' : '–'}</b>${reel.k > c.kcal ? html`<span className="ring-x">+${f0(reel.k - c.kcal)} kcal</span>` : html`<span>mangé</span>`}<//>
     </div>
     <div className="hero-bars">
       <${Meter} label="Protéines" v=${reel.p} v2=${man ? 0 : t.plan.p} max=${c.p} c="var(--p)" />
@@ -3279,7 +3283,7 @@ function Hero({ date, go }) {
       ${Apex.types(cfg).map(tp => html`<button key=${tp} className="chip" aria-pressed=${seance === tp} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: tp })}>${tp}</button>`)}
     </div>`}
     <div className="row sb">
-      <span className="hero-s">${reel.k > 0 ? 'Reste ' + f0(Math.max(0, c.kcal - reel.k)) + ' kcal · ' + f0(Math.max(0, c.p - reel.p)) + ' g de protéines' : c.statut === 'salle' ? 'Glucides autour de la séance, ' + f0(cfg.cibles.pasMin) + ' pas minimum.' : 'Glucides réduits, protéines hautes, ' + f0(cfg.cibles.pasMin) + ' pas minimum.'}</span>
+      <span className=${cx('hero-s', reel.k > c.kcal && 'hero-over')}>${reel.k > c.kcal ? 'Surplus : +' + f0(reel.k - c.kcal) + ' kcal au-dessus de l’objectif (' + pc + ' %)' + (reel.p < c.p ? ' · encore ' + f0(c.p - reel.p) + ' g de protéines' : '') : reel.k > 0 ? 'Reste ' + f0(c.kcal - reel.k) + ' kcal · ' + f0(Math.max(0, c.p - reel.p)) + ' g de protéines' : c.statut === 'salle' ? 'Glucides autour de la séance, ' + f0(cfg.cibles.pasMin) + ' pas minimum.' : 'Glucides réduits, protéines hautes, ' + f0(cfg.cibles.pasMin) + ' pas minimum.'}</span>
       <button className="btn sm" onClick=${() => go('repas')}>Plan repas<${Icon} n="chevR" s=${16} /></button>
     </div>
   </section>`;
@@ -3894,14 +3898,14 @@ function Repas({ date }) {
       <div className="c7 stack" style=${{ gap: 14, alignContent: 'start' }}>
         <${Card} title="Bilan du jour" sub=${man ? 'Bilan saisi à la main' : 'Mangé (plein) et prévu (clair)'} right=${html`<${Pill} st=${Math.abs(ecart) <= c.kcal * 0.05 ? 'good' : Math.abs(ecart) <= 300 ? 'warn' : 'crit'}>${man ? 'Réel' : 'Prévu'} ${sgn(ecart, f0)} kcal<//>`}>
           <div className="sum">
-            <${Ring} v=${cons.k} v2=${man ? 0 : plan.k} max=${c.kcal}><b>${f0(cons.k)}</b><span>/ ${f0(c.kcal)} kcal</span><//>
+            <${Ring} v=${cons.k} v2=${man ? 0 : plan.k} max=${c.kcal}><b>${f0(cons.k)}</b><span>/ ${f0(c.kcal)} kcal${c.kcal ? ' · ' + Math.round(cons.k / c.kcal * 100) + ' %' : ''}</span>${cons.k > c.kcal && html`<span className="ring-x">+${f0(cons.k - c.kcal)} kcal</span>`}<//>
             <div className="sum-r">
               <${Meter} label="Protéines" v=${cons.p} v2=${man ? 0 : plan.p} max=${c.p} c="var(--p)" />
               <${Meter} label="Glucides" v=${cons.g} v2=${man ? 0 : plan.g} max=${c.g} c="var(--g)" />
               <${Meter} label="Lipides" v=${cons.l} v2=${man ? 0 : plan.l} max=${c.l} c="var(--l)" />
             </div>
           </div>
-          <p className="reste">${c.kcal - cons.k < 0 ? html`<b className="over">${f0(cons.k - c.kcal)} kcal de trop</b>` : html`<b>${f0(c.kcal - cons.k)} kcal</b> à manger`} <span>· P ${f0(Math.max(0, c.p - cons.p))} · G ${f0(Math.max(0, c.g - cons.g))} · L ${f0(Math.max(0, c.l - cons.l))}</span></p>
+          <p className="reste">${c.kcal - cons.k < 0 ? html`<b className="over">${f0(cons.k - c.kcal)} kcal de trop</b>` : html`<b>${f0(c.kcal - cons.k)} kcal</b> à manger`} <span>${[['P', c.p - cons.p], ['G', c.g - cons.g], ['L', c.l - cons.l]].map(([k, d]) => html`<${React.Fragment} key=${k}> · ${k} ${d < 0 ? html`<b className="over">+${f0(-d)}</b>` : f0(d)}<//>`)}</span></p>
           ${ecart > 40 && html`<div className="note acc"><${Icon} n="alert" /><div>
             <span><b>${sgn(ecart, f0)} kcal</b> au-dessus de ta cible.</span>
             ${canFit && html`<button type="button" className="btn sm pri" onClick=${refit}><${Icon} n="refresh" s=${16} />Recaler le reste</button>`}
