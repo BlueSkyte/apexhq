@@ -4752,8 +4752,25 @@ function ajouterProduit(p) {
   Store.patch('cfg', null, { aliments: Object.assign({}, Store.cfg().aliments, { [id]: f }) }); return id;
 }
 
+/* Détecteur : celui du navigateur s'il lit les EAN (Chrome Android), sinon ZXing en WebAssembly embarqué dans l'app
+   (iPhone, Firefox, PC) — chargé seulement à l'ouverture du scanner, sans CDN. */
+const SCAN_F = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+let zxingP = null;
+const loadZX = () => zxingP || (zxingP = new Promise((res, rej) => {
+  const s = document.createElement('script'); s.src = 'vendor/barcode.js'; s.async = true;
+  s.onload = () => { try { const M = window.BarcodeDetectionAPI; M.setZXingModuleOverrides({ locateFile: (p, pre) => (p.endsWith('.wasm') ? new URL('vendor/zxing_reader.wasm', location.href).href : pre + p) }); res(M.BarcodeDetector); } catch (e) { rej(e); } };
+  s.onerror = () => { zxingP = null; rej(new Error('load')); };
+  document.head.appendChild(s);
+}));
+async function detecteur() {
+  try { if (typeof BarcodeDetector !== 'undefined') { const f = await BarcodeDetector.getSupportedFormats(); if (f && f.indexOf('ean_13') >= 0) return new BarcodeDetector({ formats: SCAN_F }); } } catch (e) { /* détecteur natif inutilisable */ }
+  const BD = await loadZX(); return new BD({ formats: SCAN_F });
+}
+
 function ScanSheet({ title, onProduct, onClose }) {
   const vid = useRef(null); const [code, setCode] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [cam, setCam] = useState('');
+  const trk = useRef(null); const [torch, setTorch] = useState(null);
+  const lampe = async () => { const t = trk.current; if (!t) return; try { await t.applyConstraints({ advanced: [{ torch: !torch }] }); setTorch(!torch); } catch (e) { setTorch(null); } };
   const done = useRef(false);
   const lookup = async c => {
     if (done.current) return; setBusy(true); setErr('');
@@ -4765,22 +4782,35 @@ function ScanSheet({ title, onProduct, onClose }) {
     } catch (e) { setErr(e && e.message === 'code' ? 'Code-barres invalide (8 à 14 chiffres).' : 'Recherche impossible : vérifie ta connexion.'); setBusy(false); }
   };
   useEffect(() => {
-    if (typeof BarcodeDetector === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setCam('Scan caméra non pris en charge sur cet appareil : saisis le numéro sous le code-barres.'); return undefined; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setCam('Caméra indisponible sur cet appareil : saisis le numéro sous le code-barres.'); return undefined; }
     let stream = null, stop = false, timer = 0;
     (async () => {
+      let det = null;
+      setCam('Ouverture de la caméra…');
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
-        if (stop) { stream.getTracks().forEach(t => t.stop()); return; }
-        const v = vid.current; v.srcObject = stream; await v.play();
-        const det = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] });
-        const tick = async () => { if (stop) return; try { const r = await det.detect(v); if (r && r[0] && r[0].rawValue) { stop = true; lookup(r[0].rawValue); return; } } catch (e) { /* image pas prête */ } timer = setTimeout(tick, 350); };
-        tick(); setCam('Vise le code-barres, bien éclairé.');
-      } catch (e) { setCam('Caméra refusée ou indisponible : saisis le numéro sous le code-barres.'); }
+        [stream, det] = await Promise.all([
+          navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }),
+          detecteur().catch(() => null),
+        ]);
+      } catch (e) { setCam(e && e.name === 'NotAllowedError' ? 'Accès à la caméra refusé : autorise-le dans les réglages du téléphone, ou saisis le numéro sous le code-barres.' : 'Caméra indisponible : saisis le numéro sous le code-barres.'); return; }
+      if (stop) { stream.getTracks().forEach(t => t.stop()); return; }
+      if (!det) { stream.getTracks().forEach(t => t.stop()); setCam('Lecteur de code-barres indisponible (chargement impossible) : saisis le numéro sous le code-barres.'); return; }
+      const t = stream.getVideoTracks()[0]; trk.current = t;
+      try { const c = t.getCapabilities ? t.getCapabilities() : {}; if (c.focusMode && c.focusMode.indexOf('continuous') >= 0) await t.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); if (c.torch) setTorch(false); } catch (e) { /* réglages caméra facultatifs */ }
+      const v = vid.current; v.srcObject = stream;
+      try { await v.play(); } catch (e) { /* lecture auto bloquée : la vidéo démarre au premier toucher */ }
+      const tick = async () => {
+        if (stop) return;
+        try { if (v.readyState >= 2) { const r = await det.detect(v); const hit = r && r.find(x => x && /^\d{8,14}$/.test(x.rawValue || '')); if (hit) { stop = true; try { navigator.vibrate && navigator.vibrate(60); } catch (e) { /* sans vibreur */ } setCam('Code lu : ' + hit.rawValue); lookup(hit.rawValue); return; } } } catch (e) { /* image pas prête */ }
+        timer = setTimeout(tick, 250);
+      };
+      tick(); setCam('Place le code-barres dans le cadre, bien éclairé.');
     })();
     return () => { stop = true; clearTimeout(timer); if (stream) stream.getTracks().forEach(t => t.stop()); };
   }, []);
   return html`<${Sheet} title=${title || 'Scanner un produit'} onClose=${onClose}>
-    <video ref=${vid} className="scan-v" playsInline muted></video>
+    <div className="scan-w"><video ref=${vid} className="scan-v" playsInline muted autoPlay></video><i className="scan-box" aria-hidden="true"></i>
+      ${torch != null && html`<button type="button" className=${cx('ib scan-t', torch && 'on')} aria-label=${torch ? 'Éteindre la lampe' : 'Allumer la lampe'} aria-pressed=${torch} onClick=${lampe}><${Icon} n="bolt" s=${20} /></button>`}</div>
     ${cam && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${cam}</p>`}
     <label className="fld" htmlFor="scan-code"><span className="fld-l">Ou le numéro du code-barres</span>
       <input id="scan-code" className="inp" type="text" inputMode="numeric" maxLength="14" placeholder="3017620422003" value=${code} onChange=${e => setCode(e.target.value.replace(/\D/g, ''))} onKeyDown=${e => { if (e.key === 'Enter' && code) lookup(code); }} /></label>
