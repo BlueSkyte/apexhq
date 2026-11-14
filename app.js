@@ -3130,20 +3130,28 @@ function Meter({ label, v, v2, max, c, unit = 'g' }) {
   const tot = Math.max(max || 0, v || 0, v2 || 0) || 1, pc = x => Math.max(0, Math.min(100, x / tot * 100)) + '%';
   const sur = max && v > max ? v - max : 0, pct = max ? Math.round(v / max * 100) : 0;
   return html`<div className=${cx('mt', sur > 0 && 'mt-over')} style=${{ '--c': c }}>
-    <div className="mt-h"><span><i></i>${label}</span><b><span className="mt-v">${f0(v)}<small> / ${f0(max)} ${unit}${sur > 0 ? '' : max && v > 0 ? ' · ' + pct + ' %' : ''}</small></span>${sur > 0 && html`<em className="mt-x">+${f0(sur)} ${unit} · ${pct} %</em>`}</b></div>
+    <div className="mt-h"><span><i></i>${label}${sur > 0 && html`<em className="mt-x">+${f0(sur)} ${unit}</em>`}</span><b><span className="mt-v">${f0(v)}<small> / ${f0(max)} ${unit}${max && v > 0 ? ' · ' + pct + ' %' : ''}</small></span></b></div>
     <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(Math.min(v, max || v)) }}></i>${sur > 0 && html`<b style=${{ left: pc(max), width: pc(sur) }}></b>`}${max && tot > max && html`<em style=${{ left: pc(max) }}></em>`}</div>
   </div>`;
 }
-/* Anneau : un tour = la cible ; au-delà, un second tour rouge montre le surplus (jusqu'à 2× la cible). */
+/* Anneau : un tour = la cible. Au-delà, le surplus s'affiche sur un anneau intérieur fin, ambre, façon anneaux d'activité
+   (un tour intérieur = 100 % de surplus) ; le prévu au-delà de la cible y apparaît en pâle. */
 function Ring({ v, v2, max, size = 150, sw = 11, children }) {
-  const r = (size - sw) / 2, c = 2 * Math.PI * r, h = size / 2;
+  const S = Number(size), W = Number(sw), h = S / 2, r = (S - W) / 2, c = 2 * Math.PI * r;
+  const wi = Math.max(4, Math.round(W * 0.55)), ri = r - W / 2 - 3 - wi / 2, ci = 2 * Math.PI * ri;
   const p = Math.max(0, Math.min(1, max ? v / max : 0)), p2 = Math.max(0, Math.min(1, max ? (v2 || 0) / max : 0));
   const pOver = max ? Math.max(0, Math.min(1, v / max - 1)) : 0, p2Over = max ? Math.max(0, Math.min(1, (v2 || 0) / max - 1)) : 0;
-  const arc = (q, o, col, w) => html`<circle cx=${h} cy=${h} r=${r} fill="none" stroke=${col} strokeOpacity=${o} strokeWidth=${w || sw} strokeLinecap="round" strokeDasharray=${c * q + ' ' + c} transform=${'rotate(-90 ' + h + ' ' + h + ')'} />`;
-  return html`<div className=${cx('ring', pOver > 0 && 'ring-over')} style=${{ width: size, height: size }}>
-    <svg width=${size} height=${size} viewBox=${'0 0 ' + size + ' ' + size} aria-hidden="true">
-      <circle cx=${h} cy=${h} r=${r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth=${sw} />
-      ${p2 > p && arc(p2, 0.3, 'var(--acc-hi)')}${p > 0 && arc(p, pOver > 0 ? 0.55 : 1, 'var(--acc-hi)')}${p2Over > pOver + 0.005 && arc(p2Over, 0.35, 'var(--crit)')}${pOver > 0.005 && arc(pOver, 1, 'var(--crit)', Number(sw) + 1)}
+  const tr = 'rotate(-90 ' + h + ' ' + h + ')';
+  const arc = (q, o, col) => html`<circle cx=${h} cy=${h} r=${r} fill="none" stroke=${col} strokeOpacity=${o} strokeWidth=${W} strokeLinecap="round" strokeDasharray=${c * q + ' ' + c} transform=${tr} />`;
+  const inner = (q, o) => html`<circle cx=${h} cy=${h} r=${ri} fill="none" stroke="url(#ringOver)" strokeOpacity=${o} strokeWidth=${wi} strokeLinecap="round" strokeDasharray=${ci * q + ' ' + ci} transform=${tr} />`;
+  const plus = pOver > 0.002 || p2Over > 0.002;
+  return html`<div className=${cx('ring', pOver > 0 && 'ring-over')} style=${{ width: S, height: S }}>
+    <svg width=${S} height=${S} viewBox=${'0 0 ' + S + ' ' + S} aria-hidden="true">
+      <defs><linearGradient id="ringOver" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ffc46b" /><stop offset="1" stopColor="#ff8a5c" /></linearGradient></defs>
+      <circle cx=${h} cy=${h} r=${r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth=${W} />
+      ${p2 > p && arc(p2, 0.3, 'var(--acc-hi)')}${p > 0 && arc(p, 1, 'var(--acc-hi)')}
+      ${plus && html`<circle cx=${h} cy=${h} r=${ri} fill="none" stroke="rgba(255,196,107,.12)" strokeWidth=${wi} />`}
+      ${p2Over > pOver + 0.002 && inner(p2Over, 0.35)}${pOver > 0.002 && inner(pOver, 1)}
     </svg>
     <div className="ring-c">${children}</div>
   </div>`;
@@ -3285,7 +3293,7 @@ function Hero({ date, go }) {
         <div className="hero-n">${f0(c.kcal)}<small>kcal</small></div>
         <div className="hero-s">${c.ajust !== 0 ? 'dont ' + sgn(c.ajust, f0) + ' de lissage (base ' + f0(c.base) + ')' : 'objectif du jour'}</div>
       </div>
-      <${Ring} v=${reel.k} v2=${man ? 0 : t.plan.k} max=${c.kcal} size=118 sw=10><b style=${{ fontSize: 28 }}>${reel.k > 0 ? pc + ' %' : '–'}</b>${reel.k > c.kcal ? html`<span className="ring-x">+${f0(reel.k - c.kcal)} kcal</span>` : html`<span>mangé</span>`}<//>
+      <${Ring} v=${reel.k} v2=${man ? 0 : t.plan.k} max=${c.kcal} size=118 sw=10><b style=${{ fontSize: 28 }}>${reel.k > 0 ? pc + ' %' : '–'}</b><span>${reel.k > c.kcal ? 'dépassé' : 'mangé'}</span><//>
     </div>
     <div className="hero-bars">
       <${Meter} label="Protéines" v=${reel.p} v2=${man ? 0 : t.plan.p} max=${c.p} c="var(--p)" />
@@ -3296,7 +3304,7 @@ function Hero({ date, go }) {
       ${Apex.types(cfg).map(tp => html`<button key=${tp} className="chip" aria-pressed=${seance === tp} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: tp })}>${tp}</button>`)}
     </div>`}
     <div className="row sb">
-      <span className=${cx('hero-s', reel.k > c.kcal && 'hero-over')}>${reel.k > c.kcal ? 'Surplus : +' + f0(reel.k - c.kcal) + ' kcal au-dessus de l’objectif (' + pc + ' %)' + (reel.p < c.p ? ' · encore ' + f0(c.p - reel.p) + ' g de protéines' : '') : reel.k > 0 ? 'Reste ' + f0(c.kcal - reel.k) + ' kcal · ' + f0(Math.max(0, c.p - reel.p)) + ' g de protéines' : c.statut === 'salle' ? 'Glucides autour de la séance, ' + f0(cfg.cibles.pasMin) + ' pas minimum.' : 'Glucides réduits, protéines hautes, ' + f0(cfg.cibles.pasMin) + ' pas minimum.'}</span>
+      ${reel.k > c.kcal ? html`<span className="sur-row"><span className="sur-pill"><${Icon} n="flame" s=${14} />+${f0(reel.k - c.kcal)} kcal</span>${reel.p < c.p ? html`<span className="sur-pill neu">encore ${f0(c.p - reel.p)} g de protéines</span>` : html`<span className="sur-pill neu">protéines OK</span>`}</span>` : html`<span className="hero-s">${reel.k > 0 ? 'Reste ' + f0(c.kcal - reel.k) + ' kcal · ' + f0(Math.max(0, c.p - reel.p)) + ' g de protéines' : c.statut === 'salle' ? 'Glucides autour de la séance, ' + f0(cfg.cibles.pasMin) + ' pas minimum.' : 'Glucides réduits, protéines hautes, ' + f0(cfg.cibles.pasMin) + ' pas minimum.'}</span>`}
       <button className="btn sm" onClick=${() => go('repas')}>Plan repas<${Icon} n="chevR" s=${16} /></button>
     </div>
   </section>`;
