@@ -2789,6 +2789,108 @@ const Cloud = (() => {
   };
 })();
 
+/* ---- 18-sante.js ---- */
+/* Macrolya — santé : lecture d'Apple Santé (iPhone) et de Health Connect (Android) dans l'app native (Capacitor + @capgo/capacitor-health).
+   Remplit le journal : pas du jour, sommeil de la nuit (sur le jour du réveil), FC au repos, poids (seulement si non saisi).
+   Une valeur saisie à la main n'est jamais écrasée : on mémorise dans j.auto la dernière valeur importée, et on ne réécrit que si le champ vaut encore celle-ci.
+   En PWA (navigateur), rien ne s'active : ces données ne sont accessibles qu'aux apps installées depuis les stores. */
+const Sante = (() => {
+  'use strict';
+  const LK = 'apexhq:sante';
+  const LIRE = ['steps', 'sleep', 'restingHeartRate', 'heartRate', 'weight'];
+  const DORT = { asleep: 1, rem: 1, deep: 1, light: 1 };
+  const subs = new Set();
+  let etat = { on: false, last: 0, err: '', busy: false };
+  try { etat = Object.assign(etat, JSON.parse(localStorage.getItem(LK) || '{}'), { busy: false }); } catch (e) { /* stockage indisponible */ }
+  const save = () => { try { localStorage.setItem(LK, JSON.stringify({ on: etat.on, last: etat.last, err: etat.err })); } catch (e) { /* sans effet */ } };
+  const emit = () => subs.forEach(f => { try { f(); } catch (e) { /* abonné fautif ignoré */ } });
+  const set = o => { etat = Object.assign({}, etat, o); save(); emit(); };
+
+  const cap = () => window.Capacitor || null;
+  const natif = () => { const c = cap(); try { return !!(c && c.isNativePlatform && c.isNativePlatform()); } catch (e) { return false; } };
+  const plateforme = () => { const c = cap(); try { return c && c.getPlatform ? c.getPlatform() : 'web'; } catch (e) { return 'web'; } };
+  const H = () => { const c = cap(); if (!c) return null; return (c.Plugins && c.Plugins.Health) || (c.registerPlugin ? c.registerPlugin('Health') : null); };
+  const pad = n => String(n).padStart(2, '0');
+  const jour = d => { const x = new Date(d); return x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate()); };
+  const debutJour = n => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - n); return d; };
+
+  /* Sommeil : minutes endormies par nuit (jour du réveil). Si plusieurs sources (montre + téléphone), on garde la plus complète. */
+  function sommeilParNuit(samples) {
+    const par = {};
+    (samples || []).forEach(s => {
+      const nuit = jour(s.endDate), src = s.sourceId || s.sourceName || '?';
+      let min = 0, lit = 0;
+      if (s.stages && s.stages.length) s.stages.forEach(st => { if (DORT[st.stage]) min += st.durationMinutes || 0; else if (st.stage === 'inBed') lit += st.durationMinutes || 0; });
+      else { const d = (Date.parse(s.endDate) - Date.parse(s.startDate)) / 60000; if (d > 0 && d < 1440) { if (!s.sleepState || DORT[s.sleepState]) min += d; else if (s.sleepState === 'inBed') lit += d; } }
+      const k = nuit + '|' + src; par[k] = par[k] || { nuit, min: 0, lit: 0 }; par[k].min += min; par[k].lit += lit;
+    });
+    const nuits = {};
+    Object.keys(par).forEach(k => { const p = par[k], v = p.min > 0 ? p.min : p.lit; if (v > (nuits[p.nuit] || 0)) nuits[p.nuit] = v; });
+    const out = {}; Object.keys(nuits).forEach(n => { const h = nuits[n] / 60; if (h >= 1 && h <= 16) out[n] = Math.round(h * 4) / 4; });
+    return out;
+  }
+
+  /* Écrit un champ s'il est vide ou s'il vaut encore la dernière valeur importée (pas retouché à la main). */
+  function poser(date, champs) {
+    const S = Store.get(), j = S.journal[date] || {}, auto = Object.assign({}, j.auto || {}), patch = {};
+    Object.keys(champs).forEach(k => {
+      const v = champs[k]; if (v == null || !isFinite(v)) return;
+      const libre = j[k] == null || (auto[k] != null && j[k] === auto[k]);
+      if (libre && j[k] !== v) { patch[k] = v; auto[k] = v; }
+      else if (libre) auto[k] = v;
+    });
+    if (Object.keys(patch).length) { patch.date = date; patch.auto = auto; Store.patch('journal', date, patch); return Object.keys(patch).length - 2; }
+    return 0;
+  }
+
+  async function dispo() {
+    if (!natif()) return { ok: false, raison: 'web' };
+    const h = H(); if (!h) return { ok: false, raison: 'module' };
+    try { const r = await h.isAvailable(); return { ok: !!r.available, raison: r.reason || '', plateforme: plateforme() }; } catch (e) { return { ok: false, raison: (e && e.message) || 'indisponible' }; }
+  }
+  async function connecter() {
+    const h = H(); if (!h) throw new Error('Module santé absent de cette version de l’app.');
+    const r = await h.requestAuthorization({ read: LIRE, write: [] });
+    const ok = (r.readAuthorized || []).length > 0 || plateforme() === 'ios';
+    set({ on: ok, err: ok ? '' : 'Accès refusé : autorise Macrolya dans ' + (plateforme() === 'ios' ? 'Réglages › Santé › Accès aux données' : 'Health Connect') + '.' });
+    if (ok) await synchro(14);
+    return ok;
+  }
+  function deconnecter() { set({ on: false, err: '' }); }
+
+  async function synchro(jours) {
+    const h = H(); if (!h || !etat.on || etat.busy) return 0;
+    set({ busy: true });
+    const n = jours || 7, debut = debutJour(n - 1).toISOString(), fin = new Date().toISOString();
+    let modifs = 0; const err = [];
+    const essai = async (nom, f) => { try { await f(); } catch (e) { err.push(nom); } };
+    await essai('pas', async () => {
+      const r = await h.queryAggregated({ dataType: 'steps', startDate: debut, endDate: fin, bucket: 'day', aggregation: 'sum' });
+      (r.samples || []).forEach(s => { const v = Math.round(s.value || 0); if (v > 0) modifs += poser(jour(s.startDate), { pas: v }); });
+    });
+    await essai('sommeil', async () => {
+      const r = await h.readSamples({ dataType: 'sleep', startDate: debutJour(n).toISOString(), endDate: fin, limit: 1000, ascending: true });
+      const nuits = sommeilParNuit(r.samples); Object.keys(nuits).forEach(d => { modifs += poser(d, { sommeil: nuits[d] }); });
+    });
+    await essai('fc', async () => {
+      const r = await h.queryAggregated({ dataType: 'restingHeartRate', startDate: debut, endDate: fin, bucket: 'day', aggregation: 'average' });
+      (r.samples || []).forEach(s => { const v = Math.round(s.value || 0); if (v >= 30 && v <= 120) modifs += poser(jour(s.startDate), { fcRepos: v }); });
+    });
+    await essai('poids', async () => {
+      const r = await h.readSamples({ dataType: 'weight', startDate: debut, endDate: fin, limit: 200, ascending: true });
+      const der = {}; (r.samples || []).forEach(s => { if (s.value >= 30 && s.value <= 250) der[jour(s.startDate)] = Math.round(s.value * 10) / 10; });
+      Object.keys(der).forEach(d => { const j = Store.get().journal[d] || {}; if (j.poids == null) modifs += poser(d, { poids: der[d] }); });
+    });
+    set({ busy: false, last: Date.now(), err: err.length === 4 ? 'Lecture impossible : vérifie les autorisations.' : '' });
+    return modifs;
+  }
+  /* À l'ouverture et au retour dans l'app : au plus une synchro toutes les 10 minutes. */
+  function auto() { if (natif() && etat.on && Date.now() - (etat.last || 0) > 600000) synchro(7).catch(() => set({ busy: false })); }
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if (!document.hidden) auto(); });
+
+  return { natif, plateforme, dispo, connecter, deconnecter, synchro, auto, sommeilParNuit, etat: () => etat, sub: f => { subs.add(f); return () => subs.delete(f); } };
+})();
+
 /* ---- 20-ui-core.js ---- */
 /* Macrolya — socle d'interface : React + htm, icônes, champs, feuilles, jauges, graphiques SVG. */
 const { useState, useEffect, useRef, useLayoutEffect, useSyncExternalStore, createElement } = React;
@@ -2816,6 +2918,7 @@ const IC = {
   eye: ['M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12', [12, 12, 3]],
   eyeOff: ['M3 3l18 18', 'M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1', 'M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6', 'M9.9 9.9a3 3 0 0 0 4.2 4.2'],
   cloud: ['M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z'],
+  heart: ['M12 20s-7-4.4-9.2-9A5 5 0 0 1 12 6a5 5 0 0 1 9.2 5c-2.2 4.6-9.2 9-9.2 9z'],
   logout: ['M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4', 'M10 17l-5-5 5-5', 'M5 12h11'],
   home: ['M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'],
   utensils: ['M6 3v6a2 2 0 0 0 4 0V3', 'M8 3v18', 'M16 21V3c2.5 1.5 3.5 4.5 3.5 8H16'],
@@ -3212,6 +3315,9 @@ function Activite({ date, cls }) {
         <div className="row"><button className="btn grow" aria-label="Retirer 25 cl" onClick=${() => set('eau')(Math.max(0, Math.round((eau - 0.25) * 100) / 100) || null)}><${Icon} n="minus" s=${18} /></button>
         <button className="btn grow" aria-label="Ajouter 25 cl" onClick=${() => set('eau')(Math.round((eau + 0.25) * 100) / 100)}><${Icon} n="plus" s=${18} /></button></div></div>
     </div>
+    ${(() => { const a = j.auto || {}, src = ['pas', 'sommeil', 'fcRepos', 'poids'].filter(k => a[k] != null && j[k] === a[k]); if (!src.length && j.fcRepos == null) return null;
+      const nom = { pas: 'pas', sommeil: 'sommeil', fcRepos: 'FC repos', poids: 'poids' };
+      return html`<div className="sante-src"><${Icon} n="heart" s=${15} /><span>${j.fcRepos != null ? 'FC repos ' + j.fcRepos + ' bpm · ' : ''}${src.length ? 'importé de ' + (Sante.plateforme() === 'ios' ? 'Apple Santé' : 'Health Connect') + ' : ' + src.map(k => nom[k]).join(', ') : ''}</span></div>`; })()}
   <//>`;
 }
 
@@ -5890,6 +5996,35 @@ function CompteBody() {
   <//>`;
 }
 
+/* ---- 69c-ui-sante.js ---- */
+/* Macrolya — section Santé des réglages : connecter Apple Santé ou Health Connect, état, synchro manuelle. */
+function useSante() { const [, f] = useState(0); useEffect(() => Sante.sub(() => f(x => x + 1)), []); return Sante.etat(); }
+
+function SanteBody() {
+  const e = useSante(); const [d, setD] = useState(null); const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false);
+  useEffect(() => { let ok = true; Sante.dispo().then(r => { if (ok) setD(r); }); return () => { ok = false; }; }, []);
+  const ios = Sante.plateforme() === 'ios', nom = ios ? 'Apple Santé' : 'Health Connect';
+  const sources = ios ? 'iPhone, Apple Watch, Garmin, Oura, Withings… (tout ce qui écrit dans Apple Santé)' : 'Samsung Health, Google Fit, Fitbit, Garmin, Oura, Withings… (tout ce qui écrit dans Health Connect)';
+  if (!Sante.natif()) return html`<${React.Fragment}>
+    <h3>Santé et montres</h3>
+    <div className="note"><${Icon} n="info" /><div><span><b>Disponible dans l’app Android et iPhone.</b> Apple Santé et Health Connect ne sont accessibles qu’à l’app installée, pas à la version web ouverte dans le navigateur. Dans l’app Macrolya installée, tu pourras relier ta montre ou ton téléphone : pas, sommeil et fréquence cardiaque au repos se rempliront tout seuls.</span></div></div>
+  <//>`;
+  const go = async () => { setBusy(true); setMsg(''); try { const ok = await Sante.connecter(); setMsg(ok ? 'Connecté : les 14 derniers jours sont importés.' : ''); } catch (er) { setMsg((er && er.message) || 'Connexion impossible.'); } setBusy(false); };
+  const sync = async () => { setBusy(true); try { const n = await Sante.synchro(14); setMsg(n ? n + ' valeur' + (n > 1 ? 's' : '') + ' mise' + (n > 1 ? 's' : '') + ' à jour.' : 'Déjà à jour.'); } catch (er) { setMsg('Synchro impossible.'); } setBusy(false); };
+  const last = e.last ? new Date(e.last).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : null;
+  return html`<${React.Fragment}>
+    <h3>Santé et montres</h3>
+    ${d && !d.ok && html`<div className="note warn"><${Icon} n="alert" /><div><span><b>${nom} indisponible.</b> ${ios ? 'Apple Santé n’est pas disponible sur cet appareil.' : 'Installe ou mets à jour « Health Connect » depuis le Play Store (inclus d’office à partir d’Android 14), puis reviens ici.'}</span></div></div>`}
+    ${!e.on ? html`<div className="note"><${Icon} n="heart" /><div><span><b>Relie ${nom}.</b> Macrolya lit tes <b>pas</b>, ton <b>sommeil</b>, ta <b>fréquence cardiaque au repos</b> et ton <b>poids</b> (seulement si tu ne l’as pas saisi). Sources : ${sources}. Lecture seule : rien n’est écrit dans ${nom}, et une valeur que tu corriges à la main n’est jamais écrasée.</span></div></div>
+      <button type="button" className="btn pri wide" disabled=${busy || (d && !d.ok)} onClick=${go}><${Icon} n="heart" s=${18} />${busy ? 'Connexion…' : 'Connecter ' + nom}</button>`
+    : html`<div className="note good"><${Icon} n="check" /><div><span><b>${nom} est relié.</b> Synchro automatique à l’ouverture de l’app${last ? ' · dernière : ' + last : ''}.</span></div></div>
+      <button type="button" className="btn wide" disabled=${busy || e.busy} onClick=${sync}><${Icon} n="refresh" s=${18} />${busy || e.busy ? 'Synchronisation…' : 'Synchroniser maintenant'}</button>
+      ${!ios && html`<button type="button" className="btn ghost wide" onClick=${() => { try { const c = window.Capacitor; (c.Plugins.Health || c.registerPlugin('Health')).openHealthConnectSettings(); } catch (er) { /* sans effet */ } }}><${Icon} n="sliders" s=${18} />Gérer les autorisations</button>`}
+      <button type="button" className="btn ghost wide dan-t" onClick=${() => { Sante.deconnecter(); setMsg('Synchro arrêtée. Pour retirer l’accès, va dans ' + (ios ? 'Réglages › Santé › Accès aux données.' : 'Health Connect.')); }}><${Icon} n="x" s=${18} />Arrêter la synchro</button>`}
+    ${(msg || e.err) && html`<p className="sec" role="status" style=${{ fontSize: 13 }}>${msg || e.err}</p>`}
+  <//>`;
+}
+
 /* ---- 70-ui-app.js ---- */
 /* Macrolya — coque : en-tête (jour + statut), onglets, réglages et données, démarrage. */
 const STANDALONE = !!window.APEX_STANDALONE;
@@ -5917,7 +6052,7 @@ function SettingsSheet({ onClose }) {
     <${Num} id=${'c-' + s + '-l'} label="Lipides" unit="g" value=${cfg.cibles[s].l} onChange=${setC(s, 'l')} dec=${0} min=${cfg.cibles.planchers.l} max=${200} />
     <div className="fld"><span className="fld-l">Glucides</span><div className="inp" style=${{ display: 'grid', alignItems: 'center' }}>${cfg.cibles[s].g} g</div></div>
   </div>`;
-  const SECS = [].concat(STANDALONE && Cloud.on() ? [['compte', 'Compte']] : [], [['profil', 'Profil'], ['seances', 'Séances'], ['focus', 'Points faibles'], ['repas', 'Repas'], ['claude', 'IA'], ['partage', 'Partager'], ['data', 'Données']]);
+  const SECS = [].concat(STANDALONE && Cloud.on() ? [['compte', 'Compte']] : [], [['profil', 'Profil'], ['seances', 'Séances'], ['focus', 'Points faibles'], ['repas', 'Repas']], STANDALONE ? [['sante', 'Santé']] : [], [['claude', 'IA'], ['partage', 'Partager'], ['data', 'Données']]);
   return html`<${Sheet} title="Réglages et données" onClose=${onClose}>
     <div className="chips" role="group" aria-label="Sections">${SECS.map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${sec === x[0]} onClick=${() => setSec(x[0])}>${x[1]}</button>`)}</div>
     ${sec === 'profil' && html`<${React.Fragment}>
@@ -5943,6 +6078,7 @@ function SettingsSheet({ onClose }) {
     </div>
     <//>`}
     ${sec === 'compte' && html`<${CompteBody} />`}
+    ${sec === 'sante' && html`<${SanteBody} />`}
     ${sec === 'seances' && html`<${SeancesEditor} />`}
     ${sec === 'focus' && html`<${FocusEditor} />`}
     ${sec === 'repas' && html`<${React.Fragment}>
@@ -6044,5 +6180,6 @@ try { const d0 = Apex.today(); document.body.dataset.statut = Apex.statutDuJour(
 ReactDOM.createRoot(document.getElementById('app')).render(html`<${Boundary}><${App} /><//>`);
 if (STANDALONE && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 Store.connect();
+setTimeout(() => { try { Sante.auto(); } catch (e) { /* santé indisponible */ } }, 1500);
 
 })();

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Macrolya — Confidentialité</title>
+<style>
+:root { --bg: #0a0b0d; --ink: #f2f1ec; --ink2: #b9b8b1; --acc: #ff8a5c; }
+@media (prefers-color-scheme: light) { :root { --bg: #f7f6f2; --ink: #16171a; --ink2: #4a4b50; --acc: #c4532a; } }
+body { margin: 0; background: var(--bg); color: var(--ink2); font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { color: var(--ink); font-size: 28px; margin: 0 0 4px; } h2 { color: var(--ink); font-size: 17px; margin: 28px 0 6px; }
+p, li { margin: 6px 0; } b { color: var(--ink); } a { color: var(--acc); } .maj { font-size: 13px; }
+</style></head>
+<body><main>
+<h1>Politique de confidentialité</h1>
+<p class="maj">Macrolya · dernière mise à jour : 15 novembre 2026</p>
+
+<h2>En bref</h2>
+<p>Macrolya est une app de suivi nutrition et musculation. Tes données servent uniquement à faire fonctionner l’app pour toi : <b>aucune publicité, aucune revente, aucun partage, aucun profilage</b>.</p>
+
+<h2>Sans compte</h2>
+<p>L’app fonctionne entièrement sur ton téléphone. Rien n’est envoyé à un serveur, sauf les cas listés plus bas (recherche de produit, IA) que tu déclenches toi-même.</p>
+
+<h2>Avec un compte</h2>
+<p>Si tu crées un compte (prénom, email, mot de passe), ces données sont enregistrées pour être sauvegardées et synchronisées entre tes appareils : profil et objectifs, repas, séances, poids, mensurations, debriefs, et les valeurs importées de Santé ou Health Connect. Les <b>photos</b> et ta <b>clé IA</b> ne quittent jamais ton téléphone.</p>
+<p>Hébergement : Google Firebase. Authentication gère l’email et le mot de passe (l’app ne voit jamais ton mot de passe en clair), Cloud Firestore stocke les données dans l’Union européenne (Paris). Les échanges sont chiffrés. Les règles de la base n’autorisent chaque compte qu’à ses propres données. L’administrateur du projet pourrait techniquement y accéder et s’engage à ne pas les consulter.</p>
+
+<h2>Données de santé</h2>
+<p>Le poids, les mensurations, le sommeil, les pas et la fréquence cardiaque sont des données de santé. Elles ne sont enregistrées en ligne qu’avec ton <b>consentement explicite</b>, donné à la création du compte.</p>
+
+<h2>Apple Santé et Health Connect</h2>
+<p>Si tu relies Apple Santé (iPhone) ou Health Connect (Android), Macrolya <b>lit uniquement</b> : nombre de pas, sommeil, fréquence cardiaque au repos et poids. Ces valeurs servent à remplir ton journal dans l’app (et ton compte si tu en as un). Macrolya <b>n’écrit rien</b> dans Apple Santé ou Health Connect, n’utilise pas ces données pour de la publicité et ne les transmet à aucun tiers. Tu peux retirer l’accès à tout moment dans Réglages › Santé (iPhone) ou dans Health Connect (Android).</p>
+
+<h2>Services utilisés à ta demande</h2>
+<ul>
+<li><b>Scan de code-barres</b> : seul le numéro du code est envoyé à Open Food Facts pour trouver le produit.</li>
+<li><b>Coach et menus IA</b> : le texte de ta demande et un résumé de tes objectifs sont envoyés au service d’IA choisi (Google Gemini via un relais, ou ton compte Claude), uniquement quand tu l’utilises.</li>
+</ul>
+
+<h2>Durée et suppression</h2>
+<p>Les données de ton compte sont gardées tant que le compte existe. « Supprimer mon compte » (Réglages › Compte) efface définitivement tes données en ligne et ton compte. Sans compte, désinstaller l’app efface tout.</p>
+
+<h2>Tes droits (RGPD)</h2>
+<p>Accès et portabilité (export JSON dans Réglages › Données), rectification (directement dans l’app), effacement (suppression du compte), retrait du consentement à tout moment. Tu peux aussi saisir la CNIL : <a href="https://www.cnil.fr">cnil.fr</a>.</p>
+</main></body></html>
