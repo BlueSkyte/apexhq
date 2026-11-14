@@ -2,7 +2,7 @@
 "use strict";
 if (!window.React || !window.ReactDOM || !window.htm) { var a0 = document.getElementById('app'); if (a0) a0.textContent = 'Fichiers de l’app introuvables. Recharge la page.'; return; }
 /* ---- 10-logic.js ---- */
-/* Macrova — moteur de calcul (pur, sans DOM). Testé par test.js. */
+/* Macrolya — moteur de calcul (pur, sans DOM). Testé par test.js. */
 const Apex = (() => {
   'use strict';
 
@@ -661,7 +661,7 @@ const Apex = (() => {
 if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 
 /* ---- 11-onboard-logic.js ---- */
-/* Macrova — questionnaire : calories précises, programme de séances, plan repas adapté.
+/* Macrolya — questionnaire : calories précises, programme de séances, plan repas adapté.
    Étend le moteur Apex (fonctions pures, testées par test-onboard.js). */
 (function () {
   'use strict';
@@ -1048,7 +1048,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 12-adapt-logic.js ---- */
-/* Macrova — adaptation d'une séance : temps disponible, matériel, zones sensibles, forme du jour, points faibles.
+/* Macrolya — adaptation d'une séance : temps disponible, matériel, zones sensibles, forme du jour, points faibles.
    Fonctions pures (testées par test-adapt.js). Étend le moteur Apex. */
 (function () {
   'use strict';
@@ -1253,7 +1253,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 12b-foods-world.js ---- */
-/* Macrova — base de plats, chaînes et produits du monde. Valeurs MOYENNES par portion (flag est) : à corriger avec l'étiquette si besoin.
+/* Macrolya — base de plats, chaînes et produits du monde. Valeurs MOYENNES par portion (flag est) : à corriger avec l'étiquette si besoin.
    Chaque ligne : [id, nom, mots de recherche, protéines g, glucides g, lipides g, fibres g, unité, (kcal imposées pour l'alcool)].
    Les kcal sont calculées (4 P + 4 G + 9 L) pour rester cohérentes. Étend le moteur Apex. */
 (function () {
@@ -1853,7 +1853,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 13-meals-logic.js ---- */
-/* Macrova — programmes de repas sur une semaine : menus conseillés, semaine personnalisée, mode libre.
+/* Macrolya — programmes de repas sur une semaine : menus conseillés, semaine personnalisée, mode libre.
    Fonctions pures (testées par test-meals.js). Étend le moteur Apex ; remplace planDuJour pour accepter une date. */
 (function () {
   'use strict';
@@ -2173,7 +2173,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 14-program-logic.js ---- */
-/* Macrova — espace programme : paramètres par exercice (séries, répétitions, RIR), bibliothèque par muscle,
+/* Macrolya — espace programme : paramètres par exercice (séries, répétitions, RIR), bibliothèque par muscle,
    volume hebdomadaire, demande à l'IA. Fonctions pures (testées par test-program.js). */
 (function () {
   'use strict';
@@ -2288,7 +2288,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
 })();
 
 /* ---- 15-store.js ---- */
-/* Macrova — état : cache localStorage + base privée du compte (capacité db, sous-arbre data/users/<id>/apex).
+/* Macrolya — état : cache localStorage + base privée du compte (capacité db, sous-arbre data/users/<id>/apex).
    Local d'abord : chaque modification est écrite sur l'appareil, puis poussée document par document.
    Les champs modifiés localement gagnent sur le distant tant qu'ils ne sont pas confirmés. */
 const Store = (() => {
@@ -2299,6 +2299,9 @@ const Store = (() => {
   const ID_OK = /^[A-Za-z0-9_\-.~:@+]{1,200}$/;
   let s = { cfg: {}, journal: {}, seances: {}, mensurations: {}, photos: {} };
   let dirty = {}, seq = 1, ver = 0, cfgMemo = null, cfgVer = -1, base = null, saveT = 0, waitT = 0, nativeSample = null;
+  /* Compte en ligne (app autonome, module Cloud) : synchro par requêtes « modifié depuis », photos gardées sur l'appareil. */
+  let cloud = null, cloudSince = null, cloudUid = null, pulling = false, lastPull = 0;
+  const LOCAL_ONLY = { photos: 1 };
   const sync = { mode: 'boot', pending: 0, err: null };
   const caps = { user: null, db: null, downloads: null, assets: null, sample: null, dictation: null };
   const ready = {}, subs = new Set(), timers = {}, flight = {}, fails = {};
@@ -2313,10 +2316,12 @@ const Store = (() => {
     if (o && isObj(o.s)) {
       ['cfg'].concat(COLLS).forEach(c => { if (isObj(o.s[c])) s[c] = o.s[c]; });
       if (isObj(o.dirty)) dirty = o.dirty;
-      seq = o.seq || 1;
+      seq = o.seq || 1; cloudSince = o.cs || null; cloudUid = o.cu || null;
     }
   } catch (e) { /* stockage indisponible : l'app tourne en mémoire */ }
-  const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(LS, JSON.stringify({ s, dirty, seq, t: Date.now() })); } catch (e) { /* quota ou accès refusé */ } }, 160); };
+  const write = () => { try { localStorage.setItem(LS, JSON.stringify({ s, dirty, seq, cs: cloudSince, cu: cloudUid, t: Date.now() })); } catch (e) { /* quota ou accès refusé */ } };
+  const save = () => { clearTimeout(saveT); saveT = setTimeout(write, 160); };
+  const saveNow = () => { clearTimeout(saveT); write(); };
   const emit = () => { ver++; subs.forEach(f => { try { f(); } catch (e) { /* abonné fautif ignoré */ } }); };
 
   function patch(coll, id, fields) {
@@ -2343,7 +2348,7 @@ const Store = (() => {
   }
   const refOf = key => (key === 'cfg' ? caps.db.doc(base) : caps.db.doc(base).collection(collOf(key)).doc(idOf(key)));
   function schedule(key, ms) {
-    if (!base || !ready[collOf(key)]) return;
+    if (!base || !ready[collOf(key)] || (cloud && LOCAL_ONLY[collOf(key)])) return;
     clearTimeout(timers[key]); timers[key] = setTimeout(() => push(key), ms == null ? 700 : ms);
   }
   async function push(key) {
@@ -2353,9 +2358,9 @@ const Store = (() => {
     const sent = d.del ? { del: d.del } : { f: Object.assign({}, d.f) };
     let done = false;
     try {
-      const ref = refOf(key);
-      if (sent.del) await ref.delete();
-      else { const body = key === 'cfg' ? s.cfg : s[collOf(key)][idOf(key)]; if (body) await ref.set(clone(body)); }
+      const body = sent.del ? null : (key === 'cfg' ? s.cfg : s[collOf(key)][idOf(key)]);
+      if (cloud) { if (sent.del) await cloud.del(collOf(key), idOf(key)); else if (body) await cloud.put(collOf(key), key === 'cfg' ? 'cfg' : idOf(key), clone(body)); }
+      else { const ref = refOf(key); if (sent.del) await ref.delete(); else if (body) await ref.set(clone(body)); }
       done = true; sync.err = null; delete fails[key];
     } catch (e) { sync.err = (e && e.code) || 'unavailable'; fails[key] = (fails[key] || 0) + 1; }
     if (done) {
@@ -2403,6 +2408,18 @@ const Store = (() => {
     const names = Object.keys(caps), got = await Promise.all(names.map(use));
     names.forEach((n, i) => { caps[n] = got[i] || null; });
     nativeSample = caps.sample; caps.sample = pickSample();
+    const cu = window.APEX_STANDALONE && typeof Cloud !== 'undefined' ? Cloud.user() : null;
+    if (cu) {
+      cloud = Cloud; base = 'cloud';
+      if (cloudUid !== cu.uid) { cloudSince = null; cloudUid = cu.uid; saveNow(); }
+      ready.photos = 1; sync.mode = 'wait'; emit();
+      waitT = setTimeout(() => { if (sync.mode === 'wait') { sync.mode = 'stale'; emit(); } }, 10000);
+      cloudPull();
+      setInterval(() => { if (!document.hidden && Date.now() - lastPull > 80000) cloudPull(); }, 30000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastPull > 15000) cloudPull(); });
+      window.addEventListener('online', () => cloudPull());
+      return;
+    }
     let uid = null; try { uid = caps.user ? await caps.user.id() : null; } catch (e) { uid = null; }
     if (!caps.db || !uid) { sync.mode = 'local'; emit(); return; }
     base = 'data/users/' + uid + '/apex'; sync.mode = 'wait'; emit();
@@ -2418,11 +2435,52 @@ const Store = (() => {
     } catch (e) { fail(e); }
   }
 
+  /* Compte en ligne : applique les documents reçus. full = liste complète (les documents locaux absents et non modifiés sont retirés). */
+  function applyCloud(list, full) {
+    let ch = false; const seen = {};
+    list.forEach(r => {
+      if (r.c === 'cfg') {
+        if (r.x || !r.j) return; let d; try { d = JSON.parse(r.j); } catch (e) { return; } if (!isObj(d)) return;
+        const next = clone(d), dd = dirty.cfg; if (dd && dd.f) for (const k in dd.f) { if (k in s.cfg) next[k] = s.cfg[k]; else delete next[k]; }
+        if (!same(s.cfg, next)) { s = Object.assign({}, s, { cfg: next }); ch = true; } return;
+      }
+      if (COLLS.indexOf(r.c) < 0 || LOCAL_ONLY[r.c] || !ID_OK.test(r.i)) return;
+      const key = r.c + '/' + r.i;
+      if (r.x) { if (!dirty[key] && s[r.c][r.i]) { const o = Object.assign({}, s[r.c]); delete o[r.i]; s[r.c] = o; ch = true; } return; }
+      let d; try { d = JSON.parse(r.j); } catch (e) { return; } if (!isObj(d)) return;
+      seen[key] = 1; if (applyDoc(r.c, r.i, d)) ch = true;
+    });
+    if (full) COLLS.forEach(c => { if (LOCAL_ONLY[c]) return; Object.keys(s[c]).forEach(id => { if (!seen[c + '/' + id] && !dirty[c + '/' + id]) { const o = Object.assign({}, s[c]); delete o[id]; s[c] = o; ch = true; } }); });
+    if (ch) { s = Object.assign({}, s); emit(); }
+  }
+  async function cloudPull() {
+    if (!cloud || pulling || !Cloud.user() || Cloud.user().dead) return;
+    pulling = true; lastPull = Date.now();
+    try {
+      const r = await cloud.pull(cloudSince);
+      applyCloud(r.list, !cloudSince); cloudSince = r.since || cloudSince; saveNow();
+      sync.err = null; ['cfg'].concat(COLLS).forEach(markReady);
+      if (sync.mode !== 'ok') { clearTimeout(waitT); sync.mode = 'ok'; }
+      emit();
+    } catch (e) { sync.err = (e && e.code) || 'unavailable'; sync.mode = e && e.status === 0 ? 'stale' : 'err'; emit(); }
+    pulling = false;
+  }
+  /* Création du compte depuis un téléphone déjà rempli : tout est marqué à envoyer. */
+  function adopt() {
+    const mk = o => { const f = {}; Object.keys(o || {}).forEach(k => { f[k] = ++seq; }); return { f }; };
+    if (Object.keys(s.cfg).length) dirty.cfg = mk(s.cfg);
+    COLLS.forEach(c => { if (!LOCAL_ONLY[c]) Object.keys(s[c]).forEach(id => { dirty[c + '/' + id] = mk(s[c][id]); }); });
+    cloudSince = null; saveNow();
+  }
+  /* Déconnexion, changement de compte, suppression : efface les données de ce téléphone. */
+  function wipe() { s = { cfg: {}, journal: {}, seances: {}, mensurations: {}, photos: {} }; dirty = {}; cloudSince = null; cloudUid = null; saveNow(); emit(); }
+  const hasData = () => !!(s.cfg && s.cfg.onboarded) || COLLS.some(c => Object.keys(s[c]).length > 0);
+
   /* Après ajout ou retrait d'une clé API : recalcule l'accès à Claude. */
   const refreshAI = () => { caps.sample = pickSample(); emit(); };
-  const exportAll = () => ({ app: 'Macrova', v: 1, exportedAt: new Date().toISOString(), cfg: s.cfg, journal: s.journal, seances: s.seances, mensurations: s.mensurations, photos: s.photos });
+  const exportAll = () => ({ app: 'Macrolya', v: 1, exportedAt: new Date().toISOString(), cfg: s.cfg, journal: s.journal, seances: s.seances, mensurations: s.mensurations, photos: s.photos });
   function importAll(o) {
-    if (!isObj(o) || (o.app !== 'Macrova' && o.app !== 'Alvora' && o.app !== 'ApexHQ')) throw new Error('Ce fichier n’est pas un export Macrova.');
+    if (!isObj(o) || (o.app !== 'Macrolya' && o.app !== 'Macrova' && o.app !== 'Alvora' && o.app !== 'ApexHQ')) throw new Error('Ce fichier n’est pas un export Macrolya.');
     let n = 0;
     if (isObj(o.cfg) && Object.keys(o.cfg).length) { patch('cfg', null, o.cfg); n++; }
     COLLS.forEach(c => { const m = o[c]; if (!isObj(m)) return; Object.keys(m).forEach(id => { if (isObj(m[id]) && ID_OK.test(id)) { patch(c, id, m[id]); n++; } }); });
@@ -2436,11 +2494,12 @@ const Store = (() => {
     sub: f => { subs.add(f); return () => subs.delete(f); },
     sync: () => sync, caps: () => caps, pendingKeys: () => Object.keys(dirty).length,
     patch, del, replace, connect, refreshAI, exportAll, importAll,
+    cloud: () => !!cloud, pullNow: () => cloudPull(), adopt, wipe, hasData, saveNow,
   };
 })();
 
 /* ---- 16-ai.js ---- */
-/* Macrova — accès à l'IA, gratuit d'abord.
+/* Macrolya — accès à l'IA, gratuit d'abord.
    - Version Claude : capacité `sample` = compte Claude de la personne (son quota, consentement au premier appel).
    - App autonome : clé Gemini gratuite (Google AI Studio) et/ou clé API Anthropic, collées par la personne et gardées sur
      l'appareil (jamais exportées ni synchronisées). Appels directs depuis le navigateur.
@@ -2606,8 +2665,132 @@ const aiMsg = e => {
   return 'Échec de la demande. Réessaie.';
 };
 
+/* ---- 17-cloud.js ---- */
+/* Macrolya — compte en ligne de l'app autonome : Firebase Authentication (email + mot de passe) et Cloud Firestore, par l'API REST.
+   Base : users/<uid>/docs/<coll>__<id>, champs c (collection), i (id), j (document JSON), x (supprimé), t (heure serveur).
+   Les photos et les clés IA ne quittent jamais le téléphone. Config publique : window.APEX_FB = { apiKey, projectId }. */
+const Cloud = (() => {
+  'use strict';
+  const C = window.APEX_FB || null, LA = 'apexhq:auth';
+  const on = () => !!(window.APEX_STANDALONE && C && C.apiKey && C.projectId);
+  const AUTH = () => C.auth || 'https://identitytoolkit.googleapis.com/v1';
+  const TOK = () => C.token || 'https://securetoken.googleapis.com/v1/token';
+  const ROOT = () => 'projects/' + C.projectId + '/databases/(default)/documents';
+  const FS = () => (C.fs || 'https://firestore.googleapis.com/v1') + '/' + ROOT();
+  let ses = null, refreshing = null;
+  try { ses = JSON.parse(localStorage.getItem(LA) || 'null'); if (!ses || !ses.uid || !ses.rt) ses = null; } catch (e) { ses = null; }
+  const keep = () => { try { if (ses) localStorage.setItem(LA, JSON.stringify(ses)); else localStorage.removeItem(LA); } catch (e) { /* stockage refusé */ } };
+  const subs = new Set();
+  const emit = () => subs.forEach(f => { try { f(); } catch (e) { /* abonné fautif ignoré */ } });
+
+  const MSG = {
+    EMAIL_EXISTS: 'Un compte existe déjà avec cet email : connecte-toi.',
+    EMAIL_NOT_FOUND: 'Email ou mot de passe incorrect.', INVALID_PASSWORD: 'Email ou mot de passe incorrect.', INVALID_LOGIN_CREDENTIALS: 'Email ou mot de passe incorrect.',
+    INVALID_EMAIL: 'Adresse email invalide.', MISSING_EMAIL: 'Adresse email manquante.', MISSING_PASSWORD: 'Mot de passe manquant.',
+    WEAK_PASSWORD: 'Mot de passe trop faible : 8 caractères minimum.', PASSWORD_DOES_NOT_MEET_REQUIREMENTS: 'Mot de passe trop faible : 8 caractères minimum.',
+    TOO_MANY_ATTEMPTS_TRY_LATER: 'Trop d’essais. Réessaie dans quelques minutes.', USER_DISABLED: 'Ce compte est désactivé.', USER_NOT_FOUND: 'Compte introuvable.',
+    CREDENTIAL_TOO_OLD_LOGIN_AGAIN: 'Reconnecte-toi puis recommence.', TOKEN_EXPIRED: 'Session expirée : reconnecte-toi.', INVALID_REFRESH_TOKEN: 'Session expirée : reconnecte-toi.', INVALID_ID_TOKEN: 'Session expirée : reconnecte-toi.',
+    OPERATION_NOT_ALLOWED: 'La connexion par email n’est pas activée dans Firebase.', API_KEY_INVALID: 'Configuration Firebase invalide.',
+    PERMISSION_DENIED: 'Accès refusé par la base (règles de sécurité).', UNAUTHENTICATED: 'Session expirée : reconnecte-toi.', RESOURCE_EXHAUSTED: 'Quota gratuit du jour atteint : la synchro reprend plus tard.',
+  };
+  const mkErr = (code, status) => { const e = new Error(MSG[code] || (status === 0 ? 'Pas de connexion internet.' : 'Erreur du serveur (' + (code || status) + ').')); e.code = code || (status === 0 ? 'offline' : 'unavailable'); e.status = status; return e; };
+  const errOf = (j, status) => { const e = (j && j.error) || {}, m = String(e.message || ''), k = (m.match(/^[A-Z][A-Z_]{2,}(?=$|[\s:])/) || [])[0] || e.status || ''; return mkErr(k, status); };
+  async function call(url, init) {
+    let r; try { r = await fetch(url, init); } catch (e) { throw mkErr('', 0); }
+    let j = null; try { j = await r.json(); } catch (e) { j = null; }
+    if (!r.ok) throw errOf(j, r.status);
+    return j;
+  }
+  const post = (url, body) => call(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const ak = p => AUTH() + '/accounts:' + p + '?key=' + encodeURIComponent(C.apiKey);
+  const setSes = (j, extra) => {
+    ses = Object.assign({}, ses, { uid: j.localId || j.user_id || (ses && ses.uid), email: j.email || (ses && ses.email) || '', id: j.idToken || j.id_token, rt: j.refreshToken || j.refresh_token || (ses && ses.rt), exp: Date.now() + (+(j.expiresIn || j.expires_in) || 3600) * 1000 - 60000, dead: 0 }, extra || {});
+    keep(); emit();
+  };
+  const clean = e => String(e || '').trim().toLowerCase();
+
+  async function signUp(name, email, pw) {
+    const j = await post(ak('signUp'), { email: clean(email), password: pw, returnSecureToken: true });
+    setSes(j, { name: name || '' });
+    try { await post(ak('update'), { idToken: j.idToken, displayName: name || '', returnSecureToken: false }); } catch (e) { /* prénom gardé dans le profil de l'app */ }
+    return ses;
+  }
+  async function signIn(email, pw) {
+    const prev = ses && ses.uid, j = await post(ak('signInWithPassword'), { email: clean(email), password: pw, returnSecureToken: true });
+    setSes(j, { name: j.displayName || (ses && ses.name) || '' });
+    return { uid: ses.uid, same: prev === ses.uid };
+  }
+  const reset = email => post(ak('sendOobCode'), { requestType: 'PASSWORD_RESET', email: clean(email) });
+  const signOut = () => { ses = null; keep(); emit(); };
+
+  async function token(force) {
+    if (!ses) throw mkErr('TOKEN_EXPIRED', 401);
+    if (!force && ses.id && Date.now() < ses.exp) return ses.id;
+    if (!refreshing) {
+      refreshing = (async () => {
+        try {
+          const j = await call(TOK() + '?key=' + encodeURIComponent(C.apiKey), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(ses.rt) });
+          setSes(j); return ses.id;
+        } catch (e) { if (e.status === 400 || e.status === 401 || e.status === 403) { if (ses) { ses.dead = 1; keep(); emit(); } } throw e; }
+      })();
+      refreshing.then(() => { refreshing = null; }, () => { refreshing = null; });
+    }
+    return refreshing;
+  }
+  async function fs(path, body) {
+    for (let k = 0; k < 2; k++) {
+      const t = await token(k > 0);
+      let r; try { r = await fetch(FS() + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t }, body: JSON.stringify(body) }); } catch (e) { throw mkErr('', 0); }
+      if (r.status === 401 && k === 0) continue;
+      let j = null; try { j = await r.json(); } catch (e) { j = null; }
+      if (!r.ok) throw errOf(j, r.status);
+      return j;
+    }
+    throw mkErr('UNAUTHENTICATED', 401);
+  }
+
+  const dname = (c, i) => ROOT() + '/users/' + ses.uid + '/docs/' + c + '__' + i;
+  const sv = v => (v && typeof v.stringValue === 'string' ? v.stringValue : '');
+  const wr = (c, i, data) => ({
+    update: { name: dname(c, i), fields: { c: { stringValue: c }, i: { stringValue: i }, j: { stringValue: data ? JSON.stringify(data) : '' }, x: { booleanValue: !data } } },
+    updateTransforms: [{ fieldPath: 't', setToServerValue: 'REQUEST_TIME' }],
+  });
+  const put = (c, i, data) => fs(':commit', { writes: [wr(c, i, data)] });
+  const del = (c, i) => fs(':commit', { writes: [wr(c, i, null)] });
+
+  /* Documents modifiés depuis `since` (ISO), ou tous. since rendu = dernière heure serveur vue, moins 2 s de marge. */
+  async function pull(since) {
+    const q = { structuredQuery: { from: [{ collectionId: 'docs' }] } };
+    if (since) q.structuredQuery.where = { fieldFilter: { field: { fieldPath: 't' }, op: 'GREATER_THAN', value: { timestampValue: since } } };
+    const res = await fs('/users/' + ses.uid + ':runQuery', q);
+    let max = since ? Date.parse(since) + 2000 : 0;
+    const list = (Array.isArray(res) ? res : []).filter(x => x && x.document).map(x => {
+      const f = x.document.fields || {}, t = f.t && f.t.timestampValue ? Date.parse(f.t.timestampValue) : 0;
+      if (t > max) max = t;
+      return { c: sv(f.c), i: sv(f.i), j: sv(f.j), x: !!(f.x && f.x.booleanValue), name: x.document.name };
+    });
+    return { list, since: max ? new Date(max - 2000).toISOString() : since || null };
+  }
+
+  /* Efface toutes les données du compte puis le compte lui-même (après reconnexion par mot de passe). */
+  async function deleteAccount(pw) {
+    if (!ses) throw mkErr('TOKEN_EXPIRED', 401);
+    await signIn(ses.email, pw);
+    const all = await pull(null), names = all.list.map(d => d.name).filter(Boolean);
+    for (let k = 0; k < names.length; k += 400) await fs(':commit', { writes: names.slice(k, k + 400).map(n => ({ delete: n })) });
+    await post(ak('delete'), { idToken: await token(true) });
+    signOut();
+  }
+
+  return {
+    on, put, del, pull, signUp, signIn, signOut, reset, deleteAccount,
+    user: () => (on() && ses ? { uid: ses.uid, email: ses.email, name: ses.name || '', dead: !!ses.dead } : null),
+    sub: f => { subs.add(f); return () => subs.delete(f); },
+  };
+})();
+
 /* ---- 20-ui-core.js ---- */
-/* Macrova — socle d'interface : React + htm, icônes, champs, feuilles, jauges, graphiques SVG. */
+/* Macrolya — socle d'interface : React + htm, icônes, champs, feuilles, jauges, graphiques SVG. */
 const { useState, useEffect, useRef, useLayoutEffect, useSyncExternalStore, createElement } = React;
 const html = htm.bind(createElement);
 const useStore = () => { useSyncExternalStore(Store.sub, Store.ver); return Store; };
@@ -2623,10 +2806,17 @@ const dLong = s => DF({ weekday: 'long', day: 'numeric', month: 'long' }).format
 const dMid = s => DF({ weekday: 'short', day: 'numeric', month: 'short' }).format(Apex.parse(s));
 const dTiny = s => DF({ day: 'numeric', month: 'short' }).format(Apex.parse(s));
 const cx = (...a) => a.filter(Boolean).join(' ');
-const APP_NAME = 'Macrova'; // nom affiché et donné à l'IA
+const APP_NAME = 'Macrolya'; // nom affiché et donné à l'IA
 
 /* ---------- icônes (24 px, trait) ---------- */
 const IC = {
+  user: [[12, 8, 4], 'M4 21a8 8 0 0 1 16 0'],
+  lock: ['M5 11h14v10H5z', 'M8 11V7a4 4 0 0 1 8 0v4'],
+  mail: ['M3 5h18v14H3z', 'm3 6 9 7 9-7'],
+  eye: ['M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12', [12, 12, 3]],
+  eyeOff: ['M3 3l18 18', 'M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1', 'M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6', 'M9.9 9.9a3 3 0 0 0 4.2 4.2'],
+  cloud: ['M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z'],
+  logout: ['M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4', 'M10 17l-5-5 5-5', 'M5 12h11'],
   home: ['M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'],
   utensils: ['M6 3v6a2 2 0 0 0 4 0V3', 'M8 3v18', 'M16 21V3c2.5 1.5 3.5 4.5 3.5 8H16'],
   dumbbell: ['M6.5 6.5v11', 'M17.5 6.5v11', 'M3.5 9v6', 'M20.5 9v6', 'M6.5 12h11'],
@@ -2957,7 +3147,7 @@ function ChartCard({ title, sub, cls, legend, table, children }) {
 }
 
 /* ---- 30-ui-dashboard.js ---- */
-/* Macrova — onglet 1 : statut du jour, check-in matinal à jeun, lecture, poids, mensurations. */
+/* Macrolya — onglet 1 : statut du jour, check-in matinal à jeun, lecture, poids, mensurations. */
 const ST_LAB = { vert: 'good', orange: 'warn', rouge: 'crit' };
 
 function Hero({ date, go }) {
@@ -3078,7 +3268,7 @@ function Dashboard({ date, go, setDate }) {
 }
 
 /* ---- 31-ui-debrief.js ---- */
-/* Macrova — debrief matinal : une seule page (poids, sommeil, forme), puis bilan du jour. */
+/* Macrolya — debrief matinal : une seule page (poids, sommeil, forme), puis bilan du jour. */
 const LVL = [[2, 'À plat'], [4, 'Bof'], [6, 'Correct'], [8, 'Bien'], [10, 'Au top']];
 const nearLvl = v => (v == null ? null : LVL.reduce((b, x) => (Math.abs(x[0] - v) < Math.abs(b - v) ? x[0] : b), 2));
 
@@ -3167,7 +3357,7 @@ function CheckIn({ date, go }) {
 }
 
 /* ---- 32-ui-mensu.js ---- */
-/* Macrova — mensurations : on choisit la mesure sur le bonhomme ; seule la zone choisie est tracée, sur la face ET sur le dos
+/* Macrolya — mensurations : on choisit la mesure sur le bonhomme ; seule la zone choisie est tracée, sur la face ET sur le dos
    (un tour de ruban fait le tour du corps), et des deux côtés pour les membres. Bras, avant-bras, cuisse et mollet se mesurent
    à gauche et à droite pour voir les asymétries ; tour de fesses en plus.
    Données : un doc par date dans Apex.mensurations, champs à plat (taille, cou, …, bras_g, bras_d, …). Les anciens « bras » et « cuisse »
@@ -3273,7 +3463,7 @@ function MensuCard({ date, win, cls }) {
 }
 
 /* ---- 40-ui-repas.js ---- */
-/* Macrova — onglet 2 : plan repas, swap, recalage, écarts, macros résiduelles, suppléments. */
+/* Macrolya — onglet 2 : plan repas, swap, recalage, écarts, macros résiduelles, suppléments. */
 const unitOf = f => (f.u ? f.u[0] : 'g');
 const macTxt = m => 'P ' + f0(m.p) + ' · G ' + f0(m.g) + ' · L ' + f0(m.l);
 const norm = s => String(s).toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -3648,7 +3838,7 @@ function Repas({ date }) {
 }
 
 /* ---- 50-ui-training.js ---- */
-/* Macrova — onglet 3 : séance du jour, charges, points faibles (pecs, biceps, deltoïdes latéraux), fatigue. */
+/* Macrolya — onglet 3 : séance du jour, charges, points faibles (pecs, biceps, deltoïdes latéraux), fatigue. */
 const fl = e => Apex.focusLabel(Store.cfg(), e.m);
 const setsTxt = sets => { const g = {}; sets.forEach(s => { const k = fq(s.kg || 0); (g[k] = g[k] || []).push(s.r); }); return Object.keys(g).map(k => k + ' × ' + g[k].join('·')).join('  '); };
 
@@ -3830,7 +4020,7 @@ function Training({ date, setDate, go }) {
 }
 
 /* ---- 51-ui-workout.js ---- */
-/* Macrova — la séance en cours, façon Lyfta / Hevy / Strong :
+/* Macrolya — la séance en cours, façon Lyfta / Hevy / Strong :
    barre du haut (durée, séries faites, tonnage), un bloc par exercice avec son tableau de séries
    (série · précédent · kg · reps · RPE · ✓), repos lancé tout seul quand on coche une série, fin d'exercice automatique,
    résumé de fin de séance avec les records. Les données restent celles de Apex.seances (sets {kg, r, rpe, ok, w}). */
@@ -4027,7 +4217,7 @@ function SessionPill({ tab, go }) {
 }
 
 /* ---- 52-ui-programme.js ---- */
-/* Macrova — espace programme : séances, réglages par exercice (séries, répétitions, RIR), bibliothèque par muscle,
+/* Macrolya — espace programme : séances, réglages par exercice (séries, répétitions, RIR), bibliothèque par muscle,
    volume hebdomadaire, planning, construction par l'IA. Stocké dans cfg.programme (voir 14-program-logic.js). */
 /* Les séances d'aujourd'hui et des jours à venir, pas encore commencées, reprennent le nouveau programme tout de suite. */
 const rafraichirPlans = () => {
@@ -4194,7 +4384,7 @@ function ProgrammeTab() {
 }
 
 /* ---- 53-ui-chrono.js ---- */
-/* Macrova — chrono muscu : repos entre les séries (compte à rebours, bip + vibration à la fin) et chronomètre libre.
+/* Macrolya — chrono muscu : repos entre les séries (compte à rebours, bip + vibration à la fin) et chronomètre libre.
    L'état vit hors des composants et dans le stockage du téléphone : le chrono continue quand on change d'onglet ou qu'on verrouille l'écran. */
 const CHR = (() => {
   const KEY = 'apexhq:chrono', subs = new Set();
@@ -4291,7 +4481,7 @@ function Chrono() {
 }
 
 /* ---- 54-ui-figure.js ---- */
-/* Macrova — le « bonhomme » : planche d'anatomie de face et de dos (silhouette noire, muscles en facettes séparées par des traits gris-vert).
+/* Macrolya — le « bonhomme » : planche d'anatomie de face et de dos (silhouette noire, muscles en facettes séparées par des traits gris-vert).
    GÉNÉRÉ à partir de l'illustration de référence de Quentin (formes vectorisées puis rattachées à chaque muscle) ; les muscles travaillés s'allument en couleur.
    Chaque vue : w = largeur, base = contour plein (le trait gris-vert), k = facettes par muscle ('b' = tête, mains, pieds, cou : jamais allumés). Hauteur : 400. */
 const FIG_H = 400;
@@ -4319,7 +4509,7 @@ function MuscleFig({ m, s, h = 52, both }) {
 }
 
 /* ---- 60-ui-analytics.js ---- */
-/* Macrova — onglet 4 : sèche (poids, projection, bilan métabolique), adhérence, force, volume, physique. */
+/* Macrolya — onglet 4 : sèche (poids, projection, bilan métabolique), adhérence, force, volume, physique. */
 const POSES = [['face', 'Face'], ['profil', 'Profil'], ['dos', 'Dos']];
 
 function KPI({ ic, label, value, unit, hint, tone, empty }) {
@@ -4540,7 +4730,7 @@ function Analytics({ date }) {
 }
 
 /* ---- 63-ui-scan.js ---- */
-/* Macrova — scan de code-barres (app autonome) : caméra + Open Food Facts.
+/* Macrolya — scan de code-barres (app autonome) : caméra + Open Food Facts.
    La caméra et l'accès à Open Food Facts ne sont pas permis dans la version Claude (sandbox) : le bouton n'y apparaît pas. */
 const CAN_SCAN = !!window.APEX_STANDALONE;
 const r1 = v => Math.round(v * 10) / 10;
@@ -4601,7 +4791,7 @@ function ScanSheet({ title, onProduct, onClose }) {
 }
 
 /* ---- 64-ui-adapt.js ---- */
-/* Macrova — séance du jour modifiable, adaptation en un geste (temps, matériel, priorité, forme), semaine selon les dispos.
+/* Macrolya — séance du jour modifiable, adaptation en un geste (temps, matériel, priorité, forme), semaine selon les dispos.
    Avec une IA connectée : séance optimisée + conseils. Sans IA : même adaptation par l'algorithme de l'app. */
 const lsGet = (k, d) => { try { return localStorage.getItem('apexhq:' + k) || d; } catch (e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem('apexhq:' + k, String(v)); } catch (e) { /* préférence non mémorisée */ } };
@@ -4764,7 +4954,7 @@ function WeekBar({ date, setDate }) {
 }
 
 /* ---- 65-ui-coach.js ---- */
-/* Macrova — onglet 5 : coach IA intégré (Claude, via la capacité sample).
+/* Macrolya — onglet 5 : coach IA intégré (Claude, via la capacité sample).
    Il lit l'état du jour (envoyé dans chaque demande) et enregistre repas, check-in, séries, pas et
    mensurations avec des outils de page. Chaque écriture est affichée et annulable. */
 const CHAT_LS = 'apexhq:chat:v1';
@@ -4996,7 +5186,7 @@ function Coach({ date }) {
   if (!sample) return html`<div>
     <div className="view-h"><h1>Coach</h1><p>IA intégrée à l’app.</p></div>
     <${Card} title="Coach indisponible dans cette vue">
-      <div className="empty"><span><b>Le coach a besoin d’une IA.</b> ${STANDALONE ? 'Active l’IA gratuite dans Réglages, section IA : ' : 'Ouvre Macrova depuis l’app Claude ou claude.ai, connecté à ton compte : '}le coach lit tes données et enregistre repas, debrief et séries quand tu lui parles.</span></div>
+      <div className="empty"><span><b>Le coach a besoin d’une IA.</b> ${STANDALONE ? 'Active l’IA gratuite dans Réglages, section IA : ' : 'Ouvre Macrolya depuis l’app Claude ou claude.ai, connecté à ton compte : '}le coach lit tes données et enregistre repas, debrief et séries quand tu lui parles.</span></div>
     <//>
   </div>`;
   return html`<div>
@@ -5031,7 +5221,7 @@ function Coach({ date }) {
 }
 
 /* ---- 66-ui-onboard.js ---- */
-/* Macrova — assistant de démarrage : questions, calcul précis des calories, programme de séances, lien Claude.
+/* Macrolya — assistant de démarrage : questions, calcul précis des calories, programme de séances, lien Claude.
    S'affiche à la première ouverture (profil vide) ou via Réglages › Refaire le questionnaire. */
 const STEPS = ['bienvenue', 'prenom', 'objectif', 'intensite', 'profil', 'activite', 'training', 'focus', 'alim', 'supps', 'resultat', 'claude'];
 const METIERS = [['sedentaire', 'Sédentaire', 'Bureau, études, télétravail : peu de déplacements.', 'clock'], ['debout', 'Debout ou mobile', 'Commerce, enseignement, service : tu bouges dans la journée.', 'steps'], ['actif', 'Physique', 'Manutention, chantier, métier très actif.', 'bolt']];
@@ -5207,7 +5397,7 @@ function Wizard({ redo, onClose }) {
 }
 
 /* ---- 67-ui-ailink.js ---- */
-/* Macrova — connexion à l'IA : le plus court possible.
+/* Macrolya — connexion à l'IA : le plus court possible.
    - Version Claude : le compte Claude de la personne (un seul clic « Autoriser »).
    - App autonome avec Gemini intégré (clé du propriétaire dans le build) : un seul clic « Activer l'IA gratuite ».
    - Sinon : clé Gemini perso en deux gestes (ouvrir Google AI Studio, puis « Coller et lier »).
@@ -5261,7 +5451,7 @@ function ClaudeLink({ onChange }) {
         <details className="ai-card"><summary><b>Utiliser ma propre clé Gemini</b> · quota perso</summary><div className="stack" style=${{ marginTop: 10 }}>${gemini}</div></details>`
       : html`<div className="ai-card"><div className="row sb"><b>Gemini</b><span className="tag-free">Gratuit</span></div>${gemini}${privacy}</div>`}
     </div>` : html`<div className="stack">
-      <p className="sec" style=${{ fontSize: 13 }}>Tu es connecté avec ton compte Claude : tes données Macrova sont liées à ce compte, dans une base privée. L’IA utilise le quota de ton abonnement Claude, y compris gratuit. Quand il est atteint, l’IA se met en pause jusqu’à sa réinitialisation et le reste de l’app continue. Au premier test, Claude te demande l’autorisation.</p>
+      <p className="sec" style=${{ fontSize: 13 }}>Tu es connecté avec ton compte Claude : tes données Macrolya sont liées à ce compte, dans une base privée. L’IA utilise le quota de ton abonnement Claude, y compris gratuit. Quand il est atteint, l’IA se met en pause jusqu’à sa réinitialisation et le reste de l’app continue. Au premier test, Claude te demande l’autorisation.</p>
       <div className="row"><button type="button" className=${cx('btn', !on && 'pri')} disabled=${!!busy} onClick=${testClaude}>${busy === 'c' ? 'Test…' : on ? 'Tester la connexion' : 'Autoriser et tester'}</button>
         ${on && html`<${Confirm} label="Désactiver" sure="Désactiver ?" cls="ghost" onYes=${() => { Store.patch('cfg', null, { claude: null }); setMsg('IA désactivée.'); if (onChange) onChange(false); }} />`}</div>
     </div>`}
@@ -5280,7 +5470,7 @@ function IABanner() {
     <button type="button" className="btn sm pri" onClick=${() => setSheet(true)}>Activer</button>
     <button type="button" className="ib sm" aria-label="Plus tard" onClick=${() => { AI.setConsent('0'); Store.refreshAI(); }}><${Icon} n="x" s=${16} /></button>
     ${sheet && html`<${Sheet} title="Activer l’IA gratuite" onClose=${() => setSheet(false)}>
-      <p className="sec" style=${{ fontSize: 14 }}>Macrova utilise Google Gemini. Quand tu parles au coach, adaptes une séance ou lances un debrief, ton message et les données utiles (poids, repas, séances) sont envoyés à Google.</p>
+      <p className="sec" style=${{ fontSize: 14 }}>Macrolya utilise Google Gemini. Quand tu parles au coach, adaptes une séance ou lances un debrief, ton message et les données utiles (poids, repas, séances) sont envoyés à Google.</p>
       <div className="note"><${Icon} n="info" /><div><span>Niveau gratuit : limites partagées par minute et par jour, et Google peut réutiliser les échanges pour améliorer ses produits. N’écris rien de sensible. Tu peux désactiver l’IA à tout moment dans Réglages.</span></div></div>
       <button type="button" className="btn pri wide" disabled=${busy} onClick=${go}><${Icon} n="check" s=${18} />${busy ? 'Activation…' : 'J’accepte, activer l’IA'}</button>
       <button type="button" className="btn wide ghost" onClick=${() => { AI.setConsent('0'); Store.refreshAI(); setSheet(false); }}>Non merci, sans IA</button>
@@ -5289,7 +5479,7 @@ function IABanner() {
 }
 
 /* ---- 68-ui-custom.js ---- */
-/* Macrova — personnalisation : séances, exercices, points faibles, compléments, aliments perso.
+/* Macrolya — personnalisation : séances, exercices, points faibles, compléments, aliments perso.
    Tout est stocké dans la config (cfg.seanceTypes, cfg.programme, cfg.exos, cfg.focus, cfg.supps, cfg.aliments). */
 
 /* Champ texte : valide à la perte de focus ou sur Entrée. */
@@ -5465,7 +5655,7 @@ function FoodsEditor() {
 }
 
 /* ---- 69-ui-share.js ---- */
-/* Macrova — partage, installation et mises à jour de l'app autonome.
+/* Macrolya — partage, installation et mises à jour de l'app autonome.
    - Lien + QR code pour la faire essayer à des amis (chacun a ses propres données, sur son téléphone).
    - Bouton « Installer » (Android) ou mode d'emploi (iPhone).
    - Vérification de version à chaque ouverture : l'app se met à jour seule, sans désinstaller. */
@@ -5486,7 +5676,7 @@ async function checkUpdate(manual) {
       toast('Mise à jour en cours…');
       try { const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) { /* le rechargement suffit */ }
       setTimeout(() => location.reload(), 700);
-    } else if (manual) toast('Macrova est à jour (version ' + cur + ').');
+    } else if (manual) toast('Macrolya est à jour (version ' + cur + ').');
   } catch (e) { if (manual) toast('Vérification impossible : es-tu connecté à internet ?'); }
 }
 
@@ -5504,9 +5694,9 @@ function InstallHelp() {
 function ShareBody() {
   const [copied, setCopied] = useState(false); const inp = useRef(null);
   const copy = async () => { try { await navigator.clipboard.writeText(PUBLIC_URL); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch (e) { if (inp.current) { inp.current.focus(); inp.current.select(); } toast('Sélectionne le lien et copie-le.'); } };
-  const share = async () => { try { await navigator.share({ title: 'Macrova', text: 'Essaie Macrova : suivi de sèche, repas et séances.', url: PUBLIC_URL }); } catch (e) { /* annulé */ } };
+  const share = async () => { try { await navigator.share({ title: 'Macrolya', text: 'Essaie Macrolya : suivi de sèche, repas et séances.', url: PUBLIC_URL }); } catch (e) { /* annulé */ } };
   return html`<div className="stack">
-    <p className="sec" style=${{ fontSize: 13 }}>Fais essayer Macrova à tes amis : gratuit, sans compte. Chacun a ses propres données, gardées sur son téléphone. Ce lien ne partage rien de toi.</p>
+    <p className="sec" style=${{ fontSize: 13 }}>Fais essayer Macrolya à tes amis : gratuit. Chacun a son propre compte et ses propres données, gardées sur son téléphone. Ce lien ne partage rien de toi.</p>
     <div className="row" style=${{ flexWrap: 'nowrap' }}><input ref=${inp} className="inp grow" readOnly value=${PUBLIC_URL} aria-label="Lien de l’application" onFocus=${e => e.target.select()} />
       <button type="button" className="btn" onClick=${copy}><${Icon} n=${copied ? 'check' : 'copy'} s=${18} />${copied ? 'Copié' : 'Copier'}</button></div>
     ${typeof navigator.share === 'function' && html`<button type="button" className="btn pri wide" onClick=${share}><${Icon} n="upload" s=${18} />Envoyer le lien</button>`}
@@ -5525,15 +5715,153 @@ function InstallBanner() {
   const dismiss = () => { try { localStorage.setItem('apexhq:nobanner', '1'); } catch (e) { /* sans effet */ } setHide(true); };
   return html`<div className="install" role="region" aria-label="Installer l’application">
     <i className="install-ic"><${Icon} n="apex" s=${22} w=${2} /></i>
-    <div className="install-t"><b>Installe Macrova</b><span>Icône sur l’écran d’accueil, plein écran, hors ligne.</span></div>
+    <div className="install-t"><b>Installe Macrolya</b><span>Icône sur l’écran d’accueil, plein écran, hors ligne.</span></div>
     <button type="button" className="btn sm pri" onClick=${install}>${window.__bip ? 'Installer' : 'Comment ?'}</button>
     <button type="button" className="ib sm" aria-label="Masquer" onClick=${dismiss}><${Icon} n="x" s=${16} /></button>
-    ${sheet && html`<${Sheet} title="Installer Macrova" onClose=${() => setSheet(false)}><${InstallHelp} /><//>`}
+    ${sheet && html`<${Sheet} title="Installer Macrolya" onClose=${() => setSheet(false)}><${InstallHelp} /><//>`}
   </div>`;
 }
 
+/* ---- 69b-ui-compte.js ---- */
+/* Macrolya — compte (app autonome) : inscription prénom + email + mot de passe, connexion, mot de passe oublié,
+   confidentialité, section Compte des réglages. Le stockage et la synchro sont dans Cloud (17-cloud.js) et Store. */
+const MAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PW_MIN = 8;
+function useCloud() { const [, f] = useState(0); useEffect(() => Cloud.sub(() => f(x => x + 1)), []); return Cloud.user(); }
+const openCompte = (mode, email) => { try { window.dispatchEvent(new CustomEvent('compte:open', { detail: { mode: mode || 'up', email: email || '' } })); } catch (e) { /* sans effet */ } };
+const relance = () => { Store.saveNow(); setTimeout(() => { try { location.reload(); } catch (e) { /* sans effet */ } }, 120); };
+
+function PrivacySheet({ onClose }) {
+  return html`<${Sheet} title="Confidentialité" onClose=${onClose}>
+    <div className="priv">
+      <p><b>Ce qui est enregistré dans ton compte.</b> Ton email, ton prénom, ton profil et tes objectifs, tes repas, tes séances, ton poids, tes mensurations et tes debriefs. Tes photos et ta clé IA ne quittent jamais ton téléphone.</p>
+      <p><b>Données de santé.</b> Le poids, les mensurations et les ressentis sont des données de santé. Elles ne sont enregistrées en ligne que si tu crées un compte et que tu l’acceptes explicitement à l’inscription.</p>
+      <p><b>Pourquoi.</b> Uniquement pour sauvegarder tes données et les retrouver sur un autre téléphone. Aucune publicité, aucune revente, aucun partage, aucun profilage.</p>
+      <p><b>Où.</b> Chez Google Firebase : Authentication gère l’email et le mot de passe (l’app ne voit jamais ton mot de passe), Cloud Firestore stocke les données dans l’Union européenne. Les échanges sont chiffrés.</p>
+      <p><b>Qui y accède.</b> Toi seul depuis l’app : les règles de la base n’autorisent chaque compte qu’à ses propres données. Techniquement, l’administrateur du projet Firebase pourrait y accéder ; il s’engage à ne pas les consulter.</p>
+      <p><b>Durée.</b> Tant que ton compte existe. « Supprimer mon compte » (Réglages, section Compte) efface définitivement tes données en ligne et ton compte.</p>
+      <p><b>Tes droits.</b> Accès et portabilité (export JSON dans Réglages, section Données), rectification (modifie dans l’app), effacement (suppression du compte), retrait du consentement à tout moment. Tu peux aussi saisir la CNIL (cnil.fr).</p>
+      <p><b>Sans compte.</b> L’app fonctionne entièrement sur ton téléphone, sans rien envoyer.</p>
+    </div>
+  <//>`;
+}
+
+function PwField({ id, value, onChange, auto, onEnter, label }) {
+  const [vis, setVis] = useState(false);
+  return html`<label className="fld" htmlFor=${id}><span className="fld-l">${label || 'Mot de passe'}</span>
+    <div className="auth-pw"><input id=${id} className="inp big-inp" type=${vis ? 'text' : 'password'} autoComplete=${auto} value=${value} onChange=${e => onChange(e.target.value)} onKeyDown=${e => { if (e.key === 'Enter' && onEnter) onEnter(); }} />
+      <button type="button" className="ib" aria-label=${vis ? 'Masquer le mot de passe' : 'Afficher le mot de passe'} onClick=${() => setVis(!vis)}><${Icon} n=${vis ? 'eyeOff' : 'eye'} s=${19} /></button></div></label>`;
+}
+
+function AuthScreen({ start, email0, onClose, onSkip }) {
+  const [m, setM] = useState(start || 'up'); const [f, setF] = useState({ prenom: '', email: email0 || '', pw: '', ok: false });
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(''); const [priv, setPriv] = useState(false);
+  const set = o => { setF(Object.assign({}, f, o)); setMsg(''); };
+  const mail = f.email.trim(), mailOk = MAIL_RE.test(mail), had = Store.hasData();
+  const valid = m === 'up' ? f.prenom.trim().length > 0 && mailOk && f.pw.length >= PW_MIN && f.ok : m === 'in' ? mailOk && f.pw.length > 0 : m === 'reset' ? mailOk : true;
+  const go = async () => {
+    if (!valid || busy) return; setBusy(true); setMsg('');
+    try {
+      if (m === 'reset') { await Cloud.reset(mail); setM('sent'); }
+      else if (m === 'up') {
+        await Cloud.signUp(f.prenom.trim(), mail, f.pw);
+        if (had) Store.adopt(); else Store.wipe();
+        const p = Store.cfg().profil || {};
+        if (!p.prenom || !had) Store.patch('cfg', null, { profil: Object.assign({}, p, { prenom: f.prenom.trim().slice(0, 24) }) });
+        toast('Compte créé'); relance();
+      } else {
+        const r = await Cloud.signIn(mail, f.pw);
+        if (r.same) { toast('Reconnecté'); relance(); }
+        else if (had) setM('choix');
+        else { Store.wipe(); toast('Connecté : récupération de tes données…'); relance(); }
+      }
+    } catch (e) { setMsg((e && e.message) || 'Erreur inattendue.'); }
+    setBusy(false);
+  };
+  const choisir = garder => { if (garder) Store.adopt(); else Store.wipe(); relance(); };
+  const annulerChoix = () => { Cloud.signOut(); setM('in'); };
+  const T = {
+    up: ['Crée ton compte', had ? 'Tes données déjà sur ce téléphone seront sauvegardées dans ton compte, et tu les retrouveras sur n’importe quel téléphone.' : 'Email et mot de passe : tu retrouves tout (profil, repas, séances, poids) même si tu changes de téléphone.'],
+    in: ['Content de te revoir', 'Connecte-toi pour récupérer tes données sur ce téléphone.'],
+    reset: ['Mot de passe oublié', 'Indique l’email de ton compte : tu reçois un lien pour choisir un nouveau mot de passe.'],
+    sent: ['Email envoyé', 'Ouvre le lien reçu à ' + mail + ' (regarde aussi les spams), choisis un nouveau mot de passe, puis reviens te connecter.'],
+    choix: ['Ce téléphone a déjà des données', 'Tu viens de te connecter à un compte. Que faire des données déjà présentes sur ce téléphone ?'],
+  }[m];
+  const pwOk = f.pw.length >= PW_MIN;
+  return html`<div className="wiz auth" role="dialog" aria-modal="true" aria-label="Compte Macrolya">
+    <div className="wiz-top"><div className="brand"><${Icon} n="apex" s=${22} w=${2} />Macrolya</div><span className="grow"></span>
+      ${onClose && html`<button type="button" className="ib" aria-label="Fermer" onClick=${onClose}><${Icon} n="x" /></button>`}</div>
+    <div className="wiz-body"><div className="wiz-in">
+      <div className="auth-hero"><i><${Icon} n=${m === 'sent' ? 'mail' : m === 'reset' ? 'lock' : 'cloud'} s=${26} /></i><h1>${T[0]}</h1><p className="sec">${T[1]}</p></div>
+      ${(m === 'up' || m === 'in') && html`<div className="seg auth-seg" role="tablist" aria-label="Compte">${[['up', 'Créer un compte'], ['in', 'Se connecter']].map(x => html`<button key=${x[0]} type="button" role="tab" aria-selected=${m === x[0]} aria-pressed=${m === x[0]} onClick=${() => { setM(x[0]); setMsg(''); }}>${x[1]}</button>`)}</div>`}
+      ${m === 'up' && html`<label className="fld" htmlFor="au-prenom"><span className="fld-l">Prénom</span><input id="au-prenom" className="inp big-inp" type="text" maxLength="24" autoComplete="given-name" autoCapitalize="words" value=${f.prenom} onChange=${e => set({ prenom: e.target.value })} placeholder="ex. Quentin" /></label>`}
+      ${(m === 'up' || m === 'in' || m === 'reset') && html`<label className="fld" htmlFor="au-mail"><span className="fld-l">Email</span><input id="au-mail" className="inp big-inp" type="email" inputMode="email" autoComplete=${m === 'up' ? 'email' : 'username'} autoCapitalize="none" spellCheck="false" value=${f.email} onChange=${e => set({ email: e.target.value })} onKeyDown=${e => { if (e.key === 'Enter' && m === 'reset') go(); }} placeholder="toi@exemple.fr" /></label>`}
+      ${(m === 'up' || m === 'in') && html`<${PwField} id="au-pw" value=${f.pw} onChange=${v => set({ pw: v })} auto=${m === 'up' ? 'new-password' : 'current-password'} onEnter=${go} />`}
+      ${m === 'up' && f.pw.length > 0 && html`<span className=${cx('auth-hint', pwOk && 'ok')}><${Icon} n=${pwOk ? 'check' : 'info'} s=${15} />${pwOk ? 'Mot de passe valide' : 'Encore ' + (PW_MIN - f.pw.length) + ' caractère' + (PW_MIN - f.pw.length > 1 ? 's' : '') + ' (8 minimum)'}</span>`}
+      ${m === 'in' && html`<button type="button" className="auth-link" onClick=${() => { setM('reset'); setMsg(''); }}>Mot de passe oublié ?</button>`}
+      ${m === 'up' && html`<label className="auth-ok" htmlFor="au-ok"><input id="au-ok" type="checkbox" checked=${f.ok} onChange=${e => set({ ok: e.target.checked })} />
+        <span>J’accepte que mes données, dont mes données de santé (poids, mensurations, ressentis), soient enregistrées dans mon compte pour être sauvegardées et synchronisées. <button type="button" className="auth-link" onClick=${e => { e.preventDefault(); setPriv(true); }}>Confidentialité</button></span></label>`}
+      ${m === 'choix' && html`<div className="stack">
+        <button type="button" className="opt auth-opt" onClick=${() => choisir(false)}><b>Utiliser les données de mon compte</b><span>Ce téléphone est effacé puis rempli avec ton compte. Recommandé.</span></button>
+        <button type="button" className="opt auth-opt" onClick=${() => choisir(true)}><b>Fusionner avec ce téléphone</b><span>Les données du téléphone sont ajoutées à ton compte. À choisir seulement si ce sont aussi les tiennes.</span></button>
+      </div>`}
+      ${msg && html`<div className="note warn" role="alert"><${Icon} n="alert" /><div><span>${msg}</span></div></div>`}
+    </div></div>
+    <div className="wiz-foot"><div className="wiz-in" style=${{ gap: 8 }}>
+      ${m === 'up' && html`<button type="button" className="btn pri wide" disabled=${!valid || busy} onClick=${go}><${Icon} n="cloud" s=${18} />${busy ? 'Création…' : 'Créer mon compte'}</button>`}
+      ${m === 'in' && html`<button type="button" className="btn pri wide" disabled=${!valid || busy} onClick=${go}><${Icon} n="user" s=${18} />${busy ? 'Connexion…' : 'Se connecter'}</button>`}
+      ${m === 'reset' && html`<button type="button" className="btn pri wide" disabled=${!valid || busy} onClick=${go}><${Icon} n="mail" s=${18} />${busy ? 'Envoi…' : 'Recevoir le lien'}</button>`}
+      ${(m === 'reset' || m === 'sent') && html`<button type="button" className="btn wide" onClick=${() => { setM('in'); setMsg(''); }}>Retour à la connexion</button>`}
+      ${m === 'choix' && html`<button type="button" className="btn wide" onClick=${annulerChoix}>Annuler et me déconnecter</button>`}
+      ${onSkip && (m === 'up' || m === 'in') && html`<button type="button" className="btn ghost wide" onClick=${onSkip}>Continuer sans compte</button>`}
+    </div></div>
+    ${priv && html`<${PrivacySheet} onClose=${() => setPriv(false)} />`}
+  </div>`;
+}
+
+function CompteBody() {
+  const u = useCloud(), st = useStore(), sy = st.sync(), cfg = st.cfg(), n = st.pendingKeys();
+  const [del, setDel] = useState(false); const [pw, setPw] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(''); const [priv, setPriv] = useState(false);
+  const privBtn = html`<button type="button" className="btn ghost wide" onClick=${() => setPriv(true)}><${Icon} n="lock" s=${18} />Confidentialité</button>${priv && html`<${PrivacySheet} onClose=${() => setPriv(false)} />`}`;
+  if (!u) return html`<${React.Fragment}>
+    <h3>Compte</h3>
+    <div className="note"><${Icon} n="info" /><div><span><b>Sans compte, tout est sur ce téléphone.</b> Crée un compte gratuit (prénom, email, mot de passe) pour sauvegarder tes données et les retrouver si tu changes de téléphone.</span></div></div>
+    <button type="button" className="btn pri wide" onClick=${() => openCompte('up')}><${Icon} n="cloud" s=${18} />Créer mon compte</button>
+    <button type="button" className="btn wide" onClick=${() => openCompte('in')}><${Icon} n="user" s=${18} />J’ai déjà un compte</button>
+    ${privBtn}
+  <//>`;
+  const nom = (cfg.profil && cfg.profil.prenom) || u.name || 'Mon compte';
+  const etat = u.dead ? ['warn', 'Session expirée : reconnecte-toi pour reprendre la synchro. Tes saisies restent sur ce téléphone.']
+    : sy.mode === 'ok' ? ['good', n ? n + ' modification' + (n > 1 ? 's' : '') + ' en cours d’envoi.' : 'Tout est sauvegardé dans ton compte.']
+    : sy.mode === 'stale' ? ['warn', 'Hors ligne : tes saisies sont gardées sur ce téléphone et partiront dès le retour du réseau.']
+    : sy.mode === 'err' ? ['warn', 'Synchro en erreur (' + (sy.err || 'inconnue') + '). Tes saisies sont gardées sur ce téléphone.'] : ['', 'Connexion à ton compte…'];
+  const out = () => { Cloud.signOut(); Store.wipe(); lsSet('compte:skip', ''); relance(); };
+  const supprimer = async () => {
+    if (!pw || busy) return; setBusy(true); setMsg('');
+    try { await Cloud.deleteAccount(pw); Store.wipe(); lsSet('compte:skip', ''); toast('Compte supprimé'); relance(); } catch (e) { setMsg((e && e.message) || 'Suppression impossible.'); setBusy(false); }
+  };
+  return html`<${React.Fragment}>
+    <h3>Compte</h3>
+    <div className="acct"><i>${String(nom).trim().charAt(0).toUpperCase() || '?'}</i><div><b>${nom}</b><span>${u.email}</span></div></div>
+    <div className=${cx('note', etat[0])}><${Icon} n=${etat[0] === 'good' ? 'check' : etat[0] === 'warn' ? 'alert' : 'cloud'} /><div><span>${etat[1]} Les photos et la clé IA restent sur ce téléphone.</span></div></div>
+    ${u.dead ? html`<button type="button" className="btn pri wide" onClick=${() => openCompte('in', u.email)}><${Icon} n="user" s=${18} />Me reconnecter</button>`
+      : html`<button type="button" className="btn wide" onClick=${() => { Store.pullNow(); toast('Synchronisation…'); }}><${Icon} n="refresh" s=${18} />Synchroniser maintenant</button>`}
+    <div className="row"><${Confirm} cls="grow" icon="logout" label="Se déconnecter" sure=${n ? n + ' modif. non envoyée' + (n > 1 ? 's' : '') + ' : perdre ?' : 'Effacer de ce téléphone ?'} onYes=${out} /></div>
+    <p className="mut" style=${{ fontSize: 12 }}>La déconnexion efface tes données de ce téléphone ; elles restent dans ton compte.</p>
+    ${privBtn}
+    ${!del ? html`<button type="button" className="btn ghost wide dan-t" onClick=${() => setDel(true)}><${Icon} n="trash" s=${18} />Supprimer mon compte</button>`
+      : html`<div className="stack acct-del">
+        <p className="sec" style=${{ fontSize: 13 }}><b>Suppression définitive.</b> Toutes tes données en ligne et ton compte sont effacés, sans retour possible. Exporte-les d’abord si tu veux les garder (section Données).</p>
+        <${PwField} id="del-pw" value=${pw} onChange=${setPw} auto="current-password" label="Ton mot de passe pour confirmer" onEnter=${supprimer} />
+        ${msg && html`<p className="sec" role="alert" style=${{ fontSize: 13, color: 'var(--warn)' }}>${msg}</p>`}
+        <div className="row"><button type="button" className="btn grow" onClick=${() => { setDel(false); setPw(''); setMsg(''); }}>Annuler</button>
+          <${Confirm} cls="grow" icon="trash" label=${busy ? 'Suppression…' : 'Supprimer'} sure="Vraiment tout effacer ?" onYes=${supprimer} /></div>
+      </div>`}
+  <//>`;
+}
+
 /* ---- 70-ui-app.js ---- */
-/* Macrova — coque : en-tête (jour + statut), onglets, réglages et données, démarrage. */
+/* Macrolya — coque : en-tête (jour + statut), onglets, réglages et données, démarrage. */
 const STANDALONE = !!window.APEX_STANDALONE;
 const TABS_ALL = [['dashboard', 'Jour', 'home'], ['repas', 'Repas', 'utensils'], ['training', 'Training', 'dumbbell'], ['coach', 'Coach', 'chat'], ['analytics', 'Analyse', 'chart']];
 const tabOf = () => { let h = ''; try { h = (location.hash || '').replace('#', ''); } catch (e) { h = ''; } return TABS_ALL.some(t => t[0] === h) ? h : 'dashboard'; };
@@ -5559,7 +5887,7 @@ function SettingsSheet({ onClose }) {
     <${Num} id=${'c-' + s + '-l'} label="Lipides" unit="g" value=${cfg.cibles[s].l} onChange=${setC(s, 'l')} dec=${0} min=${cfg.cibles.planchers.l} max=${200} />
     <div className="fld"><span className="fld-l">Glucides</span><div className="inp" style=${{ display: 'grid', alignItems: 'center' }}>${cfg.cibles[s].g} g</div></div>
   </div>`;
-  const SECS = [['profil', 'Profil'], ['seances', 'Séances'], ['focus', 'Points faibles'], ['repas', 'Repas'], ['claude', 'IA'], ['partage', 'Partager'], ['data', 'Données']];
+  const SECS = [].concat(STANDALONE && Cloud.on() ? [['compte', 'Compte']] : [], [['profil', 'Profil'], ['seances', 'Séances'], ['focus', 'Points faibles'], ['repas', 'Repas'], ['claude', 'IA'], ['partage', 'Partager'], ['data', 'Données']]);
   return html`<${Sheet} title="Réglages et données" onClose=${onClose}>
     <div className="chips" role="group" aria-label="Sections">${SECS.map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${sec === x[0]} onClick=${() => setSec(x[0])}>${x[1]}</button>`)}</div>
     ${sec === 'profil' && html`<${React.Fragment}>
@@ -5584,6 +5912,7 @@ function SettingsSheet({ onClose }) {
       <label className="fld" htmlFor="pl-ph"><span className="fld-l">Jour photos</span><select id="pl-ph" className="inp" value=${cfg.photosJour} onChange=${e => Store.patch('cfg', null, { photosJour: +e.target.value })}>${JOURS.map(d => html`<option key=${d[0]} value=${d[0]}>${d[1]}</option>`)}</select></label>
     </div>
     <//>`}
+    ${sec === 'compte' && html`<${CompteBody} />`}
     ${sec === 'seances' && html`<${SeancesEditor} />`}
     ${sec === 'focus' && html`<${FocusEditor} />`}
     ${sec === 'repas' && html`<${React.Fragment}>
@@ -5606,14 +5935,14 @@ function SettingsSheet({ onClose }) {
     <h3>Données</h3>
     ${STANDALONE && html`<button type="button" className="btn wide" onClick=${() => checkUpdate(true)}><${Icon} n="refresh" s=${18} />Rechercher une mise à jour</button>`}
     <p className="mut" style=${{ fontSize: 12 }}>Version : ${window.APEX_VERSION ? 'app autonome ' + window.APEX_VERSION : 'version Claude'}</p>
-    <div className="note"><${Icon} n="info" /><div><span>${sy.mode === 'ok' ? 'Synchronisé avec la base privée de ton compte Claude, et copié sur cet appareil.' : sy.mode === 'local' ? (STANDALONE ? 'Tout est enregistré sur ce téléphone, sans compte ni serveur. Si tu désinstalles l’app ou effaces les données du navigateur, tout disparaît : exporte régulièrement.' : 'Enregistré sur cet appareil uniquement : cette vue n’a pas accès à la base du compte.') : sy.mode === 'err' ? 'La base du compte ne répond pas (' + (sy.err || 'erreur') + '). Les saisies restent sur cet appareil et repartiront à la prochaine ouverture.' : 'Connexion à la base du compte en cours. Les saisies sont gardées sur cet appareil.'}${st.pendingKeys() ? ' ' + st.pendingKeys() + ' modification(s) en attente d’envoi.' : ''}</span></div></div>
+    <div className="note"><${Icon} n="info" /><div><span>${st.cloud() ? (sy.mode === 'ok' ? 'Synchronisé avec ton compte Macrolya, et copié sur ce téléphone. Les photos restent sur ce téléphone.' : 'Compte Macrolya : synchro en attente (' + (sy.err || sy.mode) + '). Les saisies restent sur ce téléphone.') : sy.mode === 'ok' ? 'Synchronisé avec la base privée de ton compte Claude, et copié sur cet appareil.' : sy.mode === 'local' ? (STANDALONE ? 'Tout est enregistré sur ce téléphone, sans compte ni serveur. Si tu désinstalles l’app ou effaces les données du navigateur, tout disparaît : exporte régulièrement.' : 'Enregistré sur cet appareil uniquement : cette vue n’a pas accès à la base du compte.') : sy.mode === 'err' ? 'La base du compte ne répond pas (' + (sy.err || 'erreur') + '). Les saisies restent sur cet appareil et repartiront à la prochaine ouverture.' : 'Connexion à la base du compte en cours. Les saisies sont gardées sur cet appareil.'}${st.pendingKeys() ? ' ' + st.pendingKeys() + ' modification(s) en attente d’envoi.' : ''}</span></div></div>
     <div className="row">
       <button type="button" className="btn grow" onClick=${exp}><${Icon} n="download" s=${18} />Exporter en JSON</button>
     </div>
     ${dump && html`<div className="stack"><span className="fld-l">Copie ce texte et garde-le dans un fichier .json</span><textarea id="exp-dump" className="inp" readOnly value=${dump} onFocus=${e => e.target.select()} aria-label="Export JSON"></textarea></div>`}
     <label className="btn wide" htmlFor="imp-file"><${Icon} n="upload" s=${18} />Choisir un fichier .json</label>
-    <input id="imp-file" className="sr" type="file" accept="application/json,.json" onChange=${e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return; const r = new FileReader(); r.onload = () => { try { const k = Store.importAll(JSON.parse(String(r.result))); setMsg(k + ' document' + (k > 1 ? 's' : '') + ' importé' + (k > 1 ? 's' : '') + '.'); } catch (er) { setMsg(er instanceof SyntaxError ? 'Fichier illisible : ce n’est pas un export Macrova.' : er.message); } }; r.onerror = () => setMsg('Lecture du fichier impossible.'); r.readAsText(f); }} />
-    <textarea id="imp-txt" className="inp" placeholder="Colle ici le contenu d’un export Macrova pour l’importer" value=${imp} onChange=${e => setImp(e.target.value)} aria-label="Contenu JSON à importer"></textarea>
+    <input id="imp-file" className="sr" type="file" accept="application/json,.json" onChange=${e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return; const r = new FileReader(); r.onload = () => { try { const k = Store.importAll(JSON.parse(String(r.result))); setMsg(k + ' document' + (k > 1 ? 's' : '') + ' importé' + (k > 1 ? 's' : '') + '.'); } catch (er) { setMsg(er instanceof SyntaxError ? 'Fichier illisible : ce n’est pas un export Macrolya.' : er.message); } }; r.onerror = () => setMsg('Lecture du fichier impossible.'); r.readAsText(f); }} />
+    <textarea id="imp-txt" className="inp" placeholder="Colle ici le contenu d’un export Macrolya pour l’importer" value=${imp} onChange=${e => setImp(e.target.value)} aria-label="Contenu JSON à importer"></textarea>
     <button type="button" className="btn wide" disabled=${!imp.trim()} onClick=${doImp}><${Icon} n="upload" s=${18} />Importer et fusionner</button>
     ${msg && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${msg}</p>`}
     <//>`}
@@ -5644,13 +5973,17 @@ function App() {
   useEffect(() => { document.body.dataset.statut = statut; }, [statut]);
   const go = t => { setTab(t); try { if (location.hash !== '#' + t) location.hash = t; } catch (e) { /* hash indisponible */ } try { window.scrollTo(0, 0); } catch (e) { /* sans effet */ } };
   const setStatut = v => { if (v === statut) return; if (v === 'repos') Store.patch('journal', date, { date, statut: 'repos' }); else Store.patch('journal', date, { date, statut: 'salle', seance: j.seance || cfg.planning[Apex.dow(date)] || Apex.prochaineSeance(S.seances, cfg, date) }); };
-  const sc = sy.pending > 0 ? ['pend', 'Enregistrement…'] : (SYNC[sy.mode] || SYNC.local);
+  const u = STANDALONE ? useCloud() : null; const [skip, setSkip] = useState(() => !!lsGet('compte:skip', '')); const [auth, setAuth] = useState(null);
+  useEffect(() => { const f = e => { setOpen(false); setAuth((e && e.detail) || { mode: 'up' }); }; window.addEventListener('compte:open', f); return () => window.removeEventListener('compte:open', f); }, []);
+  const needAuth = STANDALONE && Cloud.on() && !u && !skip;
+  const fetching = !!u && !u.dead && (sy.mode === 'boot' || sy.mode === 'wait') && !S.cfg.onboarded && !Object.keys(S.journal).length;
+  const sc = u && u.dead ? ['err', 'Reconnecte-toi'] : sy.pending > 0 ? ['pend', 'Enregistrement…'] : (SYNC[sy.mode] || SYNC.local);
   const tabs = TABS_ALL.filter(t => t[0] !== 'coach' || !STANDALONE || st.caps().sample);
-  const wiz = cfg.onboarded === false || (cfg.onboarded == null && (sy.mode === 'ok' || sy.mode === 'local') && !Object.keys(S.journal).length && !Object.keys(S.seances).length);
+  const wiz = !needAuth && !auth && (cfg.onboarded === false || (cfg.onboarded == null && (sy.mode === 'ok' || sy.mode === 'local') && !Object.keys(S.journal).length && !Object.keys(S.seances).length));
   const View = tab === 'repas' ? Repas : tab === 'training' ? Training : tab === 'analytics' ? Analytics : tab === 'coach' ? Coach : Dashboard;
   return html`<div>
     <header className="top"><div className="wrap top-in">
-      <div className="brand"><${Icon} n="apex" s=${22} w=${2} />Macrova</div>
+      <div className="brand"><${Icon} n="apex" s=${22} w=${2} />Macrolya</div>
       <span className=${cx('sync', sc[0])} role="status"><i></i>${sc[1]}</span>
       <span className="grow"></span>
       <button type="button" className="ib" aria-label="Actualiser l’app" onClick=${refreshApp}><${Icon} n="refresh" /></button>
@@ -5670,6 +6003,9 @@ function App() {
     <nav className="tabs" aria-label="Sections" style=${{ gridTemplateColumns: 'repeat(' + tabs.length + ', 1fr)' }}>${tabs.map(t => html`<button key=${t[0]} type="button" aria-current=${tab === t[0] ? 'page' : undefined} onClick=${() => go(t[0])}><${Icon} n=${t[2]} s=${22} />${t[1]}</button>`)}</nav>
     ${open && html`<${SettingsSheet} onClose=${() => setOpen(false)} />`}
     ${wiz && html`<${Wizard} redo=${cfg.onboarded === false} onClose=${() => {}} />`}
+    ${fetching && html`<div className="boot-wait" role="status"><i></i>Récupération de tes données…</div>`}
+    ${needAuth && html`<${AuthScreen} start="up" onSkip=${() => { lsSet('compte:skip', '1'); setSkip(true); }} />`}
+    ${auth && html`<${AuthScreen} start=${auth.mode} email0=${auth.email} onClose=${() => setAuth(null)} />`}
     <${Toasts} />
   </div>`;
 }

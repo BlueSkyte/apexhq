@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Macrova</title>
+<title>Macrolya</title>
 <meta name="theme-color" content="#000000"><meta name="color-scheme" content="dark">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Macrova">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Macrolya">
 <link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icons/icon-192.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
 <style>:root{color-scheme:dark;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}html{background:#000}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}
@@ -871,10 +871,33 @@ button.dp-n { text-align: left; background: none; border: 0; padding: 0; color: 
 .mes-vc { display: grid; grid-template-columns: auto auto; grid-template-areas: 'v v' 'm p'; justify-items: center; gap: 2px 22px; }
 .mes-vc > .ib:first-child { grid-area: m; } .mes-vc > .ib:last-child { grid-area: p; } .mes-vi { grid-area: v; }
 .mes-vi .inp.sm { width: 92px; }
+
+/* compte : inscription, connexion, réglages */
+.auth .wiz-in { max-width: 460px; }
+.auth-hero { display: grid; gap: 10px; justify-items: start; padding-top: 18px; }
+.auth-hero i { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 18px; background: color-mix(in oklab, var(--acc) 26%, transparent); color: var(--acc-hi); border: 1px solid color-mix(in oklab, var(--acc-hi) 35%, var(--line)); }
+.auth-hero p { margin: 0; font-size: 15px; line-height: 1.5; }
+.auth-seg { width: 100%; } .auth-seg button { flex: 1; height: 42px; }
+.auth-pw { position: relative; } .auth-pw .inp { width: 100%; padding-right: 52px; } .auth-pw .ib { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); }
+.auth-hint { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-3); margin-top: -8px; } .auth-hint.ok { color: var(--good); }
+.auth-link { background: none; border: 0; padding: 0; color: var(--acc-hi); font: inherit; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; justify-self: start; }
+.auth-ok { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--glass); font-size: 13px; line-height: 1.45; color: var(--ink-2); cursor: pointer; }
+.auth-ok input { flex: none; width: 20px; height: 20px; margin-top: 1px; accent-color: var(--acc-hi); }
+.auth-opt { width: 100%; }
+.note.warn { border-color: color-mix(in oklab, var(--warn) 45%, var(--line)); background: color-mix(in oklab, var(--warn) 12%, transparent); } .note.warn .ic { color: var(--warn); }
+.note.good { border-color: color-mix(in oklab, var(--good) 40%, var(--line)); background: color-mix(in oklab, var(--good) 10%, transparent); } .note.good .ic { color: var(--good); }
+.acct { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--glass); min-width: 0; }
+.acct i { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--acc-hi); color: var(--acc-ink); font-style: normal; font-weight: 700; font-size: 18px; }
+.acct div { display: grid; gap: 2px; min-width: 0; } .acct b { font-size: 16px; } .acct span { font-size: 13px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-del { padding: 12px; border-radius: var(--r-sm); border: 1px solid color-mix(in oklab, var(--warn) 40%, var(--line)); }
+.dan-t { color: #ff9a9a; }
+.priv { display: grid; gap: 12px; font-size: 14px; line-height: 1.55; color: var(--ink-2); } .priv p { margin: 0; } .priv b { color: var(--ink); }
+.boot-wait { position: fixed; inset: 0; z-index: 44; display: grid; place-items: center; align-content: center; gap: 14px; background: var(--bg); color: var(--ink-2); font-size: 14px; }
+.boot-wait i { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--acc-hi); animation: bw .9s linear infinite; } @keyframes bw { to { transform: rotate(360deg); } }
 </style>
 </head><body>
-<div id="app" class="app"><p style="padding:48px 16px;color:#85847e;font-family:system-ui,sans-serif">Chargement d’Macrova…</p></div>
-<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261114190715'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_RELAY = "https://script.google.com/macros/s/AKfycbxO8jSVN56K2yio_DV3wzEUJuUFTh3Xd0xmj77j6CejCK5R26ftBlWnprUg3Xsv_PF-/exec";  window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
+<div id="app" class="app"><p style="padding:48px 16px;color:#85847e;font-family:system-ui,sans-serif">Chargement de Macrolya…</p></div>
+<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261114223122'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_RELAY = "https://script.google.com/macros/s/AKfycbxO8jSVN56K2yio_DV3wzEUJuUFTh3Xd0xmj77j6CejCK5R26ftBlWnprUg3Xsv_PF-/exec";  window.APEX_FB = {"apiKey":"AIzaSyAAM7fLuA42_fmWuwLzI_O6c6oFC8wME-M","projectId":"macrovamacrova"}; window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
 window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__bip = e; window.dispatchEvent(new Event('apex-bip')); });
 window.addEventListener('appinstalled', function () { window.__bip = null; });</script>
 <script src="vendor/react.min.js"></script><script src="vendor/react-dom.min.js"></script><script src="vendor/htm.js"></script>
