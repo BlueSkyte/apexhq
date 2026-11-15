@@ -3717,7 +3717,7 @@ function Qty({ it, f, onChange, pesee }) {
 
 /* Détail d'un repas : chaque aliment avec sa quantité, ses kcal et ses macros, puis le total. */
 const qteTxt = (it, f) => (it.x ? '1 portion' : f.u ? fq(it.q) + ' ' + (it.q > 1 && !/[sx]$/.test(String(f.u[0]).split(' ')[0]) ? String(f.u[0]).replace(/^(\S+)/, '$1s') : f.u[0]) : f0(it.q) + ' g');
-function MealDetail({ m, foods, onClose, onSwap }) {
+function MealDetail({ m, foods, onClose, onSwap, onQty, pesee }) {
   const t = Apex.totMeal(m, foods), rows = m.items.map(it => ({ it, f: Apex.foodOf(it, foods), x: Apex.mac(it, foods) })).filter(r => r.f);
   const bar = x => { const k = x.p * 4 + x.g * 4 + x.l * 9 || 1; return html`<div className="md-bar" aria-hidden="true"><i style=${{ width: x.p * 4 / k * 100 + '%', background: 'var(--p)' }}></i><i style=${{ width: x.g * 4 / k * 100 + '%', background: 'var(--g)' }}></i><i style=${{ width: x.l * 9 / k * 100 + '%', background: 'var(--l)' }}></i></div>`; };
   const cel = (v, u, c) => html`<span className="md-c"><b style=${c ? { color: c } : null}>${f0(v)}</b><small>${u}</small></span>`;
@@ -3733,20 +3733,22 @@ function MealDetail({ m, foods, onClose, onSwap }) {
       <div className="md-n"><b>${r.f.n}</b><span>${qteTxt(r.it, r.f)} · ${f0(r.x.k)} kcal${r.x.f ? ' · fibres ' + fq(Math.round(r.x.f * 10) / 10) + ' g' : ''}</span></div>
       <div className="md-m">${cel(r.x.p, 'P', 'var(--p)')}${cel(r.x.g, 'G', 'var(--g)')}${cel(r.x.l, 'L', 'var(--l)')}</div>
       ${bar(r.x)}
-      <button type="button" className="btn sm ghost md-sw" onClick=${() => { onClose(); onSwap(r.it); }}><${Icon} n="swap" s=${15} />Remplacer</button>
+      <div className="md-q">${onQty && !r.it.x ? html`<${Qty} it=${r.it} f=${r.f} pesee=${pesee} onChange=${q => onQty(r.it, q)} />` : html`<span></span>`}<button type="button" className="btn sm ghost md-sw" onClick=${() => { onClose(); onSwap(r.it); }}><${Icon} n="swap" s=${15} />Remplacer</button></div>
     </div>`)}</div>` : html`<div className="empty"><span>Aucun aliment dans ce repas.</span></div>`}
     <p className="mut" style=${{ fontSize: 12 }}>${m.ok ? 'Repas coché comme mangé.' : 'Repas prévu, pas encore coché.'} Valeurs calculées pour la quantité indiquée.</p>
   <//>`;
 }
 
 /* Fiche d'un aliment : valeurs pour la quantité mangée et pour 100 g, puis Remplacer / Retirer. */
-function FoodDetail({ it, foods, onClose, onSwap, onDel }) {
+function FoodDetail({ it, foods, onClose, onSwap, onDel, onQty, pesee }) {
   const f = Apex.foodOf(it, foods); if (!f) return null;
+  const qte = onQty && !it.x ? html`<div className="fd-q"><span>Quantité</span><${Qty} it=${it} f=${f} pesee=${pesee} onChange=${q => onQty(it, q)} /></div>` : null;
   const x = Apex.mac(it, foods), g = it.x ? null : (f.u ? it.q * f.u[1] : it.q), c100 = g ? Apex.mac({ a: it.a, q: f.u ? 100 / f.u[1] : 100 }, foods) : null;
   const k = x.p * 4 + x.g * 4 + x.l * 9 || 1, pct = v => Math.round(v / k * 100);
   const ligne = (lab, v, u, col, p) => html`<div className="fd-l"><span><i style=${{ background: col }}></i>${lab}</span><b>${fq(Math.round(v * 10) / 10)} ${u}</b>${p != null ? html`<small>${p} % des kcal</small>` : html`<small></small>`}</div>`;
   return html`<${Sheet} title=${f.n} onClose=${onClose}>
     <div className="fd-h"><b>${f0(x.k)}<small> kcal</small></b><span>${qteTxt(it, f)}${g && f.u ? ' · ' + f0(g) + ' g' : ''}</span></div>
+    ${qte}
     <div className="md-bar" aria-hidden="true"><i style=${{ width: x.p * 4 / k * 100 + '%', background: 'var(--p)' }}></i><i style=${{ width: x.g * 4 / k * 100 + '%', background: 'var(--g)' }}></i><i style=${{ width: x.l * 9 / k * 100 + '%', background: 'var(--l)' }}></i></div>
     <div className="fd">
       ${ligne('Protéines', x.p, 'g', 'var(--p)', pct(x.p * 4))}
@@ -3761,14 +3763,15 @@ function FoodDetail({ it, foods, onClose, onSwap, onDel }) {
 
 function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDelIt }) {
   const t = Apex.totMeal(m, foods); const [det, setDet] = useState(false); const [fd, setFd] = useState(null);
+  const fdIt = fd && m.items.find(i => i.id === fd.id);
   return html`<article className=${cx('meal', m.ok && 'ok')}>
     <div className="meal-h">
       <button type="button" className="chk" aria-pressed=${!!m.ok} aria-label=${(m.ok ? 'Marquer non mangé : ' : 'Marquer mangé : ') + m.nom} onClick=${onToggle}><${Icon} n="check" s=${18} w=${2.5} /></button>
       <button type="button" className="meal-t meal-open" onClick=${() => setDet(true)} aria-label=${'Détail du repas ' + m.nom}><b>${m.nom}${m.items.length > 0 && html`<${Icon} n="chevR" s=${14} />`}</b><span>${m.h || ''}${m.ok ? ' · mangé' : ''}${m.items.length ? ' · détail' : ''}</span></button>
       <button type="button" className="meal-k meal-open" onClick=${() => setDet(true)} tabIndex="-1" aria-hidden="true"><b>${f0(t.k)}</b><span>kcal · ${macTxt(t)}</span></button>
     </div>
-    ${det && html`<${MealDetail} m=${m} foods=${foods} onSwap=${onSwap} onClose=${() => setDet(false)} />`}
-    ${fd && html`<${FoodDetail} it=${fd} foods=${foods} onSwap=${onSwap} onDel=${onDelIt} onClose=${() => setFd(null)} />`}
+    ${det && html`<${MealDetail} m=${m} foods=${foods} pesee=${pesee} onQty=${onQty} onSwap=${onSwap} onClose=${() => setDet(false)} />`}
+    ${fdIt && html`<${FoodDetail} it=${fdIt} foods=${foods} pesee=${pesee} onQty=${onQty} onSwap=${onSwap} onDel=${onDelIt} onClose=${() => setFd(null)} />`}
     ${m.items.length > 0 && html`<div className="its">${m.items.map(it => {
       const f = Apex.foodOf(it, foods); if (!f) return null; const x = Apex.mac(it, foods);
       return html`<div key=${it.id} className=${cx('it', !(it.q > 0) && 'zero')}>
