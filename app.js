@@ -3536,7 +3536,7 @@ function CheckIn({ date, go }) {
     <button type="button" className="btn ghost sm ci-more" aria-expanded=${more} onClick=${() => setMore(!more)}>${more ? 'Masquer' : 'Plus de détails sur la nuit'}</button>
     ${more && html`<div className="stack"><${Lvl} label="Qualité du sommeil" value=${d.sommeilQ} onChange=${up('sommeilQ')} />
       <div className="stack"><span className="fld-l">Réveils dans la nuit</span><div className="chips">${[0, 1, 2, 3].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${d.reveils === n} onClick=${() => up('reveils')(n)}>${n === 3 ? '3 ou +' : n}</button>`)}</div></div></div>`}
-    ${photoDay && html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos.</b> Face, profil, dos avant de manger. Ajout dans l’onglet Analyse.</span></div></div>`}
+    ${photoDay && html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos.</b> Face, profil, dos avant de manger. À ajouter en haut de l’onglet Analyse.</span></div></div>`}
     <button type="button" className="btn pri wide" disabled=${d.poids == null} onClick=${save}><${Icon} n="check" s=${18} />${d.poids == null ? 'Entre ton poids pour valider' : 'Valider le debrief'}</button>
   <//>`;
 }
@@ -4876,6 +4876,7 @@ function PhotoImg({ p, alt }) {
   }, [p.asset, p.id]);
   return src ? html`<img src=${src} alt=${alt} loading="lazy" />` : html`<span>Photo indisponible</span>`;
 }
+const PH_JOURS = [[1, 'L', 'Lundi'], [2, 'M', 'Mardi'], [3, 'M', 'Mercredi'], [4, 'J', 'Jeudi'], [5, 'V', 'Vendredi'], [6, 'S', 'Samedi'], [0, 'D', 'Dimanche']];
 function PhotosCard({ date }) {
   const st = useStore(), S = st.get(), assets = st.caps().assets, local = !assets && STANDALONE, canUp = !!assets || local; const [pose, setPose] = useState('face'); const [busy, setBusy] = useState(''); const [ab, setAb] = useState({ a: '', b: '' });
   const all = Object.keys(S.photos).map(k => Object.assign({ id: k }, S.photos[k])).filter(p => p.asset && p.pose === pose).sort((x, y) => (x.date < y.date ? -1 : 1));
@@ -4892,7 +4893,10 @@ function PhotosCard({ date }) {
   };
   const del = p => { Store.del('photos', p.id); if (isLocalPhoto(p)) PhotoDB.del(p.id).catch(() => {}); else if (assets) assets.delete(p.asset).catch(() => {}); toast('Photo supprimée'); };
   const fig = (p, lab) => html`<figure className="ph">${p ? html`<${PhotoImg} p=${p} alt=${'Physique ' + pose + ' du ' + dTiny(p.date)} />` : html`<span>${lab}</span>`}${p && html`<figcaption>${dMid(p.date)}${(() => { const m = Apex.mm7(S.journal, p.date); return m ? ' · ' + f1(m.v) + ' kg' : ''; })()}</figcaption>`}</figure>`;
+  const cfg = st.cfg(), jp = cfg.photosJour == null ? 0 : cfg.photosJour, auj = Apex.dow(date) === jp;
   return html`<${Card} cls="c7" title="Physique" sub="Même pose, même lumière, à jeun" right=${html`<${Seg} neutral label="Pose" value=${pose} onChange=${setPose} options=${POSES} />`}>
+    <div className="ph-jour"><span><${Icon} n="camera" s=${15} />Jour photos${auj ? html`<em>c’est aujourd’hui</em>` : ''}</span>
+      <div className="ph-j" role="group" aria-label="Jour photos">${PH_JOURS.map(d => html`<button key=${d[0]} type="button" aria-pressed=${jp === d[0]} aria-label=${d[2]} onClick=${() => { Store.patch('cfg', null, { photosJour: d[0] }); toast('Jour photos : ' + d[2].toLowerCase()); }}>${d[1]}</button>`)}</div></div>
     ${all.length ? html`<div className="cmp">${fig(A, 'Avant')}${fig(all.length > 1 ? B : null, 'Prochaine série')}</div>` : html`<div className="empty"><span><b>Aucune photo ${pose}.</b> Première série le jour photos : face, profil, dos. Le comparatif avant / après s’affiche dès 2 dates.</span></div>`}
     ${all.length > 1 && html`<div className="form">
       <label className="fld" htmlFor="ph-a"><span className="fld-l">Avant</span><select id="ph-a" className="inp" value=${A.date} onChange=${e => setAb(Object.assign({}, ab, { a: e.target.value }))}>${all.map(p => html`<option key=${p.id} value=${p.date}>${dMid(p.date)}</option>`)}</select></label>
@@ -4945,16 +4949,18 @@ function Analytics({ date }) {
     <div className="view-h"><h1>Analyse</h1>
       <${Seg} neutral label="Période des graphiques" value=${win} onChange=${setWin} options=${[[30, '30 j'], [90, '90 j'], [0, 'Tout']]} /></div>
     <div className="grid">
+      <div className="c12 an-sec"><span className="eyebrow">Suivi du physique</span></div>
+      <${PhotosCard} date=${date} />
+      <div className="c5 stack" style=${{ alignContent: 'start', gap: 14 }}><${MensuCard} date=${date} win=${win} /></div>
+      <div className="c12 an-sec"><span className="eyebrow">Poids et calories</span></div>
       <${SecheCard} date=${date} />
       <${PoidsCard} date=${date} win=${win} />
-      <div className="c4 stack" style=${{ alignContent: 'start', gap: 14 }}><${MensuCard} date=${date} win=${win} /></div>
       <${ProjectionCard} date=${date} win=${win} />
       <${ApportCard} date=${date} win=${win} />
       <${ForceCard} date=${date} win=${win} />
       <${HistoCard} />
       <${AdherenceCard} date=${date} />
       <${VolumeCard} date=${date} />
-      <${PhotosCard} date=${date} />
       <${CoachCard} date=${date} />
     </div>
   </div>`;
@@ -6241,7 +6247,6 @@ function SettingsSheet({ onClose }) {
     <div className="form">${JOURS.map(d => html`<label key=${d[0]} className="fld" htmlFor=${'pl-' + d[0]}><span className="fld-l">${d[1]}</span>
       <select id=${'pl-' + d[0]} className="inp" value=${cfg.planning[d[0]] || ''} onChange=${e => Store.patch('cfg', null, { planning: Object.assign({}, cfg.planning, { [d[0]]: e.target.value }) })}>
         <option value="">Repos</option>${Apex.types(cfg).map(t => html`<option key=${t} value=${t}>${t}</option>`)}</select></label>`)}
-      <label className="fld" htmlFor="pl-ph"><span className="fld-l">Jour photos</span><select id="pl-ph" className="inp" value=${cfg.photosJour} onChange=${e => Store.patch('cfg', null, { photosJour: +e.target.value })}>${JOURS.map(d => html`<option key=${d[0]} value=${d[0]}>${d[1]}</option>`)}</select></label>
     </div>
     <//>`}
     ${sec === 'compte' && html`<${CompteBody} />`}
