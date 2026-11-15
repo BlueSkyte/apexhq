@@ -3880,6 +3880,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
       </div></div>`}
     </div>`}
     <input id="add-q" className="inp" type="search" placeholder="Ou cherche : poulet, gnocchi, Big Mac…" value=${q} onChange=${e => setQ(e.target.value)} aria-label="Chercher un aliment" />
+    <${MarqueSearch} q=${q.trim()} onPick=${p => { const id = ajouterProduit(p); onAdd({ a: id, q: p.dose ? 1 : 100 }); toast('« ' + p.n + ' » ajouté à ta bibliothèque'); onClose(); }} />
     ${CAN_SCAN && html`<button type="button" className="btn" onClick=${() => setScan(true)}><${Icon} n="camera" s=${18} />Scanner un code-barres</button>`}
     ${scan && html`<${ScanSheet} onClose=${() => setScan(false)} onProduct=${p => { const id = ajouterProduit(p); onAdd({ a: id, q: p.dose ? 1 : 100 }); onClose(); }} />`}
     <div className="chips">
@@ -3935,7 +3936,7 @@ function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib }) {
   if (!choisi) return html`<${Card} title="Tes repas">
     <div className="choix">
       <button type="button" className="big" onClick=${onIAJour}><i><${Icon} n="sparkles" s=${22} /></i><b>L’IA fait ma journée</b><span>Selon ce qu’il te reste et ta demande du jour.</span></button>
-      <button type="button" className="big" onClick=${onIA}><i><${Icon} n="clock" s=${22} /></i><b>L’IA fait ma semaine</b><span>Selon tes macros et tes contraintes.</span></button>
+      <button type="button" className="big" onClick=${onIA}><i><${Icon} n="clock" s=${22} /></i><b>L’IA fait ma semaine <${ProTag} /></b><span>Selon tes macros et tes contraintes.</span></button>
       <button type="button" className="big" onClick=${() => setCfg({ repasMode: 'libre' })}><i><${Icon} n="plus" s=${22} /></i><b>Je compose moi-même</b><span>Ce que tu manges est déduit de ton quota.</span></button>
     </div>
     <div className="row sb"><button type="button" className="btn sm ghost" onClick=${() => setCfg({ repasMode: 'programme' })}>Voir des menus tout faits</button><button type="button" className="btn sm" onClick=${onLib}><${Icon} n="plus" s=${16} />Ma bibliothèque d’aliments</button></div>
@@ -4140,7 +4141,7 @@ function Repas({ date }) {
           ${man && html`<div className="note"><${Icon} n="info" /><div><span>Ce bilan vient du check-in. Les repas cochés ne comptent pas tant qu’il est actif.</span>
             <${Confirm} label="Revenir au planner" sure="Effacer le bilan saisi ?" onYes=${() => Store.patch('journal', date, { date, man: null })} /></div></div>`}
         <//>
-        <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => setIa(true)} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} />
+        <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => (estPro() ? setIa(true) : ouvrirPro())} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} />
         <${Card} title="Repas" sub="Touche un aliment pour voir son détail" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
           ${!man && html`<div className="rp-nb"><span>Repas par jour</span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repasNb(cfg) === n} onClick=${() => setNb(n)}>${n}</button>`)}</div></div>`}
           ${vide && mode !== 'libre' && !man && html`<div className="note acc"><${Icon} n="utensils" /><div><span>${mode === 'perso' && !semOk ? 'Remplis tes repas, ou charge le menu de base puis enregistre-le pour les ' + jourNom + 's.' : 'Remplis tes repas toi-même, ou charge le menu du ' + jourNom + ' calé sur ' + f0(c.kcal) + ' kcal.'}</span><button type="button" className="btn sm pri" onClick=${gen}><${Icon} n="utensils" s=${16} />${mode === 'perso' && semOk ? 'Charger mon menu du ' + jourNom : 'Charger le menu du ' + jourNom}</button></div></div>`}
@@ -5113,13 +5114,16 @@ function Analytics({ date }) {
       <div className="c12 an-sec"><span className="eyebrow">Poids et calories</span></div>
       <${SecheCard} date=${date} />
       <${PoidsCard} date=${date} win=${win} />
-      <${ProjectionCard} date=${date} win=${win} />
       <${ApportCard} date=${date} win=${win} />
-      <${ForceCard} date=${date} win=${win} />
       <${HistoCard} />
-      <${AdherenceCard} date=${date} />
-      <${VolumeCard} date=${date} />
-      <${CoachCard} date=${date} />
+      <div className="c12 an-sec"><span className="eyebrow">Analyse avancée</span><${ProTag} />${!PRO.actif && html`<small className="pro-off">offert pendant le lancement</small>`}</div>
+      <${ProZone} titre="Analyse avancée et bilan du coach">
+        <${ProjectionCard} date=${date} win=${win} />
+        <${ForceCard} date=${date} win=${win} />
+        <${AdherenceCard} date=${date} />
+        <${VolumeCard} date=${date} />
+        <${CoachCard} date=${date} />
+      <//>
     </div>
   </div>`;
 }
@@ -5135,10 +5139,33 @@ async function offLookup(code) {
   const r = await fetch('https://world.openfoodfacts.org/api/v2/product/' + c + '.json?fields=product_name,brands,nutriments,serving_quantity', { headers: { Accept: 'application/json' } });
   if (!r.ok) throw new Error('http');
   const j = await r.json(); if (!j || j.status !== 1 || !j.product) return null;
-  const p = j.product, nu = p.nutriments || {}, g = k => (typeof nu[k + '_100g'] === 'number' ? nu[k + '_100g'] : null);
+  return offProd(j.product, c);
+}
+function offProd(p, c) {
+  const nu = p.nutriments || {}, g = k => (typeof nu[k + '_100g'] === 'number' ? nu[k + '_100g'] : null);
   let kcal = g('energy-kcal'); if (kcal == null && g('energy') != null) kcal = g('energy') / 4.184;
   const name = [p.brands ? String(p.brands).split(',')[0].trim() : '', p.product_name || ''].filter(Boolean).join(' ').slice(0, 60) || 'Produit ' + c, dose = Number(p.serving_quantity);
   return { n: name, k: kcal == null ? null : Math.round(kcal), p: r1(g('proteins') || 0), g: r1(g('carbohydrates') || 0), l: r1(g('fat') || 0), f: r1(g('fiber') || 0), dose: dose > 0 && dose <= 200 ? Math.round(dose) : null, code: c };
+}
+/* Recherche par nom dans les produits vendus en France (Open Food Facts) : seulement sur appui, jamais en tapant. */
+async function offSearch(q) {
+  /* Open Food Facts limite les recherches (≈ 10 / min) : un essai sur le site français, puis un second sur le site mondial. */
+  const url = h => 'https://' + h + '.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q.slice(0, 80)) + '&json=1&page_size=24&fields=code,product_name,brands,nutriments,serving_quantity';
+  let j = null;
+  for (const h of ['fr', 'world']) { try { const r = await fetch(url(h)); if (r.ok) { j = await r.json(); break; } } catch (e) { /* hôte suivant */ } await new Promise(res => setTimeout(res, 1200)); }
+  if (!j) throw new Error('http');
+  return ((j && j.products) || []).map(p => offProd(p, p.code)).filter(p => p.k != null && p.k > 0 && p.k <= 900 && p.n.indexOf('Produit ') !== 0 && Math.abs(p.p * 4 + p.g * 4 + p.l * 9 - p.k) <= Math.max(25, p.k * 0.2));
+}
+function MarqueSearch({ q, onPick }) {
+  const [st, setSt] = useState({ busy: false, res: null, err: '', q: '' });
+  if (!CAN_SCAN || norm(q).length < 3) return null;
+  const go = async () => { setSt({ busy: true, res: null, err: '', q }); try { const res = await offSearch(q); setSt({ busy: false, res, err: res.length ? '' : 'Aucun produit trouvé pour « ' + q + ' ».', q }); } catch (e) { setSt({ busy: false, res: null, err: 'Open Food Facts ne répond pas (pas de réseau ou trop de recherches d’affilée). Réessaie dans une minute, ou scanne le code-barres.', q }); } };
+  const res = st.q === q ? st.res : null;
+  return html`<div className="stack mq">
+    <button type="button" className="btn ghost wide" disabled=${st.busy} onClick=${go}><${Icon} n="send" s=${16} />${st.busy ? 'Recherche…' : 'Chercher « ' + q.slice(0, 24) + ' » dans les produits de marque'}</button>
+    ${st.err && st.q === q && html`<p className="mut" style=${{ fontSize: 12 }}>${st.err}</p>`}
+    ${res && res.length > 0 && html`<div className="mq-l">${res.map(p => html`<button key=${p.code} type="button" className="mq-r" onClick=${() => onPick(p)}><b>${p.n}</b><span>${f0(p.k)} kcal · P ${fq(p.p)} · G ${fq(p.g)} · L ${fq(p.l)} g pour 100 g</span></button>`)}</div>`}
+  </div>`;
 }
 const roleDe = p => (p.p >= 15 ? 'P' : p.g >= 40 ? 'G' : p.l >= 30 ? 'L' : '');
 /* Produit scanné → aliment de ma base (valeurs pour 100 g, portion si connue). Renvoie son id. */
@@ -6359,6 +6386,183 @@ function SanteDiag({ d, ios }) {
   </div>`;
 }
 
+/* ---- 69d-ui-extras.js ---- */
+/* Macrolya — Pro (futur abonnement, offert pendant le lancement), rappels, export CSV / bilan PDF, écran de bienvenue. */
+
+/* ---------- Pro ----------
+   PRO.actif = false : tout est débloqué pour tout le monde (lancement). Le jour où l'abonnement existe,
+   passer actif à true : les zones marquées Pro se verrouillent pour les comptes sans abonnement (cfg.pro.fin). */
+const PRO = { actif: false, prix: 'environ 3,99 € par mois' };
+const PRO_LISTE = [
+  ['chart', 'Analyse avancée', 'Projection du poids, progression de force, adhérence, volume par muscle'],
+  ['sparkles', 'Bilan du coach IA', 'Verdict, constats chiffrés et ajustements sur tes 14 derniers jours'],
+  ['clock', 'Menus de la semaine par l’IA', 'Sept jours calés sur tes macros, tes goûts et tes contraintes'],
+  ['download', 'Bilan PDF', 'Un rapport propre de tes 30 derniers jours à garder ou à montrer'],
+];
+const estPro = () => { if (!PRO.actif) return true; const p = Store.cfg().pro; return !!(p && p.fin && p.fin >= Apex.today()); };
+const ouvrirPro = () => { try { window.dispatchEvent(new CustomEvent('pro:open')); } catch (e) { /* sans effet */ } };
+function ProTag() { return html`<span className="pro-tag">PRO</span>`; }
+function ProLock({ titre }) {
+  return html`<section className="card c12 pro-lock"><i><${Icon} n="lock" s=${22} /></i><div><b>${titre || 'Fonction Macrolya Pro'}</b><span>Disponible avec Macrolya Pro.</span></div>
+    <button type="button" className="btn pri" onClick=${ouvrirPro}>Découvrir Pro</button></section>`;
+}
+/* Zone Pro : rend son contenu si l'utilisateur y a droit, sinon un seul encart verrouillé. */
+function ProZone({ titre, children }) { return estPro() ? children : html`<${ProLock} titre=${titre} />`; }
+function ProBody() {
+  return html`<div className="stack">
+    <div className="pro-hero"><${ProTag} /><b>Macrolya Pro</b><span>${PRO.actif ? (estPro() ? 'Ton abonnement est actif.' : 'Débloque les outils avancés pour ' + PRO.prix + '.') : 'Offert à tout le monde pendant le lancement. Profites-en.'}</span></div>
+    <div className="pro-l">${PRO_LISTE.map(x => html`<div key=${x[1]} className="pro-r"><i><${Icon} n=${x[0]} s=${18} /></i><span><b>${x[1]}</b><small>${x[2]}</small></span></div>`)}</div>
+    <p className="mut" style=${{ fontSize: 12 }}>Le suivi des repas, le scan, les séances, le poids, les photos, les mensurations et l’export de tes données restent gratuits.</p>
+  </div>`;
+}
+function ProSheet({ onClose }) { return html`<${Sheet} title="Macrolya Pro" onClose=${onClose}><${ProBody} /><button type="button" className="btn pri wide" onClick=${onClose}>${PRO.actif ? 'Bientôt disponible' : 'Compris'}</button><//>`; }
+
+/* ---------- Rappels ----------
+   App Android / iPhone (native) : notifications locales programmées chaque jour.
+   Version web : pas de notification programmable sans serveur, donc un bandeau dans l'app une fois l'heure passée. */
+const RAPPELS = [
+  ['pesee', 'Pesée du matin', '07:30', 'Pèse-toi', 'À jeun, après les toilettes : note ton poids dans Macrolya.'],
+  ['repas', 'Repas du midi', '12:30', 'Ton déjeuner', 'Note ou coche ton déjeuner dans Macrolya.'],
+  ['soir', 'Bilan du soir', '21:00', 'Bilan du jour', 'Coche tes repas mangés et regarde ce qu’il te reste.'],
+];
+const rappelsDe = cfg => { const r = (cfg && cfg.rappels) || {}; const o = {}; RAPPELS.forEach(x => { const v = r[x[0]] || {}; o[x[0]] = { on: !!v.on, h: /^\d\d:\d\d$/.test(v.h || '') ? v.h : x[2] }; }); return o; };
+const capNatif = () => { const c = window.Capacitor; try { return c && c.isNativePlatform && c.isNativePlatform() ? c : null; } catch (e) { return null; } };
+const notifPlugin = () => { const c = capNatif(); if (!c) return null; try { if (c.isPluginAvailable && !c.isPluginAvailable('LocalNotifications')) return null; return (c.Plugins && c.Plugins.LocalNotifications) || c.registerPlugin('LocalNotifications'); } catch (e) { return null; } };
+async function planifierRappels(cfg, demander) {
+  const LN = notifPlugin(); if (!LN) return 'web';
+  try {
+    if (demander) { const p = await LN.requestPermissions(); if (p && p.display && p.display !== 'granted') return 'refus'; }
+    await LN.cancel({ notifications: RAPPELS.map((x, i) => ({ id: 101 + i })) }).catch(() => {});
+    const r = rappelsDe(cfg), list = [];
+    RAPPELS.forEach((x, i) => { if (!r[x[0]].on) return; const [h, m] = r[x[0]].h.split(':').map(Number);
+      list.push({ id: 101 + i, title: x[3], body: x[4], schedule: { on: { hour: h, minute: m }, repeats: true, allowWhileIdle: true } }); });
+    if (list.length) await LN.schedule({ notifications: list });
+    return 'ok';
+  } catch (e) { return 'err'; }
+}
+function RappelsBody() {
+  const st = useStore(), cfg = st.cfg(), r = rappelsDe(cfg), natif = !!notifPlugin(); const [etat, setEtat] = useState('');
+  const set = (k, v) => { const n = Object.assign({}, cfg.rappels || {}, { [k]: Object.assign({}, r[k], v) }); Store.patch('cfg', null, { rappels: n });
+    planifierRappels(Object.assign({}, cfg, { rappels: n }), !!v.on).then(s => setEtat(s)); };
+  return html`<div className="stack">
+    ${RAPPELS.map(x => html`<div key=${x[0]} className="rp-row">
+      <label className="chk-l" htmlFor=${'rp-' + x[0]}><input id=${'rp-' + x[0]} type="checkbox" checked=${r[x[0]].on} onChange=${e => set(x[0], { on: e.target.checked })} /><span><b>${x[1]}</b><small>${x[4]}</small></span></label>
+      <input type="time" className="inp rp-h" aria-label=${'Heure : ' + x[1]} value=${r[x[0]].h} onChange=${e => { if (/^\d\d:\d\d$/.test(e.target.value)) set(x[0], { h: e.target.value }); }} />
+    </div>`)}
+    ${etat === 'refus' && html`<div className="note"><${Icon} n="alert" /><div><span>Notifications refusées : autorise-les pour Macrolya dans les réglages du téléphone.</span></div></div>`}
+    <div className="note"><${Icon} n="info" /><div><span>${natif ? 'Notifications envoyées par le téléphone chaque jour à l’heure choisie, même app fermée.' : 'Dans la version web, le rappel apparaît en haut de l’app une fois l’heure passée. Pour de vraies notifications app fermée, installe l’app Android (Paramètres › Santé et montres).'}</span></div></div>
+  </div>`;
+}
+/* Bandeau dans l'app : le rappel dont l'heure est passée et qui n'est pas fait aujourd'hui. */
+function RappelBanner({ go }) {
+  const st = useStore(), cfg = st.cfg(), S = st.get(), d = Apex.today(), j = S.journal[d] || {}, r = rappelsDe(cfg);
+  const [vu, setVu] = useState(() => lsGet('rappel:vu', '')); const [, tick] = useState(0);
+  useEffect(() => { const t = setInterval(() => tick(x => x + 1), 60000); return () => clearInterval(t); }, []);
+  const now = new Date(), hm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  const reps = j.repas || [], fait = { pesee: j.poids != null, repas: !!j.man || reps.some(m => m.ok), soir: !!j.man || (reps.length > 0 && reps.every(m => m.ok)) };
+  const x = RAPPELS.slice().reverse().find(y => r[y[0]].on && hm >= r[y[0]].h && !fait[y[0]] && vu !== d + ':' + y[0]);
+  if (!x) return null;
+  const ok = () => { const v = d + ':' + x[0]; lsSet('rappel:vu', v); setVu(v); };
+  return html`<div className="note acc rp-ban" role="status"><${Icon} n=${x[0] === 'pesee' ? 'scale' : x[0] === 'repas' ? 'utensils' : 'moon'} /><div><span><b>${x[3]}</b> · ${x[4]}</span></div>
+    <button type="button" className="btn sm pri" onClick=${() => { ok(); go(x[0] === 'pesee' ? 'dashboard' : 'repas'); }}>Y aller</button>
+    <button type="button" className="ib sm" aria-label="Masquer le rappel" onClick=${ok}><${Icon} n="x" s=${16} /></button></div>`;
+}
+
+/* ---------- Export CSV / bilan PDF ---------- */
+const nbFr = (v, d) => (Apex.num(v) ? (d ? (Math.round(v * 10) / 10) : Math.round(v)).toString().replace('.', ',') : '');
+function lignesJours(S, cfg, de, a) {
+  const foods = Apex.allFoods(cfg);
+  return Apex.range(de, a).map(d => { const j = S.journal[d]; if (!j && !S.seances[d]) return null; const jj = j || {}, t = Apex.totJour(jj, foods).reel, c = Apex.cibleDuJour(cfg, jj, d);
+    return { d, statut: c.statut, poids: jj.poids, t, c, pas: jj.pas, sommeil: jj.sommeil, energie: jj.energie, recup: jj.force, seance: S.seances[d] && (S.seances[d].exos || []).length ? (jj.seance || 'oui') : '' }; }).filter(Boolean);
+}
+function csvJournal(S, cfg) {
+  const ds = Object.keys(S.journal).concat(Object.keys(S.seances)).sort(); if (!ds.length) return '';
+  const L = lignesJours(S, cfg, ds[0], ds[ds.length - 1]);
+  const head = ['date', 'statut', 'poids_kg', 'kcal', 'proteines_g', 'glucides_g', 'lipides_g', 'fibres_g', 'cible_kcal', 'cible_proteines_g', 'pas', 'sommeil_h', 'energie', 'recuperation', 'seance'];
+  const q = v => { const s = String(v == null ? '' : v); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  return '\ufeff' + [head.join(';')].concat(L.map(x => [x.d, x.statut, nbFr(x.poids, 1), x.t ? nbFr(x.t.k) : '', x.t ? nbFr(x.t.p) : '', x.t ? nbFr(x.t.g) : '', x.t ? nbFr(x.t.l) : '', x.t ? nbFr(x.t.f, 1) : '', nbFr(x.c.kcal), nbFr(x.c.p), nbFr(x.pas), nbFr(x.sommeil, 1), nbFr(x.energie), nbFr(x.recup), x.seance].map(q).join(';'))).join('\r\n');
+}
+/* Enregistre un fichier : capacité Claude, partage natif (iPhone), sinon lien de téléchargement, sinon presse-papiers. */
+async function enregistrerFichier(nom, txt, type) {
+  const dl = Store.caps().downloads;
+  if (dl) { try { await dl.save({ filename: nom, data: txt }); toast('Fichier enregistré'); return true; } catch (e) { if (e && e.code === 'declined') return false; } }
+  try { const f = new File([txt], nom, { type }); if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: nom }); return true; } } catch (e) { if (e && e.name === 'AbortError') return false; }
+  if (!capNatif()) { try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type })); a.download = nom; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); toast('Fichier téléchargé'); return true; } catch (e) { /* repli */ } }
+  try { await navigator.clipboard.writeText(txt); toast('Copié dans le presse-papiers (colle-le dans un fichier)'); return true; } catch (e) { toast('Export impossible sur cet appareil'); return false; }
+}
+function rapport30(S, cfg) {
+  const a = Apex.today(), de = Apex.addDays(a, -29), L = lignesJours(S, cfg, de, a);
+  const moy = arr => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null);
+  const avecT = L.filter(x => x.t), pds = L.filter(x => Apex.num(x.poids));
+  const adh = avecT.filter(x => Math.abs(x.t.k - x.c.kcal) <= x.c.kcal * 0.1 && x.t.p >= x.c.p * 0.9).length;
+  return { de, a, L, n: L.length,
+    p0: pds.length ? pds[0].poids : null, p1: pds.length ? pds[pds.length - 1].poids : null, tend: Apex.tendance(S.journal, a),
+    k: moy(avecT.map(x => x.t.k)), ck: moy(avecT.map(x => x.c.kcal)), p: moy(avecT.map(x => x.t.p)), g: moy(avecT.map(x => x.t.g)), l: moy(avecT.map(x => x.t.l)), cp: moy(avecT.map(x => x.c.p)),
+    adh: avecT.length ? Math.round(adh / avecT.length * 100) : null, nk: avecT.length,
+    pas: moy(L.filter(x => Apex.num(x.pas)).map(x => x.pas)), som: moy(L.filter(x => Apex.num(x.sommeil)).map(x => x.sommeil)),
+    seances: L.filter(x => x.seance).length };
+}
+function RapportPrint({ S, cfg }) {
+  const R = rapport30(S, cfg), nom = (cfg.profil && cfg.profil.prenom) || '';
+  const kv = (l, v) => html`<div className="rpt-kv"><small>${l}</small><b>${v}</b></div>`;
+  return html`<div className="rpt">
+    <h1>Bilan Macrolya${nom ? ' · ' + nom : ''}</h1>
+    <p>Du ${dMid(R.de)} au ${dMid(R.a)} · ${R.n} jour${R.n > 1 ? 's' : ''} avec des données</p>
+    <div className="rpt-g">
+      ${kv('Poids', R.p0 != null ? fq(R.p0) + ' → ' + fq(R.p1) + ' kg' : '–')}
+      ${kv('Tendance', R.tend ? (R.tend.dk > 0 ? '+' : '') + fq(Math.round(R.tend.dk * 100) / 100) + ' kg / sem' : '–')}
+      ${kv('Apport moyen', R.k != null ? f0(R.k) + ' kcal (cible ' + f0(R.ck) + ')' : '–')}
+      ${kv('Protéines moy.', R.p != null ? f0(R.p) + ' g (cible ' + f0(R.cp) + ')' : '–')}
+      ${kv('Glucides / lipides', R.g != null ? f0(R.g) + ' g / ' + f0(R.l) + ' g' : '–')}
+      ${kv('Jours dans la cible', R.adh != null ? R.adh + ' % (' + R.nk + ' j suivis)' : '–')}
+      ${kv('Pas moyens', R.pas != null ? f0(R.pas) : '–')}
+      ${kv('Sommeil moyen', R.som != null ? fq(Math.round(R.som * 10) / 10) + ' h' : '–')}
+      ${kv('Séances', String(R.seances))}
+    </div>
+    <table><thead><tr><th>Date</th><th>Poids</th><th>kcal</th><th>P</th><th>G</th><th>L</th><th>Pas</th><th>Sommeil</th><th>Séance</th></tr></thead>
+      <tbody>${R.L.map(x => html`<tr key=${x.d}><td>${dMid(x.d)}</td><td>${Apex.num(x.poids) ? fq(x.poids) : ''}</td><td>${x.t ? f0(x.t.k) : ''}</td><td>${x.t ? f0(x.t.p) : ''}</td><td>${x.t ? f0(x.t.g) : ''}</td><td>${x.t ? f0(x.t.l) : ''}</td><td>${Apex.num(x.pas) ? f0(x.pas) : ''}</td><td>${Apex.num(x.sommeil) ? fq(x.sommeil) : ''}</td><td>${x.seance || ''}</td></tr>`)}</tbody></table>
+    <p className="rpt-f">Généré par Macrolya le ${dMid(R.a)}. Valeurs calculées à partir de tes saisies (table Ciqual et Open Food Facts).</p>
+  </div>`;
+}
+function ExportBody() {
+  const st = useStore(), S = st.get(), cfg = st.cfg(); const [pdf, setPdf] = useState(0);
+  const csv = () => { const t = csvJournal(S, cfg); if (!t) { toast('Aucune donnée à exporter'); return; } enregistrerFichier('macrolya-' + Apex.today() + '.csv', t, 'text/csv'); };
+  useEffect(() => { if (!pdf) return undefined; document.body.classList.add('printing');
+    const t = setTimeout(() => { try { window.print(); } catch (e) { toast('Impression indisponible'); } }, 300);
+    const fin = () => { document.body.classList.remove('printing'); }; window.addEventListener('afterprint', fin);
+    return () => { clearTimeout(t); window.removeEventListener('afterprint', fin); document.body.classList.remove('printing'); }; }, [pdf]);
+  const natif = !!capNatif();
+  return html`<div className="stack">
+    <h3>Mes données en tableau</h3>
+    <button type="button" className="btn wide" onClick=${csv}><${Icon} n="download" s=${18} />Exporter en CSV (Excel, Numbers)</button>
+    <h3>Bilan PDF · 30 jours <${ProTag} /></h3>
+    <button type="button" className="btn wide" disabled=${natif} onClick=${() => (estPro() ? setPdf(x => x + 1) : ouvrirPro())}><${Icon} n="note" s=${18} />Créer le bilan PDF</button>
+    <p className="mut" style=${{ fontSize: 12 }}>${natif ? 'Le bilan PDF se crée depuis la version web (Safari, Chrome) : l’app Android ne sait pas imprimer.' : 'Dans la fenêtre d’impression, choisis « Enregistrer en PDF » (sur iPhone : Partager › Enregistrer dans Fichiers).'}</p>
+    ${pdf > 0 && ReactDOM.createPortal(html`<div id="print-zone"><${RapportPrint} S=${S} cfg=${cfg} /></div>`, document.body)}
+  </div>`;
+}
+
+/* ---------- Bienvenue (1er lancement de l'app installée) ---------- */
+const BIENV = [
+  ['utensils', 'Ta nutrition, calculée pour toi', 'Calories et macros selon ton objectif, tes repas du jour prêts, le scan des codes-barres et l’IA qui compose tes menus.'],
+  ['dumbbell', 'Un entraînement qui s’adapte', 'Ton programme selon ton niveau et tes points faibles, la récupération muscle par muscle et le chrono de repos.'],
+  ['chart', 'Tes progrès, sans te prendre la tête', 'Routine du matin, photos, mensurations, courbes et coach IA : tu vois ce qui marche et quoi ajuster.'],
+];
+function Bienvenue({ onDone }) {
+  const [i, setI] = useState(0), x = BIENV[i], der = i === BIENV.length - 1;
+  return html`<div className="bv" role="dialog" aria-modal="true" aria-label="Bienvenue dans Macrolya">
+    <div className="bv-in">
+      <div className="brand bv-b"><${Icon} n="apex" s=${22} w=${2} />Macrolya</div>
+      <i className="bv-ic"><${Icon} n=${x[0]} s=${44} w=${1.6} /></i>
+      <h1>${x[1]}</h1><p>${x[2]}</p>
+      <div className="bv-dots" aria-hidden="true">${BIENV.map((y, k) => html`<span key=${k} className=${k === i ? 'on' : ''}></span>`)}</div>
+      <button type="button" className="btn pri wide" onClick=${() => (der ? onDone() : setI(i + 1))}>${der ? 'C’est parti' : 'Suivant'}</button>
+      ${!der && html`<button type="button" className="btn ghost wide" onClick=${onDone}>Passer</button>`}
+      <small className="mut">Gratuit, sans pub. Tes données restent à toi.</small>
+    </div>
+  </div>`;
+}
+
 /* ---- 70-ui-app.js ---- */
 /* Macrolya — coque : en-tête (jour + statut), onglets, réglages et données, démarrage. */
 const STANDALONE = !!window.APEX_STANDALONE;
@@ -6393,7 +6597,7 @@ function SettingsSheet({ onClose }) {
     ['Entraînement', [['seances', 'Séances', 'dumbbell', 'Types de séances et exercices'], ['focus', 'Points faibles', 'trend', 'Muscles à prioriser']]],
     ['Nutrition', [['repas', 'Repas et aliments', 'utensils', 'Compléments, aliments perso, étiquettes']]],
     ['Connexions', [].concat(STANDALONE ? [['sante', 'Santé et montres', 'heart', se && se.on ? 'Connecté' : 'Apple Santé, Health Connect']] : [], [['claude', 'Intelligence artificielle', 'sparkles', st.caps().sample ? 'Activée' : 'Coach, menus et séances par l’IA']])],
-    ['Application', [['partage', 'Partager l’app', 'send', 'Lien, QR code, installation'], ['data', 'Données', 'download', 'Export, import, version']]],
+    ['Application', [['pro', 'Macrolya Pro', 'sparkles', PRO.actif ? (estPro() ? 'Actif' : 'Outils avancés') : 'Offert pendant le lancement'], ['rappels', 'Rappels', 'clock', 'Pesée, repas, bilan du soir'], ['partage', 'Partager l’app', 'send', 'Lien, QR code, installation'], ['data', 'Données', 'download', 'Export CSV, bilan PDF, sauvegarde']]],
   ].filter(g => g[1].length);
   const cur = sec ? [].concat.apply([], GR.map(g => g[1])).find(x => x[0] === sec) : null;
   return html`<${Sheet} title=${cur ? cur[1] : 'Paramètres'} onClose=${onClose}>
@@ -6440,8 +6644,11 @@ function SettingsSheet({ onClose }) {
     <//>`}
     ${sec === 'claude' && html`<${ClaudeLink} />`}
     ${sec === 'partage' && html`<${ShareBody} />`}
+    ${sec === 'pro' && html`<${ProBody} />`}
+    ${sec === 'rappels' && html`<${RappelsBody} />`}
     ${sec === 'data' && html`<${React.Fragment}>
-    <h3>Données</h3>
+    <${ExportBody} />
+    <h3>Sauvegarde complète</h3>
     ${STANDALONE && html`<button type="button" className="btn wide" onClick=${() => checkUpdate(true)}><${Icon} n="refresh" s=${18} />Rechercher une mise à jour</button>`}
     <p className="mut" style=${{ fontSize: 12 }}>Version : ${window.APEX_VERSION ? 'app autonome ' + window.APEX_VERSION : 'version Claude'}</p>
     <div className="note"><${Icon} n="info" /><div><span>${st.cloud() ? (sy.mode === 'ok' ? 'Synchronisé avec ton compte Macrolya, et copié sur ce téléphone. Les photos restent sur ce téléphone.' : 'Compte Macrolya : synchro en attente (' + (sy.err || sy.mode) + '). Les saisies restent sur ce téléphone.') : sy.mode === 'ok' ? 'Synchronisé avec la base privée de ton compte Claude, et copié sur cet appareil.' : sy.mode === 'local' ? (STANDALONE ? 'Tout est enregistré sur ce téléphone, sans compte ni serveur. Si tu désinstalles l’app ou effaces les données du navigateur, tout disparaît : exporte régulièrement.' : 'Enregistré sur cet appareil uniquement : cette vue n’a pas accès à la base du compte.') : sy.mode === 'err' ? 'La base du compte ne répond pas (' + (sy.err || 'erreur') + '). Les saisies restent sur cet appareil et repartiront à la prochaine ouverture.' : 'Connexion à la base du compte en cours. Les saisies sont gardées sur cet appareil.'}${st.pendingKeys() ? ' ' + st.pendingKeys() + ' modification(s) en attente d’envoi.' : ''}</span></div></div>
@@ -6484,6 +6691,9 @@ function App() {
   const setStatut = v => { if (v === statut) return; if (v === 'repos') Store.patch('journal', date, { date, statut: 'repos' }); else Store.patch('journal', date, { date, statut: 'salle', seance: j.seance || cfg.planning[Apex.dow(date)] || Apex.prochaineSeance(S.seances, cfg, date) }); };
   const u = STANDALONE ? useCloud() : null; const [skip, setSkip] = useState(() => !!lsGet('compte:skip', '')); const [auth, setAuth] = useState(null);
   useEffect(() => { const f = e => { setOpen(false); setAuth((e && e.detail) || { mode: 'up' }); }; window.addEventListener('compte:open', f); return () => window.removeEventListener('compte:open', f); }, []);
+  const [pro, setPro] = useState(false); useEffect(() => { const f = () => { setOpen(false); setPro(true); }; window.addEventListener('pro:open', f); return () => window.removeEventListener('pro:open', f); }, []);
+  const [bv, setBv] = useState(() => STANDALONE && !lsGet('bienvenue', '') && !Object.keys(S.journal).length && !(Cloud.on() && Cloud.user()));
+  const finBv = () => { lsSet('bienvenue', '1'); setBv(false); };
   const needAuth = STANDALONE && Cloud.on() && !u && !skip;
   const fetching = !!u && !u.dead && (sy.mode === 'boot' || sy.mode === 'wait') && !S.cfg.onboarded && !Object.keys(S.journal).length;
   const sc = u && u.dead ? ['err', 'Reconnecte-toi'] : sy.pending > 0 ? ['pend', 'Enregistrement…'] : (SYNC[sy.mode] || SYNC.local);
@@ -6507,7 +6717,7 @@ function App() {
         <${Seg} label="Statut du jour" value=${statut} onChange=${setStatut} options=${[['repos', 'Repos'], ['salle', 'Salle']]} />
       </div>`}
     </div></header>
-    <main className="wrap"><${InstallBanner} /><${IABanner} /><${Boundary} key=${tab}><${View} date=${tab === 'coach' ? today : date} setDate=${setDate} go=${go} /><//></main>
+    <main className="wrap"><${RappelBanner} go=${go} /><${InstallBanner} /><${IABanner} /><${Boundary} key=${tab}><${View} date=${tab === 'coach' ? today : date} setDate=${setDate} go=${go} /><//></main>
     <div className="dock"><${SessionPill} tab=${tab} go=${go} /><${Chrono} /></div>
     <nav className="tabs" aria-label="Sections" style=${{ gridTemplateColumns: 'repeat(' + tabs.length + ', 1fr)' }}>${tabs.map(t => html`<button key=${t[0]} type="button" aria-current=${tab === t[0] ? 'page' : undefined} onClick=${() => go(t[0])}><${Icon} n=${t[2]} s=${22} />${t[1]}</button>`)}</nav>
     ${open && html`<${SettingsSheet} onClose=${() => setOpen(false)} />`}
@@ -6515,6 +6725,8 @@ function App() {
     ${fetching && html`<div className="boot-wait" role="status"><i></i>Récupération de tes données…</div>`}
     ${needAuth && html`<${AuthScreen} start="up" onSkip=${() => { lsSet('compte:skip', '1'); setSkip(true); }} />`}
     ${auth && html`<${AuthScreen} start=${auth.mode} email0=${auth.email} onClose=${() => setAuth(null)} />`}
+    ${pro && html`<${ProSheet} onClose=${() => setPro(false)} />`}
+    ${bv && html`<${Bienvenue} onDone=${finBv} />`}
     <${Toasts} />
   </div>`;
 }
@@ -6526,5 +6738,6 @@ Store.connect();
 /* Pas de zoom au pincement (Safari iPhone ignore user-scalable=no) ; le double appui est coupé en CSS (touch-action). */
 try { ['gesturestart', 'gesturechange'].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), { passive: false })); } catch (e) { /* sans effet */ }
 setTimeout(() => { try { Sante.auto(); } catch (e) { /* santé indisponible */ } }, 1500);
+setTimeout(() => { try { if (Object.values(rappelsDe(Store.cfg())).some(x => x.on)) planifierRappels(Store.cfg(), false); } catch (e) { /* rappels indisponibles */ } }, 2500);
 
 })();

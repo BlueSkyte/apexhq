@@ -1018,10 +1018,47 @@ button, a, label, .chip, .btn, .ib { touch-action: manipulation; }
 .md-q .md-sw { grid-column: auto; }
 .fd-q { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); }
 .fd-q > span { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+/* Pro */
+.pro-tag { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #1a1205; background: linear-gradient(135deg, #f5c96a, #e8a33d); vertical-align: middle; margin-left: 6px; }
+.an-sec .pro-tag { margin-left: 8px; } .pro-off { margin-left: 8px; font-size: 11px; color: var(--ink-3); }
+.pro-lock { display: flex; align-items: center; gap: 12px; } .pro-lock > i { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; background: rgba(245, 201, 106, .14); color: #f5c96a; flex: none; }
+.pro-lock > div { flex: 1; display: grid; gap: 2px; } .pro-lock span { font-size: 13px; color: var(--ink-2); }
+.pro-hero { display: grid; gap: 4px; padding: 16px; border-radius: 18px; background: linear-gradient(135deg, rgba(245, 201, 106, .16), rgba(232, 163, 61, .05)); border: 1px solid rgba(245, 201, 106, .3); }
+.pro-hero .pro-tag { justify-self: start; margin: 0; } .pro-hero b { font-size: 20px; } .pro-hero span { font-size: 13px; color: var(--ink-2); }
+.pro-l { display: grid; gap: 8px; } .pro-r { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); }
+.pro-r > i { color: #f5c96a; padding-top: 2px; } .pro-r span { display: grid; gap: 2px; } .pro-r small { font-size: 12px; color: var(--ink-3); }
+/* Rappels */
+.rp-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); }
+.rp-row .chk-l span { display: grid; gap: 2px; } .rp-row small { font-size: 12px; color: var(--ink-3); } .rp-h { width: 104px; flex: none; }
+.rp-ban { align-items: center; margin-bottom: 12px; } .rp-ban > div { flex: 1; }
+/* Produits de marque */
+.mq-l { display: grid; gap: 6px; max-height: 320px; overflow: auto; }
+.mq-r { display: grid; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); color: inherit; font: inherit; }
+.mq-r b { font-size: 14px; } .mq-r span { font-size: 12px; color: var(--ink-3); }
+/* Bienvenue */
+.bv { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px 20px; background: radial-gradient(120% 80% at 50% 0%, rgba(124, 92, 255, .22), transparent 60%), var(--bg, #0b0b10); }
+.bv-in { width: min(420px, 100%); display: grid; gap: 14px; justify-items: center; text-align: center; }
+.bv-b { margin-bottom: 18px; } .bv-ic { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 30px; background: rgba(255, 255, 255, .06); border: 1px solid var(--line); color: var(--acc, #a78bfa); }
+.bv h1 { font-size: 26px; line-height: 1.15; margin: 8px 0 0; } .bv p { color: var(--ink-2); font-size: 15px; line-height: 1.5; margin: 0 0 6px; min-height: 68px; }
+.bv-dots { display: flex; gap: 6px; margin: 4px 0 10px; } .bv-dots span { width: 7px; height: 7px; border-radius: 99px; background: var(--line); transition: width .2s; } .bv-dots span.on { width: 22px; background: var(--ink); }
+.bv small { font-size: 12px; }
+/* Bilan PDF (impression) */
+#print-zone { display: none; }
+@media print {
+  body.printing > *:not(#print-zone) { display: none !important; }
+  body.printing { background: #fff !important; color: #111 !important; }
+  body.printing #print-zone { display: block !important; }
+}
+.rpt { font: 12px/1.45 system-ui, sans-serif; color: #111; background: #fff; padding: 8mm; }
+.rpt h1 { font-size: 22px; margin: 0 0 2px; } .rpt > p { color: #555; margin: 0 0 12px; }
+.rpt-g { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.rpt-kv { border: 1px solid #ddd; border-radius: 8px; padding: 8px; display: grid; gap: 2px; } .rpt-kv small { color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; } .rpt-kv b { font-size: 14px; }
+.rpt table { width: 100%; border-collapse: collapse; } .rpt th, .rpt td { border-bottom: 1px solid #e5e5e5; padding: 4px 6px; text-align: right; } .rpt th:first-child, .rpt td:first-child { text-align: left; } .rpt th { font-size: 10px; color: #666; text-transform: uppercase; }
+.rpt-f { color: #888; font-size: 10px; margin-top: 12px; }
 </style>
 </head><body>
 <div id="app" class="app"><p style="padding:48px 16px;color:#85847e;font-family:system-ui,sans-serif">Chargement de Macrolya…</p></div>
-<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261115162707'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_RELAY = "https://script.google.com/macros/s/AKfycbxO8jSVN56K2yio_DV3wzEUJuUFTh3Xd0xmj77j6CejCK5R26ftBlWnprUg3Xsv_PF-/exec";  window.APEX_FB = {"apiKey":"AIzaSyAAM7fLuA42_fmWuwLzI_O6c6oFC8wME-M","projectId":"macrovamacrova"}; window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
+<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261115163959'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_RELAY = "https://script.google.com/macros/s/AKfycbxO8jSVN56K2yio_DV3wzEUJuUFTh3Xd0xmj77j6CejCK5R26ftBlWnprUg3Xsv_PF-/exec";  window.APEX_FB = {"apiKey":"AIzaSyAAM7fLuA42_fmWuwLzI_O6c6oFC8wME-M","projectId":"macrovamacrova"}; window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
 window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__bip = e; window.dispatchEvent(new Event('apex-bip')); });
 window.addEventListener('appinstalled', function () { window.__bip = null; });</script>
 <script src="vendor/react.min.js"></script><script src="vendor/react-dom.min.js"></script><script src="vendor/htm.js"></script>
