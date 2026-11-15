@@ -6473,6 +6473,8 @@ try { const d0 = Apex.today(); document.body.dataset.statut = Apex.statutDuJour(
 ReactDOM.createRoot(document.getElementById('app')).render(html`<${Boundary}><${App} /><//>`);
 if (STANDALONE && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 Store.connect();
+/* Pas de zoom au pincement (Safari iPhone ignore user-scalable=no) ; le double appui est coupé en CSS (touch-action). */
+try { ['gesturestart', 'gesturechange'].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), { passive: false })); } catch (e) { /* sans effet */ }
 setTimeout(() => { try { Sante.auto(); } catch (e) { /* santé indisponible */ } }, 1500);
 
 })();
