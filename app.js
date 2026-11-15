@@ -3024,7 +3024,7 @@ const IC = {
   refresh: ['M4.5 12a7.5 7.5 0 0 1 13-5l2 2', 'M19.5 4.5V9H15', 'M19.5 12a7.5 7.5 0 0 1-13 5l-2-2', 'M4.5 19.5V15H9'],
   trend: ['M3 7l6.5 6.5 4-4L21 17', 'M21 11.5V17h-5.5'],
   copy: ['M9 9h10v11H9z', 'M5 15V4h10'],
-  apex: ['M12 3.5 21.5 20h-19z', 'M12 10.5 16.2 18H7.8z'],
+  apex: ['M3.5 18.2 8.8 5.8 12 12.2 15.2 5.8 20.5 18.2'],
   mic: ['M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0z', 'M5.5 11a6.5 6.5 0 0 0 13 0', 'M12 17.5V21'],
   send: ['M4 12 20 4l-4.5 16-3.5-6.5z', 'M12 13.5 20 4'],
   chat: ['M4 5h16v11H9l-5 4z', 'M8 9.5h8', 'M8 12.5h5'],
@@ -5759,7 +5759,7 @@ function Wizard({ redo, onClose }) {
   };
   const pct = Math.round(step / (steps.length - 1) * 100);
   const body = {
-    bienvenue: () => html`<div className="welcome"><div className="intro-mark xl"><${Icon} n="apex" s=${54} w=${1.7} /></div>
+    bienvenue: () => html`<div className="welcome"><div className="intro-mark xl"><${Icon} n="apex" s=${54} w=${2.4} /></div>
       <span className="kicker">Bienvenue sur</span><h1 className="w-name">${APP_NAME}</h1>
       <p className="w-tag">Ton coach muscu et nutrition, qui s’adapte à ton corps, tes horaires et tes contraintes.</p>
       <ul className="intro-list"><li><${Icon} n="check" s=${16} w=${2.4} />Calories et macros calculées pour toi</li><li><${Icon} n="check" s=${16} w=${2.4} />Programme de séances bâti autour de tes points faibles</li><li><${Icon} n="check" s=${16} w=${2.4} />Menus de la semaine composés par l’IA, quand tu veux</li></ul>
@@ -6179,7 +6179,7 @@ function InstallBanner() {
   const install = async () => { if (window.__bip) { try { window.__bip.prompt(); await window.__bip.userChoice; } catch (e) { /* refusé */ } window.__bip = null; bump(x => x + 1); } else setSheet(true); };
   const dismiss = () => { try { localStorage.setItem('apexhq:nobanner', '1'); } catch (e) { /* sans effet */ } setHide(true); };
   return html`<div className="install" role="region" aria-label="Installer l’application">
-    <i className="install-ic"><${Icon} n="apex" s=${22} w=${2} /></i>
+    <i className="install-ic"><${Icon} n="apex" s=${22} w=${2.6} /></i>
     <div className="install-t"><b>Installe Macrolya</b><span>Icône sur l’écran d’accueil, plein écran, hors ligne.</span></div>
     <button type="button" className="btn sm pri" onClick=${install}>${window.__bip ? 'Installer' : 'Comment ?'}</button>
     <button type="button" className="ib sm" aria-label="Masquer" onClick=${dismiss}><${Icon} n="x" s=${16} /></button>
@@ -6254,7 +6254,7 @@ function AuthScreen({ start, email0, onClose, onSkip }) {
   }[m];
   const pwOk = f.pw.length >= PW_MIN;
   return html`<div className="wiz auth" role="dialog" aria-modal="true" aria-label="Compte Macrolya">
-    <div className="wiz-top"><div className="brand"><${Icon} n="apex" s=${22} w=${2} />Macrolya</div><span className="grow"></span>
+    <div className="wiz-top"><div className="brand"><${Icon} n="apex" s=${22} w=${2.6} />Macrolya</div><span className="grow"></span>
       ${onClose && html`<button type="button" className="ib" aria-label="Fermer" onClick=${onClose}><${Icon} n="x" /></button>`}</div>
     <div className="wiz-body"><div className="wiz-in">
       <div className="auth-hero"><i><${Icon} n=${m === 'sent' ? 'mail' : m === 'reset' ? 'lock' : 'cloud'} s=${26} /></i><h1>${T[0]}</h1><p className="sec">${T[1]}</p></div>
@@ -6552,7 +6552,7 @@ function Bienvenue({ onDone }) {
   const [i, setI] = useState(0), x = BIENV[i], der = i === BIENV.length - 1;
   return html`<div className="bv" role="dialog" aria-modal="true" aria-label="Bienvenue dans Macrolya">
     <div className="bv-in">
-      <div className="brand bv-b"><${Icon} n="apex" s=${22} w=${2} />Macrolya</div>
+      <div className="brand bv-b"><${Icon} n="apex" s=${22} w=${2.6} />Macrolya</div>
       <i className="bv-ic"><${Icon} n=${x[0]} s=${44} w=${1.6} /></i>
       <h1>${x[1]}</h1><p>${x[2]}</p>
       <div className="bv-dots" aria-hidden="true">${BIENV.map((y, k) => html`<span key=${k} className=${k === i ? 'on' : ''}></span>`)}</div>
@@ -6702,7 +6702,7 @@ function App() {
   const View = tab === 'repas' ? Repas : tab === 'training' ? Training : tab === 'analytics' ? Analytics : tab === 'coach' ? Coach : Dashboard;
   return html`<div>
     <header className="top"><div className="wrap top-in">
-      <div className="brand"><${Icon} n="apex" s=${22} w=${2} />Macrolya</div>
+      <div className="brand"><${Icon} n="apex" s=${22} w=${2.6} />Macrolya</div>
       <span className=${cx('sync', sc[0])} role="status"><i></i>${sc[1]}</span>
       <span className="grow"></span>
       <button type="button" className="ib" aria-label="Actualiser l’app" onClick=${refreshApp}><${Icon} n="refresh" /></button>
