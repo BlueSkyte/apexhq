@@ -771,7 +771,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ['jambes', '', { n: 'Jambes', m: ['quad', 'isch', 'fess'], min: 20, max: 30, freq: 2 }],
     ['ischO', '', { n: 'Ischio-jambiers', m: ['isch'], min: 8, max: 12, freq: 2 }],
   ];
-  const focusGroupes = (keys, q) => { const out = [], seen = {}; (keys || []).forEach(k => { const ch = FOCUS_CHOIX.find(x => x[0] === k), c = ch || FOCUS_ANCIENS.find(x => x[0] === k); if (!c) return; const g = Object.assign({ id: 'f_' + k }, c[2]); if (ch) Object.assign(g, cibleVolume(k, { focus: true, niveau: q && q.niveau, objectif: q && q.objectif })); const key = g.m.join(); if (seen[key]) return; seen[key] = 1; out.push(g); }); return out; };
+  /* Pecs et haut des pecs sont le même muscle : s'ils sont tous les deux points faibles, le bonus va au haut des pecs
+     et les pecs gardent leur volume normal (sinon le volume pectoral total double). */
+  const focusGroupes = (keys, q) => { const out = [], seen = {}, both = (keys || []).indexOf('pec') >= 0 && (keys || []).indexOf('pecH') >= 0; (keys || []).forEach(k => { const ch = FOCUS_CHOIX.find(x => x[0] === k), c = ch || FOCUS_ANCIENS.find(x => x[0] === k); if (!c) return; const g = Object.assign({ id: 'f_' + k }, c[2]); if (ch) Object.assign(g, cibleVolume(k, { focus: !(both && k === 'pec'), niveau: q && q.niveau, objectif: q && q.objectif })); const key = g.m.join(); if (seen[key]) return; seen[key] = 1; out.push(g); }); return out; };
   /* Éclate les groupes de muscles (anciennes listes) en un point faible par muscle. */
   const focusEclate = arr => {
     const out = [], seen = {};
@@ -892,8 +894,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     Object.keys(A.MUSCLES).forEach(m => { const c = cibleVolume(m, { focus: false, niveau: qq.niveau, objectif: qq.objectif }); cap[m] = c.max; plancher[m] = c.min; });
     (groupes || []).forEach(g => g.m.forEach(m => { if (g.m.length > 1) { cap[m] = 999; return; } cap[m] = Math.max(cap[m], g.max); plancher[m] = Math.max(plancher[m], g.min); }));
     const vol = m => Object.keys(prog).reduce((s, t) => s + (occ[t] || 0) * prog[t].filter(x => ex[x.e] && ex[x.e].m === m).reduce((a, x) => a + x.n, 0), 0);
+    /* Plafond sur le volume « fractionné » : séries directes + moitié des séries où le muscle aide (biceps aux tirages, triceps aux développés…).
+       Le plancher, lui, reste compté en séries directes : on ne retire pas le travail ciblé d'un muscle sous son minimum. */
+    const volInd = m => Object.keys(prog).reduce((s, t) => s + (occ[t] || 0) * prog[t].filter(x => ex[x.e] && ex[x.e].m !== m && (ex[x.e].s || []).indexOf(m) >= 0).reduce((a, x) => a + x.n * 0.5, 0), 0);
+    const volF = m => vol(m) + volInd(m);
     Object.keys(A.MUSCLES).forEach(m => {
-      for (let guard = 0; guard < 40 && vol(m) > cap[m] + 1; guard++) {
+      for (let guard = 0; guard < 40 && volF(m) > cap[m] + 1; guard++) {
         const items = []; Object.keys(prog).forEach(t => prog[t].forEach(x => { if (ex[x.e] && ex[x.e].m === m && (occ[t] || 0) > 0) items.push([t, x]); }));
         const des = items.filter(i => i[1].n > 2 && vol(m) - occ[i[0]] >= plancher[m]).sort((a, b) => b[1].n - a[1].n || occ[a[0]] - occ[b[0]])[0];
         if (des) { des[1].n--; continue; }
@@ -5327,8 +5333,11 @@ function WeekBar({ date, setDate }) {
    Il lit l'état du jour (envoyé dans chaque demande) et enregistre repas, check-in, séries, pas et
    mensurations avec des outils de page. Chaque écriture est affichée et annulable. */
 const CHAT_LS = 'apexhq:chat:v1';
-const chatLoad = () => { try { const o = JSON.parse(localStorage.getItem(CHAT_LS) || 'null'); return Array.isArray(o) ? o.filter(m => m && m.t).slice(-40) : []; } catch (e) { return []; } };
-const chatSave = ms => { try { localStorage.setItem(CHAT_LS, JSON.stringify(ms.filter(m => m.t).slice(-40).map(m => ({ r: m.r, t: m.t, a: (m.a || []).map(a => ({ id: a.id, lab: a.lab, undone: !!a.undone })) })))); } catch (e) { /* historique non mémorisé */ } };
+/* La conversation repart à zéro chaque jour à 3 h du matin : « journée du coach » = date locale de (maintenant − 3 h). */
+const COACH_RESET_H = 3;
+const jourCoach = (t) => { const d = new Date((t || Date.now()) - COACH_RESET_H * 3600000); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const chatLoad = () => { try { const o = JSON.parse(localStorage.getItem(CHAT_LS) || 'null'); return o && !Array.isArray(o) && o.d === jourCoach() && Array.isArray(o.m) ? o.m.filter(m => m && m.t).slice(-40) : []; } catch (e) { return []; } };
+const chatSave = ms => { try { localStorage.setItem(CHAT_LS, JSON.stringify({ d: jourCoach(), m: ms.filter(m => m.t).slice(-40).map(m => ({ r: m.r, t: m.t, a: (m.a || []).map(a => ({ id: a.id, lab: a.lab, undone: !!a.undone })) })) })); } catch (e) { /* historique non mémorisé */ } };
 
 function coachRegles(cfg) {
   const ip = Apex.iaProfil(cfg);
@@ -5522,6 +5531,13 @@ function Coach({ date }) {
   useEffect(() => { if (!sample) return undefined; let on = true; sample.limits().then(l => { if (on) setLim(l || {}); }).catch(() => { if (on) setLim({}); }); return () => { on = false; }; }, [sample]);
   useEffect(() => () => { if (ctl.current) ctl.current.abort(); }, []);
   useEffect(() => { chatSave(msgs); }, [msgs]);
+  /* App restée ouverte au passage de 3 h, ou rouverte le lendemain : nouvelle conversation. */
+  const jourRef = useRef(jourCoach());
+  useEffect(() => {
+    const check = () => { const j = jourCoach(); if (j !== jourRef.current) { jourRef.current = j; if (ctl.current) ctl.current.abort(); setMsgs([]); setErr(''); } };
+    const t = setInterval(check, 60000), v = () => { if (!document.hidden) check(); };
+    document.addEventListener('visibilitychange', v); return () => { clearInterval(t); document.removeEventListener('visibilitychange', v); };
+  }, []);
   useEffect(() => { try { if (end.current) end.current.scrollIntoView({ block: 'end' }); } catch (e) { /* défilement non critique */ } }, [msgs.length, busy]);
   useEffect(() => { if (!dict) return undefined;
     const a = dict.onFinal(e => setTxt(t => (t ? t + e.text : String(e.text || '').replace(/^\s+/, '')))), b = dict.onPartial(e => setPart(e.text || '')), c = dict.onState(e => { setRec(e.state); if (e.state === 'idle') setPart(''); });
