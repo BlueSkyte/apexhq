@@ -430,7 +430,7 @@ const Apex = (() => {
     }
     if (num(j.energie) || num(j.force)) {
       const lo = Math.min(num(j.energie) ? j.energie : 10, num(j.force) ? j.force : 10);
-      out.push({ k: 'forme', ic: 'bolt', lab: 'Énergie · force', val: (num(j.energie) ? j.energie : '–') + ' · ' + (num(j.force) ? j.force : '–') + ' /10', st: lo >= 7 ? 'good' : lo >= 5 ? 'warn' : 'crit', tag: lo >= 7 ? 'Prêt' : lo >= 5 ? 'Moyen' : 'À plat',
+      out.push({ k: 'forme', ic: 'bolt', lab: 'Énergie · récupération', val: (num(j.energie) ? j.energie : '–') + ' · ' + (num(j.force) ? j.force : '–') + ' /10', st: lo >= 7 ? 'good' : lo >= 5 ? 'warn' : 'crit', tag: lo >= 7 ? 'Prêt' : lo >= 5 ? 'Moyen' : 'À plat',
         txt: lo >= 7 ? 'Séance normale, vise la progression.' : lo >= 5 ? 'Tiens les charges, ne force pas les répétitions.' : 'Fatigue marquée : séance allégée (−30 % de séries) ou repos, glucides autour de l’effort.' });
     }
     return out;
@@ -617,7 +617,7 @@ const Apex = (() => {
     const som = avg('sommeil'), en = avg('energie'), fo = avg('force'); let score = 0; const why = [];
     if (som != null && som < 6.5) { score += 3; why.push('Sommeil moyen ' + fx(som, 1) + ' h'); } else if (som != null && som < 7) { score += 2; why.push('Sommeil moyen ' + fx(som, 1) + ' h'); }
     if (en != null && en <= 5) { score += 2; why.push('Énergie ' + fx(en, 1) + '/10'); }
-    if (fo != null && fo <= 5) { score += 2; why.push('Force perçue ' + fx(fo, 1) + '/10'); }
+    if (fo != null && fo <= 5) { score += 2; why.push('Récupération musculaire ' + fx(fo, 1) + '/10'); }
     let rs = 0, rn = 0; const from = addDays(date, -6);
     Object.keys(seances).forEach(k => { const se = seances[k]; if (!se || se.date < from || se.date > date) return; (se.exos || []).forEach(x => (x.sets || []).forEach(s => { if (setFait(s) && num(s.rpe)) { rs += s.rpe; rn++; } })); });
     const rpe = rn ? rs / rn : null;
@@ -3454,6 +3454,7 @@ function Dashboard({ date, go, setDate }) {
 
 /* ---- 31-ui-debrief.js ---- */
 /* Macrolya — debrief matinal : une seule page (poids, sommeil, forme), puis bilan du jour. */
+const RECUP = [[2, 'Très raide'], [4, 'Courbaturé'], [6, 'Léger'], [8, 'Frais'], [10, 'Au top']];
 const LVL = [[2, 'À plat'], [4, 'Bof'], [6, 'Correct'], [8, 'Bien'], [10, 'Au top']];
 const nearLvl = v => (v == null ? null : LVL.reduce((b, x) => (Math.abs(x[0] - v) < Math.abs(b - v) ? x[0] : b), 2));
 
@@ -3470,9 +3471,9 @@ function BigNum({ id, label, unit, value, onChange, step, min, max, dec, ph, hin
     </div>${hint && html`<span className="bn-h">${hint}</span>`}</div>`;
 }
 /* Cinq niveaux, enregistrés sur 10. */
-function Lvl({ label, value, onChange }) {
-  const cur = nearLvl(value);
-  return html`<div className="stack"><span className="fld-l">${label}</span><div className="lvl" role="radiogroup" aria-label=${label}>${LVL.map(x => html`<button key=${x[0]} type="button" role="radio" aria-checked=${cur === x[0]} onClick=${() => onChange(cur === x[0] ? null : x[0])}><b>${x[0] / 2}</b><span>${x[1]}</span></button>`)}</div></div>`;
+function Lvl({ label, value, onChange, opts }) {
+  const cur = nearLvl(value), L = opts || LVL;
+  return html`<div className="stack"><span className="fld-l">${label}</span><div className="lvl" role="radiogroup" aria-label=${label}>${L.map(x => html`<button key=${x[0]} type="button" role="radio" aria-checked=${cur === x[0]} onClick=${() => onChange(cur === x[0] ? null : x[0])}><b>${x[0] / 2}</b><span>${x[1]}</span></button>`)}</div></div>`;
 }
 
 function DebriefCard({ date, go, onEdit, photos }) {
@@ -3495,7 +3496,7 @@ function DebriefCard({ date, go, onEdit, photos }) {
       <div className="tile"><span>Poids</span><b>${f1(j.poids)}<small>kg</small></b><em>moy. 7 j ${m ? f1(m.v) : '–'}</em></div>
       <div className="tile"><span>Rythme</span><b>${t ? sgn(t.pct) : '–'}<small>%/sem</small></b><em>${t ? sgn(t.dk, f2) + ' kg' : 'dès 2 semaines'}</em></div>
       <div className="tile"><span>Sommeil</span><b>${f1(j.sommeil)}<small>h</small></b><em>${j.sommeilQ != null ? 'qualité ' + j.sommeilQ + '/10' : ''}</em></div>
-      <div className="tile"><span>Forme</span><b>${j.energie == null ? '–' : j.energie}<small>/10</small></b><em>force ${j.force == null ? '–' : j.force}/10</em></div>
+      <div className="tile"><span>Forme</span><b>${j.energie == null ? '–' : j.energie}<small>/10</small></b><em>récup ${j.force == null ? '–' : j.force}/10</em></div>
     </div>
     ${photos != null && (photos < POSES.length ? html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos : ${photos} / ${POSES.length}.</b> Face, profil, dos avant de manger.</span><button type="button" className="btn sm pri" onClick=${onEdit}><${Icon} n="camera" s=${16} />Ajouter mes photos</button></div></div>`
       : html`<div className="note good"><${Icon} n="check" /><div><span><b>Photos de la semaine faites.</b> Comparatif dans l’onglet Analyse.</span></div></div>`)}
@@ -3514,7 +3515,7 @@ function DebriefCard({ date, go, onEdit, photos }) {
 /* ---------- Routine du matin : pesée, sommeil, forme et, le jour photos, face / profil / dos ----------
    Chaque étape s'ouvre, se remplit, puis « Suivant » ouvre la prochaine non faite. Les photos sont enregistrées tout de suite ;
    le reste à la validation (seul le poids est obligatoire). */
-const ETAPES_MATIN = [['poids', 'Pesée', 'scale', 'À jeun, après les toilettes'], ['sommeil', 'Sommeil', 'moon', 'Durée, qualité, réveils'], ['forme', 'Forme', 'bolt', 'Énergie et force'], ['photos', 'Photos', 'camera', 'Face, profil, dos, avant de manger']];
+const ETAPES_MATIN = [['poids', 'Pesée', 'scale', 'À jeun, après les toilettes'], ['sommeil', 'Sommeil', 'moon', 'Durée, qualité, réveils'], ['forme', 'Forme', 'bolt', 'Énergie et récupération'], ['photos', 'Photos', 'camera', 'Face, profil, dos, avant de manger']];
 const photosDuJour = (photos, date) => { const o = {}; Object.keys(photos || {}).forEach(k => { const p = photos[k]; if (p && p.date === date && p.asset) o[p.pose] = Object.assign({ id: k }, p); }); return o; };
 
 function PhotosMatin({ date }) {
@@ -3557,7 +3558,7 @@ function CheckIn({ date, go }) {
   const suite = k => { const i = etapes.findIndex(e => e[0] === k), n = etapes.slice(i + 1).concat(etapes.slice(0, i)).find(e => !ok[e[0]] && e[0] !== k); setOpen(n ? n[0] : '-'); };
   const dw = d.poids != null ? d.poids - lastW : null, auto = j.auto || {};
   const resume = { poids: ok.poids ? f1(d.poids) + ' kg' + (dw ? ' · ' + sgn(dw) + ' kg' : '') : null, sommeil: ok.sommeil ? f1(d.sommeil) + ' h' + (d.sommeilQ != null ? ' · qualité ' + d.sommeilQ / 2 + '/5' : '') + (auto.sommeil != null && auto.sommeil === d.sommeil ? ' · via Santé' : '') : null,
-    forme: ok.forme ? 'énergie ' + d.energie / 2 + '/5 · force ' + d.force / 2 + '/5' : (d.energie != null || d.force != null ? 'à compléter' : null), photos: nPh ? nPh + ' / ' + POSES.length : null };
+    forme: ok.forme ? 'énergie ' + d.energie / 2 + '/5 · récup ' + d.force / 2 + '/5' : (d.energie != null || d.force != null ? 'à compléter' : null), photos: nPh ? nPh + ' / ' + POSES.length : null };
   const fait = etapes.filter(e => ok[e[0]]).length;
   const upK = (k, f) => v => { setOpen(k); up(f)(v); };
   const corps = k => k === 'poids' ? html`<${BigNum} id="ci-poids" label="Poids ce matin" unit="kg" value=${d.poids} onChange=${upK(k, 'poids')} step=${0.1} min=${40} max=${160} dec=${1} ph=${Math.round(lastW * 10) / 10}
@@ -3566,7 +3567,7 @@ function CheckIn({ date, go }) {
         hint=${auto.sommeil != null && auto.sommeil === d.sommeil ? 'Importé de ta montre ou de ton téléphone. Corrige si besoin.' : d.sommeil != null && d.sommeil < 7 ? 'Sous 7 h : récupération et faim en pâtissent.' : 'Objectif : 7 h ou plus.'} />
       <${Lvl} label="Qualité du sommeil" value=${d.sommeilQ} onChange=${upK(k, 'sommeilQ')} />
       <div className="stack"><span className="fld-l">Réveils dans la nuit</span><div className="chips">${[0, 1, 2, 3].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${d.reveils === n} onClick=${() => upK(k, 'reveils')(d.reveils === n ? null : n)}>${n === 3 ? '3 ou +' : n}</button>`)}</div></div><//>`
-    : k === 'forme' ? html`<${React.Fragment}><${Lvl} label="Énergie ce matin" value=${d.energie} onChange=${upK(k, 'energie')} /><${Lvl} label="Force perçue à l’entraînement" value=${d.force} onChange=${upK(k, 'force')} /><//>`
+    : k === 'forme' ? html`<${React.Fragment}><${Lvl} label="Énergie ce matin" value=${d.energie} onChange=${upK(k, 'energie')} /><${Lvl} label="Récupération musculaire" opts=${RECUP} value=${d.force} onChange=${upK(k, 'force')} /><//>`
     : html`<${PhotosMatin} date=${date} />`;
   const btnSuite = k => (ok[k] || k === 'photos') && html`<button type="button" className="btn sm rt-n" onClick=${() => suite(k)}>${etapes.some(e => e[0] !== k && !ok[e[0]]) ? 'Suivant' : 'OK'}<${Icon} n="chevR" s=${16} /></button>`;
   return html`<${Card} cls="c5 r2 ci-card" title="Routine du matin" sub=${(cfg.profil.prenom ? 'Bonjour ' + cfg.profil.prenom + ' · ' : '') + 'à jeun · ' + dMid(date)} right=${j.ci && html`<button type="button" className="btn sm ghost" onClick=${() => { setD(init()); setEdit(false); }}>Annuler</button>`}>
@@ -4241,7 +4242,7 @@ function FatigueCard({ date }) {
     <div className="ggs">
       <${Gauge} ic="moon" label="Sommeil moyen" v=${f.som} max=${10} unit="h" good=${cible} hint=${'objectif ' + cible + ' h'} />
       <${Gauge} ic="bolt" label="Énergie" v=${f.en} max=${10} unit="/10" good=${6.5} hint="ressenti sur 10" />
-      <${Gauge} ic="dumbbell" label="Force perçue" v=${f.fo} max=${10} unit="/10" good=${6.5} hint="ressenti sur 10" />
+      <${Gauge} ic="dumbbell" label="Récupération" v=${f.fo} max=${10} unit="/10" good=${6.5} hint="10 = aucune courbature" />
       <${Gauge} ic="flame" label="RPE moyen" v=${f.rpe} max=${10} unit="" inv hint="effort des séries" />
     </div>
     <div className="cardio">
@@ -4963,7 +4964,7 @@ function CoachCard({ date }) {
   if (!sample) return null;
   const run = async () => {
     const jours = Apex.range(Apex.addDays(date, -13), date).map(d => { const j = S.journal[d]; if (!j) return null; const t = Apex.totJour(j, foods).reel, c = Apex.cibleDuJour(cfg, j, d);
-      return [d, c.statut, 'cible ' + c.kcal, t ? 'réel ' + Math.round(t.k) + ' kcal P' + Math.round(t.p) + ' G' + Math.round(t.g) + ' L' + Math.round(t.l) : 'réel ?', 'poids ' + (j.poids == null ? '?' : j.poids), 'pas ' + (j.pas == null ? '?' : j.pas), 'sommeil ' + (j.sommeil == null ? '?' : j.sommeil), 'énergie ' + (j.energie == null ? '?' : j.energie), 'force ' + (j.force == null ? '?' : j.force)].join(' | '); }).filter(Boolean);
+      return [d, c.statut, 'cible ' + c.kcal, t ? 'réel ' + Math.round(t.k) + ' kcal P' + Math.round(t.p) + ' G' + Math.round(t.g) + ' L' + Math.round(t.l) : 'réel ?', 'poids ' + (j.poids == null ? '?' : j.poids), 'pas ' + (j.pas == null ? '?' : j.pas), 'sommeil ' + (j.sommeil == null ? '?' : j.sommeil), 'énergie ' + (j.energie == null ? '?' : j.energie), 'récup ' + (j.force == null ? '?' : j.force)].join(' | '); }).filter(Boolean);
     const t = Apex.tendance(S.journal, date), fo = Apex.alertesFocus(S.seances, S.journal, cfg, date), fa = Apex.fatigue(S.journal, S.seances, cfg, date);
     const ip = Apex.iaProfil(cfg), prompt = 'Tu es diététicien et préparateur physique. Analyse cet objectif (' + ip.objTxt + '). Style : factuel, chiffré, aucune motivation, aucune formule de politesse.\n'
       + 'Profil : ' + ip.ligne + '. Cibles : salle ' + cfg.cibles.salle.kcal + ' kcal, repos ' + cfg.cibles.repos.kcal + ' kcal, protéines ' + cfg.cibles.salle.p + ' g, planchers ' + cfg.cibles.planchers.kcal + ' kcal / ' + cfg.cibles.planchers.p + ' g protéines / ' + cfg.cibles.planchers.l + ' g lipides. Rythme visé : ' + ip.rythme + '.\n'
@@ -5135,7 +5136,7 @@ function AdaptSheet({ date, plan, type, onApply, onClose }) {
         'Profil : ' + Apex.iaProfil(cfg).sexe + ', ' + cfg.profil.age + ' ans, niveau ' + (q.niveau || 'intermédiaire') + ', objectif ' + Apex.iaProfil(cfg).objTxt + '.',
         'Séance prévue (' + type + ') : ' + plan.map(x => (exos[x.e] ? exos[x.e].n : x.e) + ' ' + x.n + '×').join(', ') + '.',
         'Temps disponible : ' + min + ' minutes, échauffement inclus (compte 2,2 à 3 minutes par série). Matériel : ' + (Apex.EQUIP.find(x => x[0] === eq) || [])[1] + '.',
-        'Forme du jour : énergie ' + (forme == null ? 'inconnue' : forme + '/10') + (j.force != null ? ', force perçue ' + j.force + '/10' : '') + '. Fatigue de la semaine : ' + fa.niveau + '.',
+        'Forme du jour : énergie ' + (forme == null ? 'inconnue' : forme + '/10') + (j.force != null ? ', récupération musculaire ' + j.force + '/10 (10 = aucune courbature)' : '') + '. Fatigue de la semaine : ' + fa.niveau + '.',
         dou ? 'Zones sensibles à ménager : ' + dou + '.' : '', note ? 'Remarque : ' + note + '.' : '',
         foc.length ? 'Priorité du jour : ' + GR.filter(g => foc.indexOf(g.id) >= 0).map(g => g.n).join(', ') + '.' : '',
         'Points faibles, séries déjà faites cette semaine sur la cible : ' + (Object.keys(fs).map(k => fs[k].n + ' ' + Math.round(fs[k].fait) + '/' + fs[k].min).join(' ; ') || 'aucun') + '.',
@@ -5315,7 +5316,7 @@ function coachContexte(date, question) {
   L.push('REPAS DU JOUR :' + (meals.length ? '' : ' aucun repas planifié.'));
   meals.forEach(m => { const tm = Apex.totMeal(m, foods); L.push('- ' + m.nom + ' (' + (m.ok ? 'mangé' : 'prévu') + ', ' + r(tm.k) + ' kcal, P ' + r(tm.p) + ') : ' + m.items.map(it => { const f = Apex.foodOf(it, foods); return f ? f.n + ' ' + fq(it.q) + ' ' + unitOf(f) : ''; }).filter(Boolean).join(', ')); });
   L.push('TOTAUX : mangé ' + r(cons.k) + ' kcal (P ' + r(cons.p) + ', G ' + r(cons.g) + ', L ' + r(cons.l) + ')' + (t.man ? ' [bilan saisi à la main]' : '') + ' ; prévu au plan ' + r(t.plan.k) + ' kcal (P ' + r(t.plan.p) + ', G ' + r(t.plan.g) + ', L ' + r(t.plan.l) + ') ; reste à manger ' + r(c.kcal - cons.k) + ' kcal, P ' + r(c.p - cons.p) + ' g.');
-  L.push('CHECK-IN DU JOUR : poids ' + q(j.poids) + ' kg, sommeil ' + q(j.sommeil) + ' h, qualité ' + q(j.sommeilQ) + '/10, réveils ' + q(j.reveils) + ', énergie ' + q(j.energie) + '/10, force ' + q(j.force) + '/10 ; pas du jour ' + q(j.pas) + ', eau ' + q(j.eau) + ' L.');
+  L.push('CHECK-IN DU JOUR : poids ' + q(j.poids) + ' kg, sommeil ' + q(j.sommeil) + ' h, qualité ' + q(j.sommeilQ) + '/10, réveils ' + q(j.reveils) + ', énergie ' + q(j.energie) + '/10, récupération musculaire ' + q(j.force) + '/10 (10 = aucune courbature) ; pas du jour ' + q(j.pas) + ', eau ' + q(j.eau) + ' L.');
   L.push('HIER (' + hier + ') : ' + (th ? 'réel ' + r(th.k) + ' kcal, P ' + r(th.p) + ', G ' + r(th.g) + ', L ' + r(th.l) : 'bilan non saisi') + ', pas ' + q(jh.pas) + '.');
   const tr = Apex.tendance(S.journal, date), m7 = Apex.mm7(S.journal, date);
   L.push('POIDS : moyenne 7 j ' + (m7 ? m7.v.toFixed(1) + ' kg sur ' + m7.n + ' pesées' : 'aucune pesée') + ' ; rythme ' + (tr ? tr.dk.toFixed(2) + ' kg/sem (' + tr.pct.toFixed(1) + ' %)' : 'pas encore calculable') + '.');
@@ -5367,12 +5368,12 @@ function coachTools(ref, push) {
         return bilan(d);
       } },
     { name: 'enregistrer_checkin', description: 'Enregistre le check-in matinal à jeun du jour : poids, sommeil, qualité, réveils, énergie, force, et pour la veille les pas et le bilan nutritionnel réel. Ne passe que les valeurs données. Renvoie la moyenne 7 jours et la lecture du jour.',
-      inputSchema: { type: 'object', properties: { date: DATE, poids: NB('kg à jeun'), sommeil: NB('heures'), qualite_sommeil: NB('sur 10'), reveils: NB('nombre de réveils'), energie: NB('sur 10'), force: NB('force perçue sur 10'), pas_hier: NB('pas de la veille'),
+      inputSchema: { type: 'object', properties: { date: DATE, poids: NB('kg à jeun'), sommeil: NB('heures'), qualite_sommeil: NB('sur 10'), reveils: NB('nombre de réveils'), energie: NB('sur 10'), force: NB('récupération musculaire sur 10, 10 = aucune courbature'), pas_hier: NB('pas de la veille'),
         bilan_hier: { type: 'object', properties: { kcal: NB('kcal'), p: NB('g'), g: NB('g'), l: NB('g') }, required: ['kcal'] } } },
       execute: inp => {
         const d = dOf(inp.date), h = Apex.addDays(d, -1), f = { date: d }, fh = { date: h }, u = [snap('journal', d)], lab = [];
         const set = (k, v, t) => { if (v != null) { f[k] = v; lab.push(t); } };
-        set('poids', n(inp.poids, 35, 200), 'poids'); set('sommeil', n(inp.sommeil, 0, 16), 'sommeil'); set('sommeilQ', n(inp.qualite_sommeil, 1, 10), 'qualité'); set('reveils', n(inp.reveils, 0, 30), 'réveils'); set('energie', n(inp.energie, 1, 10), 'énergie'); set('force', n(inp.force, 1, 10), 'force');
+        set('poids', n(inp.poids, 35, 200), 'poids'); set('sommeil', n(inp.sommeil, 0, 16), 'sommeil'); set('sommeilQ', n(inp.qualite_sommeil, 1, 10), 'qualité'); set('reveils', n(inp.reveils, 0, 30), 'réveils'); set('energie', n(inp.energie, 1, 10), 'énergie'); set('force', n(inp.force, 1, 10), 'récupération');
         const ph = n(inp.pas_hier, 0, 100000); if (ph != null) { fh.pas = Math.round(ph); lab.push('pas d’hier'); }
         const b = inp.bilan_hier, bk = b && n(b.kcal, 0, 12000); if (bk != null) { fh.man = { kcal: Math.round(bk), p: Math.round(n(b.p, 0, 600) || 0), g: Math.round(n(b.g, 0, 1500) || 0), l: Math.round(n(b.l, 0, 600) || 0) }; lab.push('bilan d’hier'); }
         if (!lab.length) throw new Error('Aucune valeur valide fournie.');
@@ -5493,7 +5494,7 @@ function Coach({ date }) {
   const undo = (mi, ai) => { const a = msgs[mi] && msgs[mi].a && msgs[mi].a[ai]; if (!a || !a.undo || a.undone) return; a.undo.slice().reverse().forEach(u => { if (u.cfg) { Store.patch('cfg', null, u.cfg); rafraichirPlans(); } else Store.replace(u.coll, u.id, u.prev); });
     setMsgs(ms => ms.map((m, i) => (i !== mi ? m : Object.assign({}, m, { a: m.a.map((x, k) => (k !== ai ? x : Object.assign({}, x, { undone: true }))) })))); toast('Action annulée'); };
   const key = e => { if (e.key === 'Enter' && !e.shiftKey && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) { e.preventDefault(); send(); } };
-  const SUG = ['Ce midi j’ai mangé ', 'Check-in : poids … kg, sommeil … h, énergie …/10, force …/10', 'Que manger ce soir pour boucler la journée ?', 'Analyse ma semaine et dis-moi quoi ajuster.'];
+  const SUG = ['Ce midi j’ai mangé ', 'Check-in : poids … kg, sommeil … h, énergie …/10, récup …/10', 'Que manger ce soir pour boucler la journée ?', 'Analyse ma semaine et dis-moi quoi ajuster.'];
   if (!sample) return html`<div>
     <div className="view-h"><h1>Coach</h1><p>IA intégrée à l’app.</p></div>
     <${Card} title="Coach indisponible dans cette vue">
