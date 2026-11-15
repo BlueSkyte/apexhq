@@ -3739,8 +3739,28 @@ function MealDetail({ m, foods, onClose, onSwap }) {
   <//>`;
 }
 
-function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel }) {
-  const t = Apex.totMeal(m, foods); const [det, setDet] = useState(false);
+/* Fiche d'un aliment : valeurs pour la quantité mangée et pour 100 g, puis Remplacer / Retirer. */
+function FoodDetail({ it, foods, onClose, onSwap, onDel }) {
+  const f = Apex.foodOf(it, foods); if (!f) return null;
+  const x = Apex.mac(it, foods), g = it.x ? null : (f.u ? it.q * f.u[1] : it.q), c100 = g ? Apex.mac({ a: it.a, q: f.u ? 100 / f.u[1] : 100 }, foods) : null;
+  const k = x.p * 4 + x.g * 4 + x.l * 9 || 1, pct = v => Math.round(v / k * 100);
+  const ligne = (lab, v, u, col, p) => html`<div className="fd-l"><span><i style=${{ background: col }}></i>${lab}</span><b>${fq(Math.round(v * 10) / 10)} ${u}</b>${p != null ? html`<small>${p} % des kcal</small>` : html`<small></small>`}</div>`;
+  return html`<${Sheet} title=${f.n} onClose=${onClose}>
+    <div className="fd-h"><b>${f0(x.k)}<small> kcal</small></b><span>${qteTxt(it, f)}${g && f.u ? ' · ' + f0(g) + ' g' : ''}</span></div>
+    <div className="md-bar" aria-hidden="true"><i style=${{ width: x.p * 4 / k * 100 + '%', background: 'var(--p)' }}></i><i style=${{ width: x.g * 4 / k * 100 + '%', background: 'var(--g)' }}></i><i style=${{ width: x.l * 9 / k * 100 + '%', background: 'var(--l)' }}></i></div>
+    <div className="fd">
+      ${ligne('Protéines', x.p, 'g', 'var(--p)', pct(x.p * 4))}
+      ${ligne('Glucides', x.g, 'g', 'var(--g)', pct(x.g * 4))}
+      ${ligne('Lipides', x.l, 'g', 'var(--l)', pct(x.l * 9))}
+      ${x.f ? ligne('Fibres', x.f, 'g', 'var(--ink-3)', null) : null}
+    </div>
+    ${c100 && html`<p className="mut" style=${{ fontSize: 12 }}>Pour 100 g : ${f0(c100.k)} kcal · P ${fq(Math.round(c100.p * 10) / 10)} · G ${fq(Math.round(c100.g * 10) / 10)} · L ${fq(Math.round(c100.l * 10) / 10)} g${f.est ? ' · valeurs moyennes estimées' : ''}</p>`}
+    <div className="row"><button type="button" className="btn grow" onClick=${() => { onClose(); onSwap(it); }}><${Icon} n="swap" s=${17} />Remplacer</button>${onDel && html`<${Confirm} cls="ghost" icon="trash" label="Retirer" sure="Retirer cet aliment ?" onYes=${() => { onDel(it); onClose(); }} />`}</div>
+  <//>`;
+}
+
+function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDelIt }) {
+  const t = Apex.totMeal(m, foods); const [det, setDet] = useState(false); const [fd, setFd] = useState(null);
   return html`<article className=${cx('meal', m.ok && 'ok')}>
     <div className="meal-h">
       <button type="button" className="chk" aria-pressed=${!!m.ok} aria-label=${(m.ok ? 'Marquer non mangé : ' : 'Marquer mangé : ') + m.nom} onClick=${onToggle}><${Icon} n="check" s=${18} w=${2.5} /></button>
@@ -3748,10 +3768,11 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel }) {
       <button type="button" className="meal-k meal-open" onClick=${() => setDet(true)} tabIndex="-1" aria-hidden="true"><b>${f0(t.k)}</b><span>kcal · ${macTxt(t)}</span></button>
     </div>
     ${det && html`<${MealDetail} m=${m} foods=${foods} onSwap=${onSwap} onClose=${() => setDet(false)} />`}
+    ${fd && html`<${FoodDetail} it=${fd} foods=${foods} onSwap=${onSwap} onDel=${onDelIt} onClose=${() => setFd(null)} />`}
     ${m.items.length > 0 && html`<div className="its">${m.items.map(it => {
       const f = Apex.foodOf(it, foods); if (!f) return null; const x = Apex.mac(it, foods);
       return html`<div key=${it.id} className=${cx('it', !(it.q > 0) && 'zero')}>
-        <button type="button" className="it-n" onClick=${() => onSwap(it)} aria-label=${'Remplacer ou retirer ' + f.n}><b>${f.n}</b><span>${pesee === false && !f.u ? '≈ ' + f0(it.q) + ' g · ' : ''}${f0(x.k)} kcal</span></button>
+        <button type="button" className="it-n" onClick=${() => setFd(it)} aria-label=${'Détail de ' + f.n}><b>${f.n}</b><span>${pesee === false && !f.u ? '≈ ' + f0(it.q) + ' g · ' : ''}${f0(x.k)} kcal</span></button>
         <${Qty} it=${it} f=${f} pesee=${pesee} onChange=${q => onQty(it, q)} />
       </div>`;
     })}</div>`}
@@ -4117,7 +4138,7 @@ function Repas({ date }) {
             <${Confirm} label="Revenir au planner" sure="Effacer le bilan saisi ?" onYes=${() => Store.patch('journal', date, { date, man: null })} /></div></div>`}
         <//>
         <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => setIa(true)} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} />
-        <${Card} title="Repas" sub="Touche un aliment pour le remplacer" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
+        <${Card} title="Repas" sub="Touche un aliment pour voir son détail" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
           ${!man && html`<div className="rp-nb"><span>Repas par jour</span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repasNb(cfg) === n} onClick=${() => setNb(n)}>${n}</button>`)}</div></div>`}
           ${vide && mode !== 'libre' && !man && html`<div className="note acc"><${Icon} n="utensils" /><div><span>${mode === 'perso' && !semOk ? 'Remplis tes repas, ou charge le menu de base puis enregistre-le pour les ' + jourNom + 's.' : 'Remplis tes repas toi-même, ou charge le menu du ' + jourNom + ' calé sur ' + f0(c.kcal) + ' kcal.'}</span><button type="button" className="btn sm pri" onClick=${gen}><${Icon} n="utensils" s=${16} />${mode === 'perso' && semOk ? 'Charger mon menu du ' + jourNom : 'Charger le menu du ' + jourNom}</button></div></div>`}
           ${meals.length ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods} pesee=${pesee}
@@ -4125,6 +4146,7 @@ function Repas({ date }) {
             onQty=${(it, q) => mapItem(m.id, it.id, i => { const o = Object.assign({}, i, { q }); delete o.adj; return o; })}
             onSwap=${it => setSheet({ t: 'swap', mid: m.id, iid: it.id })}
             onAdd=${() => setSheet({ t: 'add', mid: m.id })}
+            onDelIt=${it => mapItem(m.id, it.id, () => null)}
             onDel=${() => put(meals.filter(x => x.id !== m.id))} />`)}</div>`
           : mode === 'libre' ? html`<div className="empty"><span><b>Journée libre.</b> Ajoute un repas puis tes aliments ${pesee ? 'avec leur poids' : 'en portions'} : les calories et les macros se calculent tout seuls.</span>
             <div className="row"><button type="button" className="btn pri" onClick=${addMeal}><${Icon} n="plus" s=${18} />Ajouter un repas</button></div></div>`
