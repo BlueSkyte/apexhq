@@ -3475,7 +3475,7 @@ function Lvl({ label, value, onChange }) {
   return html`<div className="stack"><span className="fld-l">${label}</span><div className="lvl" role="radiogroup" aria-label=${label}>${LVL.map(x => html`<button key=${x[0]} type="button" role="radio" aria-checked=${cur === x[0]} onClick=${() => onChange(cur === x[0] ? null : x[0])}><b>${x[0] / 2}</b><span>${x[1]}</span></button>`)}</div></div>`;
 }
 
-function DebriefCard({ date, go, onEdit }) {
+function DebriefCard({ date, go, onEdit, photos }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), j = S.journal[date] || {}, sample = st.caps().sample;
   const [ia, setIa] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   const rows = Apex.lecture(S.journal, cfg, date), crit = rows.filter(r => r.st === 'crit'), warn = rows.filter(r => r.st === 'warn'), todo = crit.concat(warn);
@@ -3497,6 +3497,8 @@ function DebriefCard({ date, go, onEdit }) {
       <div className="tile"><span>Sommeil</span><b>${f1(j.sommeil)}<small>h</small></b><em>${j.sommeilQ != null ? 'qualité ' + j.sommeilQ + '/10' : ''}</em></div>
       <div className="tile"><span>Forme</span><b>${j.energie == null ? '–' : j.energie}<small>/10</small></b><em>force ${j.force == null ? '–' : j.force}/10</em></div>
     </div>
+    ${photos != null && (photos < POSES.length ? html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos : ${photos} / ${POSES.length}.</b> Face, profil, dos avant de manger.</span><button type="button" className="btn sm pri" onClick=${onEdit}><${Icon} n="camera" s=${16} />Ajouter mes photos</button></div></div>`
+      : html`<div className="note good"><${Icon} n="check" /><div><span><b>Photos de la semaine faites.</b> Comparatif dans l’onglet Analyse.</span></div></div>`)}
     ${todo.length > 1 && html`<div className="stack">${todo.slice(1, 3).map(r => html`<div key=${r.k} className="note"><${Icon} n=${r.ic} /><div><span><b>${r.lab} :</b> ${r.txt}</span></div></div>`)}</div>`}
     <div className="plan-j">
       <div><span className="fld-l">Aujourd’hui</span><b>${c.statut === 'salle' ? 'Salle' + (type ? ' · ' + type : '') : 'Repos'}</b><span className="mut">${f0(c.kcal)} kcal · P ${c.p} g</span></div>
@@ -3509,35 +3511,74 @@ function DebriefCard({ date, go, onEdit }) {
 }
 
 
+/* ---------- Routine du matin : pesée, sommeil, forme et, le jour photos, face / profil / dos ----------
+   Chaque étape s'ouvre, se remplit, puis « Suivant » ouvre la prochaine non faite. Les photos sont enregistrées tout de suite ;
+   le reste à la validation (seul le poids est obligatoire). */
+const ETAPES_MATIN = [['poids', 'Pesée', 'scale', 'À jeun, après les toilettes'], ['sommeil', 'Sommeil', 'moon', 'Durée, qualité, réveils'], ['forme', 'Forme', 'bolt', 'Énergie et force'], ['photos', 'Photos', 'camera', 'Face, profil, dos, avant de manger']];
+const photosDuJour = (photos, date) => { const o = {}; Object.keys(photos || {}).forEach(k => { const p = photos[k]; if (p && p.date === date && p.asset) o[p.pose] = Object.assign({ id: k }, p); }); return o; };
+
+function PhotosMatin({ date }) {
+  const st = useStore(), S = st.get(), assets = st.caps().assets, canUp = !!assets || STANDALONE, ph = photosDuJour(S.photos, date);
+  const [busy, setBusy] = useState(''); const [err, setErr] = useState('');
+  const up = pose => async e => {
+    const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file || !canUp) return;
+    setBusy(pose); setErr('');
+    try { await savePhoto(date, pose, file, assets); try { navigator.vibrate && navigator.vibrate(30); } catch (x) { /* sans vibreur */ } } catch (er) { setErr(photoErr(er)); }
+    setBusy('');
+  };
+  if (!canUp) return html`<div className="note"><${Icon} n="info" /><div><span>L’ajout de photos n’est pas disponible dans cette vue.</span></div></div>`;
+  return html`<div className="stack">
+    <div className="rt-ph">${POSES.map(p => { const x = ph[p[0]]; return html`<label key=${p[0]} className=${cx('rt-pt', x && 'ok')} htmlFor=${'rt-ph-' + p[0]}>
+      ${x ? html`<${PhotoImg} p=${x} alt=${'Photo ' + p[1] + ' du ' + dTiny(date)} />` : html`<span className="rt-pi"><${Icon} n="camera" s=${22} /></span>`}
+      <b>${busy === p[0] ? 'Envoi…' : p[1]}${x && html`<${Icon} n="check" s=${14} w=${2.4} />`}</b>
+      <input id=${'rt-ph-' + p[0]} className="sr" type="file" accept="image/*" onChange=${up(p[0])} /></label>`; })}</div>
+    ${err && html`<p className="sec" role="alert" style=${{ fontSize: 13 }}>${err}</p>`}
+    <p className="mut" style=${{ fontSize: 12 }}>Même lumière, même distance, même pose chaque semaine. Touche une photo pour la refaire. ${STANDALONE ? 'Elles restent sur ce téléphone.' : ''} Comparatif avant / après dans l’onglet Analyse.</p>
+  </div>`;
+}
+
 function CheckIn({ date, go }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), j = S.journal[date] || {};
   const pw = Apex.serie(S.journal, 'poids').filter(p => p.d < date), lastW = pw.length ? pw[pw.length - 1].v : cfg.profil.poidsDepart;
   const init = () => ({ poids: j.poids == null ? null : j.poids, sommeil: j.sommeil == null ? null : j.sommeil, sommeilQ: j.sommeilQ == null ? null : j.sommeilQ, reveils: j.reveils == null ? null : j.reveils,
     energie: j.energie == null ? null : j.energie, force: j.force == null ? null : j.force });
-  const [d, setD] = useState(init); const [edit, setEdit] = useState(!j.ci); const [more, setMore] = useState(false);
-  useEffect(() => { setD(init()); setEdit(!j.ci); setMore(false); }, [date, j.ci]);
+  const [d, setD] = useState(init); const [edit, setEdit] = useState(!j.ci); const [open, setOpen] = useState(null);
+  useEffect(() => { setD(init()); setEdit(!j.ci); setOpen(null); }, [date, j.ci]);
   const up = k => v => setD(x => Object.assign({}, x, { [k]: v }));
-  const photoDay = Apex.dow(date) === cfg.photosJour;
+  const photoDay = Apex.dow(date) === (cfg.photosJour == null ? 0 : cfg.photosJour), ph = photosDuJour(S.photos, date), nPh = POSES.filter(p => ph[p[0]]).length;
   const save = () => {
     Store.patch('journal', date, { date, poids: d.poids, sommeil: d.sommeil, sommeilQ: d.sommeilQ, reveils: d.reveils, energie: d.energie, force: d.force, ci: new Date().toISOString() });
-    setEdit(false); toast('Debrief enregistré');
+    setEdit(false); toast('Routine du matin validée');
   };
-  if (!edit) return html`<${DebriefCard} date=${date} go=${go} onEdit=${() => { setMore(false); setEdit(true); }} />`;
-  const dw = d.poids != null ? d.poids - lastW : null;
-  const fait = [d.poids, d.sommeil, d.energie, d.force].filter(x => x != null).length;
-  return html`<${Card} cls="c5 r2 ci-card" title=${cfg.profil.prenom ? 'Bonjour ' + cfg.profil.prenom : 'Debrief matinal'} sub=${(cfg.profil.prenom ? 'Debrief matinal · ' : '') + 'À jeun · ' + dMid(date)} right=${j.ci && html`<button type="button" className="btn sm ghost" onClick=${() => { setD(init()); setEdit(false); }}>Annuler</button>`}>
-    <div className="ci-prog" aria-label=${fait + ' sur 4 renseignés'}>${[0, 1, 2, 3].map(i => html`<i key=${i} className=${i < fait ? 'on' : ''}></i>`)}<span>${fait} / 4 · seul le poids est obligatoire</span></div>
-    <${BigNum} id="ci-poids" label="Poids ce matin" unit="kg" value=${d.poids} onChange=${up('poids')} step=${0.1} min=${40} max=${160} dec=${1} ph=${Math.round(lastW * 10) / 10}
-      hint=${d.poids == null ? 'Dernière pesée : ' + f1(lastW) + ' kg. Seule la moyenne 7 jours compte.' : (dw === 0 ? 'Identique à ta dernière pesée.' : sgn(dw) + ' kg vs ta dernière pesée (' + f1(lastW) + ' kg).')} />
-    <${BigNum} id="ci-sommeil" label="Sommeil" unit="h" value=${d.sommeil} onChange=${up('sommeil')} step=${0.25} min=${0} max=${16} dec=${2} ph=${7.5}
-      hint=${d.sommeil != null && d.sommeil < 7 ? 'Sous 7 h : récupération et faim en pâtissent.' : 'Objectif : 7 h ou plus.'} />
-    <${Lvl} label="Énergie" value=${d.energie} onChange=${up('energie')} />
-    <${Lvl} label="Force perçue à l’entraînement" value=${d.force} onChange=${up('force')} />
-    <button type="button" className="btn ghost sm ci-more" aria-expanded=${more} onClick=${() => setMore(!more)}>${more ? 'Masquer' : 'Plus de détails sur la nuit'}</button>
-    ${more && html`<div className="stack"><${Lvl} label="Qualité du sommeil" value=${d.sommeilQ} onChange=${up('sommeilQ')} />
-      <div className="stack"><span className="fld-l">Réveils dans la nuit</span><div className="chips">${[0, 1, 2, 3].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${d.reveils === n} onClick=${() => up('reveils')(n)}>${n === 3 ? '3 ou +' : n}</button>`)}</div></div></div>`}
-    ${photoDay && html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos.</b> Face, profil, dos avant de manger. À ajouter en haut de l’onglet Analyse.</span></div></div>`}
-    <button type="button" className="btn pri wide" disabled=${d.poids == null} onClick=${save}><${Icon} n="check" s=${18} />${d.poids == null ? 'Entre ton poids pour valider' : 'Valider le debrief'}</button>
+  if (!edit) return html`<${DebriefCard} date=${date} go=${go} onEdit=${() => { setOpen(null); setEdit(true); }} photos=${photoDay ? nPh : null} />`;
+  const etapes = ETAPES_MATIN.filter(e => e[0] !== 'photos' || photoDay);
+  const ok = { poids: d.poids != null, sommeil: d.sommeil != null, forme: d.energie != null && d.force != null, photos: nPh === POSES.length };
+  const cur = open || ((etapes.find(e => !ok[e[0]]) || [null])[0]);
+  const suite = k => { const i = etapes.findIndex(e => e[0] === k), n = etapes.slice(i + 1).concat(etapes.slice(0, i)).find(e => !ok[e[0]] && e[0] !== k); setOpen(n ? n[0] : '-'); };
+  const dw = d.poids != null ? d.poids - lastW : null, auto = j.auto || {};
+  const resume = { poids: ok.poids ? f1(d.poids) + ' kg' + (dw ? ' · ' + sgn(dw) + ' kg' : '') : null, sommeil: ok.sommeil ? f1(d.sommeil) + ' h' + (d.sommeilQ != null ? ' · qualité ' + d.sommeilQ / 2 + '/5' : '') + (auto.sommeil != null && auto.sommeil === d.sommeil ? ' · via Santé' : '') : null,
+    forme: ok.forme ? 'énergie ' + d.energie / 2 + '/5 · force ' + d.force / 2 + '/5' : (d.energie != null || d.force != null ? 'à compléter' : null), photos: nPh ? nPh + ' / ' + POSES.length : null };
+  const fait = etapes.filter(e => ok[e[0]]).length;
+  const upK = (k, f) => v => { setOpen(k); up(f)(v); };
+  const corps = k => k === 'poids' ? html`<${BigNum} id="ci-poids" label="Poids ce matin" unit="kg" value=${d.poids} onChange=${upK(k, 'poids')} step=${0.1} min=${40} max=${160} dec=${1} ph=${Math.round(lastW * 10) / 10}
+      hint=${d.poids == null ? 'Dernière pesée : ' + f1(lastW) + ' kg. Seule la moyenne 7 jours compte.' : (dw === 0 ? 'Identique à ta dernière pesée.' : sgn(dw) + ' kg vs ta dernière pesée (' + f1(lastW) + ' kg).')} />`
+    : k === 'sommeil' ? html`<${React.Fragment}><${BigNum} id="ci-sommeil" label="Durée de sommeil" unit="h" value=${d.sommeil} onChange=${upK(k, 'sommeil')} step=${0.25} min=${0} max=${16} dec=${2} ph=${7.5}
+        hint=${auto.sommeil != null && auto.sommeil === d.sommeil ? 'Importé de ta montre ou de ton téléphone. Corrige si besoin.' : d.sommeil != null && d.sommeil < 7 ? 'Sous 7 h : récupération et faim en pâtissent.' : 'Objectif : 7 h ou plus.'} />
+      <${Lvl} label="Qualité du sommeil" value=${d.sommeilQ} onChange=${upK(k, 'sommeilQ')} />
+      <div className="stack"><span className="fld-l">Réveils dans la nuit</span><div className="chips">${[0, 1, 2, 3].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${d.reveils === n} onClick=${() => upK(k, 'reveils')(d.reveils === n ? null : n)}>${n === 3 ? '3 ou +' : n}</button>`)}</div></div><//>`
+    : k === 'forme' ? html`<${React.Fragment}><${Lvl} label="Énergie ce matin" value=${d.energie} onChange=${upK(k, 'energie')} /><${Lvl} label="Force perçue à l’entraînement" value=${d.force} onChange=${upK(k, 'force')} /><//>`
+    : html`<${PhotosMatin} date=${date} />`;
+  const btnSuite = k => (ok[k] || k === 'photos') && html`<button type="button" className="btn sm rt-n" onClick=${() => suite(k)}>${etapes.some(e => e[0] !== k && !ok[e[0]]) ? 'Suivant' : 'OK'}<${Icon} n="chevR" s=${16} /></button>`;
+  return html`<${Card} cls="c5 r2 ci-card" title="Routine du matin" sub=${(cfg.profil.prenom ? 'Bonjour ' + cfg.profil.prenom + ' · ' : '') + 'à jeun · ' + dMid(date)} right=${j.ci && html`<button type="button" className="btn sm ghost" onClick=${() => { setD(init()); setEdit(false); }}>Annuler</button>`}>
+    <div className="rt-prog" aria-label=${fait + ' étapes sur ' + etapes.length}>${etapes.map(e => html`<i key=${e[0]} className=${ok[e[0]] ? 'on' : ''}></i>`)}<span>${fait} / ${etapes.length}${photoDay ? ' · jour photos' : ''}</span></div>
+    <div className="rt">${etapes.map((e, i) => { const k = e[0], on = cur === k; return html`<div key=${k} className=${cx('rt-s', on && 'open', ok[k] && 'done')}>
+      <button type="button" className="rt-h" aria-expanded=${on} onClick=${() => setOpen(on ? '-' : k)}>
+        <i className="rt-i">${ok[k] ? html`<${Icon} n="check" s=${18} w=${2.6} />` : html`<${Icon} n=${e[2]} s=${18} />`}</i>
+        <span><b>${e[1]}${k === 'poids' && html`<em>obligatoire</em>`}</b><small>${resume[k] || e[3]}</small></span>
+        <${Icon} n=${on ? 'up' : 'down'} s=${18} /></button>
+      ${on && html`<div className="rt-b">${corps(k)}${btnSuite(k)}</div>`}
+    </div>`; })}</div>
+    <button type="button" className="btn pri wide" disabled=${d.poids == null} onClick=${save}><${Icon} n="check" s=${18} />${d.poids == null ? 'Entre ton poids pour valider' : fait === etapes.length ? 'Valider ma routine' : 'Valider (' + fait + ' / ' + etapes.length + ')'}</button>
   <//>`;
 }
 
@@ -4876,6 +4917,14 @@ function PhotoImg({ p, alt }) {
   }, [p.asset, p.id]);
   return src ? html`<img src=${src} alt=${alt} loading="lazy" />` : html`<span>Photo indisponible</span>`;
 }
+/* Enregistre une photo de physique (date + pose) : sur le téléphone (app autonome) ou dans l'espace privé de l'artifact. */
+async function savePhoto(date, pose, file, assets) {
+  const local = !assets && STANDALONE, id = date + '-' + pose, blob = await downscale(file, local ? 1280 : 1600, 0.86);
+  if (local) { await PhotoDB.put(id, blob); Store.patch('photos', id, { date, pose, asset: 'local:' + id }); return; }
+  const res = await assets.upload(blob, { type: 'image/jpeg' }), old = (Store.get().photos[id] || {}).asset;
+  Store.patch('photos', id, { date, pose, asset: res.id }); if (old && old !== res.id && !String(old).startsWith('local:')) assets.delete(old).catch(() => {});
+}
+const photoErr = er => { const c = er && er.code; return c === 'too_large' ? 'Fichier trop lourd.' : c === 'quota_or_state' ? 'Stockage plein : supprime d’anciennes photos.' : c === 'unsupported_type' || (er && er.message === 'decode') ? 'Format non lisible. Utilise un JPEG ou un PNG.' : 'Envoi impossible. Réessaie.'; };
 const PH_JOURS = [[1, 'L', 'Lundi'], [2, 'M', 'Mardi'], [3, 'M', 'Mercredi'], [4, 'J', 'Jeudi'], [5, 'V', 'Vendredi'], [6, 'S', 'Samedi'], [0, 'D', 'Dimanche']];
 function PhotosCard({ date }) {
   const st = useStore(), S = st.get(), assets = st.caps().assets, local = !assets && STANDALONE, canUp = !!assets || local; const [pose, setPose] = useState('face'); const [busy, setBusy] = useState(''); const [ab, setAb] = useState({ a: '', b: '' });
@@ -4884,12 +4933,7 @@ function PhotosCard({ date }) {
   const up = async e => {
     const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file || !canUp) return;
     setBusy('Envoi…');
-    try {
-      const id = date + '-' + pose, blob = await downscale(file, local ? 1280 : 1600, 0.86);
-      if (local) { await PhotoDB.put(id, blob); Store.patch('photos', id, { date, pose, asset: 'local:' + id }); }
-      else { const res = await assets.upload(blob, { type: 'image/jpeg' }), old = (Store.get().photos[id] || {}).asset; Store.patch('photos', id, { date, pose, asset: res.id }); if (old && old !== res.id && !String(old).startsWith('local:')) assets.delete(old).catch(() => {}); }
-      setBusy(''); toast('Photo ' + pose + ' du ' + dTiny(date) + ' ajoutée');
-    } catch (er) { const c = er && er.code; setBusy(c === 'too_large' ? 'Fichier trop lourd.' : c === 'quota_or_state' ? 'Stockage plein : supprime d’anciennes photos.' : c === 'unsupported_type' || (er && er.message === 'decode') ? 'Format non lisible. Utilise un JPEG ou un PNG.' : 'Envoi impossible. Réessaie.'); }
+    try { await savePhoto(date, pose, file, assets); setBusy(''); toast('Photo ' + pose + ' du ' + dTiny(date) + ' ajoutée'); } catch (er) { setBusy(photoErr(er)); }
   };
   const del = p => { Store.del('photos', p.id); if (isLocalPhoto(p)) PhotoDB.del(p.id).catch(() => {}); else if (assets) assets.delete(p.asset).catch(() => {}); toast('Photo supprimée'); };
   const fig = (p, lab) => html`<figure className="ph">${p ? html`<${PhotoImg} p=${p} alt=${'Physique ' + pose + ' du ' + dTiny(p.date)} />` : html`<span>${lab}</span>`}${p && html`<figcaption>${dMid(p.date)}${(() => { const m = Apex.mm7(S.journal, p.date); return m ? ' · ' + f1(m.v) + ' kg' : ''; })()}</figcaption>`}</figure>`;
