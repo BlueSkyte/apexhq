@@ -4195,8 +4195,55 @@ function SeanceCard({ date }) {
 }
 
 /* Muscles travaillés par la séance du jour : le bonhomme allumé, et le nombre de séries par muscle. */
+/* Étirements doux conseillés les jours de repos, par muscle : [nom, durée, consigne]. */
+const ETIR = {
+  pec: ['Pectoraux au mur', '30 s / côté', 'Avant-bras contre le mur, coude à hauteur d’épaule ; tourne doucement le buste à l’opposé.'],
+  pecH: ['Haut des pecs au mur', '30 s / côté', 'Même position, main plus basse que l’épaule : tu sens l’étirement sous la clavicule.'],
+  dAnt: ['Épaule avant, mains dans le dos', '30 s', 'Doigts croisés derrière toi, bras tendus, ouvre la poitrine sans cambrer.'],
+  dLat: ['Bras croisé devant la poitrine', '30 s / côté', 'Ramène le bras tendu vers l’épaule opposée avec l’autre main.'],
+  dPost: ['Arrière d’épaule, bras croisé bas', '30 s / côté', 'Bras croisé sous le menton, tire au niveau du coude, épaules basses.'],
+  bic: ['Biceps au mur', '30 s / côté', 'Paume à plat sur le mur derrière toi, bras tendu ; tourne le buste vers l’extérieur.'],
+  tri: ['Triceps derrière la tête', '30 s / côté', 'Main entre les omoplates, l’autre main pousse doucement le coude vers le bas.'],
+  avb: ['Avant-bras, doigts vers soi', '20 s × 2 sens', 'Bras tendu, tire les doigts vers toi paume en haut, puis paume en bas.'],
+  lats: ['Grand dorsal, posture de prière', '40 s', 'À genoux, fesses vers les talons, bras tendus loin devant ; glisse vers un côté puis l’autre.'],
+  dosH: ['Haut du dos arrondi', '30 s', 'Tiens un poteau à hauteur de poitrine, recule les hanches et arrondis le dos entre les omoplates.'],
+  trap: ['Trapèzes, inclinaison de la tête', '20 s / côté', 'Oreille vers l’épaule, l’autre épaule bien basse ; laisse le poids de la main faire le travail.'],
+  lomb: ['Genoux contre la poitrine', '40 s', 'Allongé sur le dos, ramène les deux genoux et respire lentement dans le ventre.'],
+  quad: ['Quadriceps debout', '30 s / côté', 'Talon vers la fesse, genoux serrés, bassin légèrement rentré.'],
+  isch: ['Ischios, jambe sur un banc', '30 s / côté', 'Jambe tendue sur un support bas, penche-toi dos plat à partir des hanches.'],
+  fess: ['Fessiers en « figure 4 »', '30 s / côté', 'Sur le dos, cheville sur le genou opposé, tire la cuisse vers toi.'],
+  adduc: ['Adducteurs en papillon', '40 s', 'Assis, plantes de pieds collées, dos droit, coudes qui poussent doucement les genoux.'],
+  abduc: ['Hanche, jambe croisée derrière', '30 s / côté', 'Debout, croise une jambe derrière l’autre et pousse le bassin du côté de la jambe arrière.'],
+  mol: ['Mollets au mur', '30 s / côté', 'Jambe arrière tendue, talon au sol ; puis genou fléchi pour le bas du mollet.'],
+  abd: ['Abdos en cobra', '30 s', 'Allongé sur le ventre, mains sous les épaules, redresse le buste sans forcer le bas du dos.'],
+};
+const ETIR_BASE = ['lats', 'pec', 'quad', 'isch', 'fess', 'lomb'];
+function EtirementsRepos({ date }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), j = S.journal[date] || {};
+  /* Muscles travaillés lors des 2 jours précédents (séance faite, sinon séance prévue au planning). */
+  const src = []; let ks = [];
+  [[1, 3], [2, 2]].forEach(([i, nb]) => {
+    const d = Apex.addDays(date, -i), se = S.seances[d], jd = S.journal[d] || {}, t = Apex.seanceDuJour(cfg, jd, d), vol = {};
+    const list = se ? (se.exos || []).map(x => ({ e: x.e, n: (x.sets || []).length || 1 })) : t ? (Apex.progOf(cfg)[t] || []).map(x => ({ e: x[0], n: x[1] })) : [];
+    if (list.length) src.push((se && se.type) || t);
+    list.forEach(x => { const e = exos[x.e]; if (e) vol[e.m] = (vol[e.m] || 0) + x.n; });
+    ks = ks.concat(Object.keys(vol).filter(k => ETIR[k] && ks.indexOf(k) < 0).sort((a, b) => vol[b] - vol[a]).slice(0, nb));
+  });
+  const cible = ks.length > 0;
+  if (ks.length < 4) ks = ks.concat(ETIR_BASE.filter(k => ks.indexOf(k) < 0)).slice(0, 6);
+  if (ks.indexOf('lomb') < 0 && ks.length < 7) ks.push('lomb');
+  const fait = !!j.etirements, min = Math.round(ks.length * 1.4);
+  return html`<${Card} title="Étirements conseillés" sub=${'Jour de repos · ≈ ' + min + ' min'} right=${fait && html`<${Pill} st="good">Fait<//>`}>
+    <div className="mfig-lg"><${MuscleFig} m=${ks} s=${[]} h=${240} both /><span><i style=${{ background: 'var(--acc-hi)' }}></i>${cible ? 'Ciblés après ' + src.join(' et ') : 'Routine corps entier'}</span></div>
+    <p className="sec" style=${{ fontSize: 13 }}>Étirements doux pour récupérer : tiens chaque position sans à-coups, respire lentement, ne force jamais jusqu’à la douleur.</p>
+    <ol className="etir">${ks.map((k, i) => { const x = ETIR[k]; return html`<li key=${k}><span className="mfig-box"><${MuscleFig} m=${k} h=${44} /></span><div><b>${x[0]}</b><small>${Apex.MUSCLES[k] || k} · ${x[1]}</small><span>${x[2]}</span></div></li>`; })}</ol>
+    <button type="button" className=${cx('btn wide', !fait && 'pri')} onClick=${() => { Store.patch('journal', date, { date, etirements: fait ? null : true }); if (!fait) toast('Étirements faits, bonne récup'); }}><${Icon} n="check" s=${18} />${fait ? 'Étirements faits · annuler' : 'J’ai fait mes étirements'}</button>
+  <//>`;
+}
+
 function MusclesSeance({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), j = S.journal[date] || {}, se = S.seances[date], type = Apex.seanceDuJour(cfg, j, date);
+  if (!se && !type) return html`<${EtirementsRepos} date=${date} />`;
   const list = se ? (se.exos || []).map(x => ({ e: x.e, n: (x.sets || []).length }))
     : Array.isArray(j.plan) ? j.plan.map(x => ({ e: x.e, n: x.n })) : (Apex.progOf(cfg)[type] || []).map(x => ({ e: x[0], n: x[1] }));
   const dir = {}, ind = {};
