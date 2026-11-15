@@ -3915,7 +3915,7 @@ function MenuIASheet({ onClose, jour }) {
   const j = day ? (S.journal[jour] || {}) : {}, c = day ? Apex.cibleDuJour(cfg, j, jour) : null, meals = j.repas || [];
   const manges = meals.filter(m => m.ok && m.items.length), mange = manges.reduce((s, m) => Apex.add(s, Apex.totMeal(m, foods)), Apex.Z());
   const reste = day ? Apex.resteJour(c, mange) : null;
-  const defRepas = day ? Math.max(1, Math.min(6, meals.filter(m => !m.ok).length || (manges.length ? 2 : 4))) : +lsGet('menu:repas', 4);
+  const defRepas = day ? Math.max(1, Math.min(6, meals.filter(m => !m.ok).length || (manges.length ? 2 : 4))) : +lsGet('menu:repas', repasNb(cfg));
   const [repas, setRepas] = useState(defRepas); const [txt, setTxt] = useState(() => (day ? '' : lsGet('menu:txt', '')));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [res, setRes] = useState(null); const refus = useRef([]);
   const IDEES = day ? IDEES_JOUR : IDEES_SEM;
@@ -4011,7 +4011,13 @@ function SuppCard({ supL, supp, date }) {
   </section>`;
 }
 
-const SLOTS_VIDES = { salle: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Post-séance', '19:00'], ['Dîner', '20:30']], repos: [['Petit-déj', '08:00'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00']] };
+/* Repas du jour vides, nommés selon le nombre choisi (cfg.repasNb, 3 à 6) et le type de journée. */
+const SLOTS_N = {
+  salle: { 3: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Dîner', '20:00']], 4: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Dîner', '20:30']], 5: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Post-séance', '19:00'], ['Dîner', '20:30']], 6: [['Petit-déj', '07:30'], ['Collation', '10:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Post-séance', '19:00'], ['Dîner', '20:30']] },
+  repos: { 3: [['Petit-déj', '08:00'], ['Déjeuner', '12:30'], ['Dîner', '20:00']], 4: [['Petit-déj', '08:00'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00']], 5: [['Petit-déj', '08:00'], ['Collation', '10:30'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00']], 6: [['Petit-déj', '08:00'], ['Collation', '10:30'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00'], ['Collation du soir', '22:00']] },
+};
+const repasNb = cfg => { const n = +cfg.repasNb; return n >= 3 && n <= 6 ? n : 4; };
+const slotsVides = (cfg, statut) => ((SLOTS_N[statut] || SLOTS_N.repos)[repasNb(cfg)]).map(s => ({ id: Apex.uid(), nom: s[0], h: s[1], ok: false, items: [] }));
 function Repas({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
   const j = S.journal[date] || {}, meals = j.repas || [], c = Apex.cibleDuJour(cfg, j, date), t = Apex.totJour(j, foods);
@@ -4030,7 +4036,9 @@ function Repas({ date }) {
   const semOk = !!(cfg.repasSemaine && cfg.repasSemaine[Apex.dow(date)]);
   const vide = meals.every(m => !m.items.length);
   /* Les repas du jour existent d'office, vides : il ne reste qu'à les remplir. */
-  useEffect(() => { if (mode === 'libre' && j.repas == null && !man) put((SLOTS_VIDES[c.statut] || SLOTS_VIDES.repos).map(s => ({ id: Apex.uid(), nom: s[0], h: s[1], ok: false, items: [] }))); }, [date, mode, c.statut]);
+  useEffect(() => { if (j.repas == null && !man) put(slotsVides(cfg, c.statut)); }, [date, c.statut]);
+  /* Changer le nombre de repas : si la journée est encore vide, ses repas sont recréés ; sinon on garde ce qui est rempli. */
+  const setNb = n => { Store.patch('cfg', null, { repasNb: n }); if (vide && !man) put(slotsVides(Object.assign({}, cfg, { repasNb: n }), c.statut)); toast(n + ' repas par jour'); };
   const gen = () => { put(Apex.planDuJour(cfg, c.statut, c, date)); toast('Menu du ' + jourNom + ' chargé, calé sur ' + f0(c.kcal) + ' kcal'); };
   const saveJour = () => { Store.patch('cfg', null, { repasMode: 'perso', repasSemaine: Object.assign({}, cfg.repasSemaine || {}, { [Apex.dow(date)]: Apex.repasEnModele(meals, foods) }) }); toast('Enregistré pour tous les ' + jourNom + 's'); };
   const tplOk = !!(cfg.repasModeles && cfg.repasModeles[c.statut]);
@@ -4079,7 +4087,9 @@ function Repas({ date }) {
         <//>
         <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => setIa(true)} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} />
         <${Card} title="Repas" sub="Touche un aliment pour le remplacer" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
-          ${meals.length && (mode === 'libre' || !vide) ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods} pesee=${pesee}
+          ${!man && html`<div className="rp-nb"><span>Repas par jour</span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repasNb(cfg) === n} onClick=${() => setNb(n)}>${n}</button>`)}</div></div>`}
+          ${vide && mode !== 'libre' && !man && html`<div className="note acc"><${Icon} n="utensils" /><div><span>${mode === 'perso' && !semOk ? 'Remplis tes repas, ou charge le menu de base puis enregistre-le pour les ' + jourNom + 's.' : 'Remplis tes repas toi-même, ou charge le menu du ' + jourNom + ' calé sur ' + f0(c.kcal) + ' kcal.'}</span><button type="button" className="btn sm pri" onClick=${gen}><${Icon} n="utensils" s=${16} />${mode === 'perso' && semOk ? 'Charger mon menu du ' + jourNom : 'Charger le menu du ' + jourNom}</button></div></div>`}
+          ${meals.length ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods} pesee=${pesee}
             onToggle=${() => mapMeal(m.id, x => Object.assign({}, x, { ok: !x.ok }))}
             onQty=${(it, q) => mapItem(m.id, it.id, i => { const o = Object.assign({}, i, { q }); delete o.adj; return o; })}
             onSwap=${it => setSheet({ t: 'swap', mid: m.id, iid: it.id })}
@@ -5535,6 +5545,7 @@ function Coach({ date }) {
 /* ---- 66-ui-onboard.js ---- */
 /* Macrolya — assistant de démarrage : questions, calcul précis des calories, programme de séances, lien Claude.
    S'affiche à la première ouverture (profil vide) ou via Réglages › Refaire le questionnaire. */
+const REPAS_TXT = { 3: 'Petit-déj, déjeuner, dîner.', 4: 'Petit-déj, déjeuner, collation (pré-séance les jours de salle), dîner.', 5: 'Jours de salle : petit-déj, déjeuner, pré-séance, post-séance, dîner. Repos : 2 collations.', 6: 'Petit-déj, collation, déjeuner, pré et post-séance, dîner (collation du soir au repos).' };
 const STEPS = ['bienvenue', 'prenom', 'objectif', 'intensite', 'profil', 'activite', 'training', 'focus', 'alim', 'supps', 'resultat', 'claude'];
 const METIERS = [['sedentaire', 'Sédentaire', 'Bureau, études, télétravail : peu de déplacements.', 'clock'], ['debout', 'Debout ou mobile', 'Commerce, enseignement, service : tu bouges dans la journée.', 'steps'], ['actif', 'Physique', 'Manutention, chantier, métier très actif.', 'bolt']];
 const NIVEAUX = [['debutant', 'Débutant', 'Moins d’un an de musculation régulière.', 'target'], ['intermediaire', 'Intermédiaire', '1 à 3 ans, tu connais les mouvements de base.', 'dumbbell'], ['avance', 'Avancé', 'Plus de 3 ans, progression lente.', 'trend']];
@@ -5558,7 +5569,7 @@ async function optimiserProgramme(sample, a, groupes, cfg) {
 
 function Wizard({ redo, onClose }) {
   const st = useStore(), cfg = st.cfg(), prev = cfg.q || {};
-  const [a, setA] = useState(() => Object.assign({ prenom: (cfg.profil && cfg.profil.prenom) || '', objectif: 'seche', intensite: 'normal', sexe: 'H', age: null, taille: null, poids: null, mg: null, poidsCible: null, metier: 'debout', pas: 8000, seances: 4, duree: 60, cardio: 0, niveau: 'intermediaire', split: 'ulul', splitPerso: [], persoJours: {}, persoVide: false, regime: 'omnivore', exclus: '', focus: [], supps: [], suppsAutre: '', whey: null }, prev, { split: Apex.splitNorm(prev.split) }));
+  const [a, setA] = useState(() => Object.assign({ prenom: (cfg.profil && cfg.profil.prenom) || '', objectif: 'seche', intensite: 'normal', sexe: 'H', age: null, taille: null, poids: null, mg: null, poidsCible: null, metier: 'debout', pas: 8000, seances: 4, duree: 60, cardio: 0, niveau: 'intermediaire', split: 'ulul', splitPerso: [], persoJours: {}, persoVide: false, regime: 'omnivore', repasNb: 4, exclus: '', focus: [], supps: [], suppsAutre: '', whey: null }, prev, { split: Apex.splitNorm(prev.split) }));
   const [step, setStep] = useState(0); const [busy, setBusy] = useState(''); const [scan, setScan] = useState(false); const [wmsg, setWmsg] = useState(''); const [wbusy, setWbusy] = useState(false); const [linked, setLinked] = useState(!!(cfg.claude && cfg.claude.on));
   const set = p => setA(x => Object.assign({}, x, p));
   const pickSplit = k => {
@@ -5598,9 +5609,9 @@ function Wizard({ redo, onClose }) {
         setBusy('L’IA conçoit ton programme selon tes points faibles (≈ 30 s)…');
         try { const r = await optimiserProgramme(sample, a, groupes, cfgNow); if (r) { prog = r; ia = ' Programme optimisé par l’IA.'; } else ia = ' Programme calculé par l’app (la proposition de l’IA n’était pas valide).'; } catch (e) { ia = ' Programme calculé par l’app (IA indisponible).'; }
       }
-      const q = { prenom: a.prenom.trim().slice(0, 24), objectif: a.objectif, intensite: a.intensite, sexe: a.sexe, age: a.age, taille: a.taille, poids: a.poids, mg: a.mg, poidsCible: a.poidsCible, metier: a.metier, pas: a.pas, seances: a.seances, duree: a.duree, cardio: a.cardio, niveau: a.niveau, split: a.split, splitPerso: a.splitPerso, persoJours: a.persoJours, persoVide: a.persoVide, regime: a.regime, exclus: a.exclus, focus: a.focus, supps: a.supps, suppsAutre: a.suppsAutre, whey: a.whey, fait: Apex.today() };
+      const q = { prenom: a.prenom.trim().slice(0, 24), objectif: a.objectif, intensite: a.intensite, sexe: a.sexe, age: a.age, taille: a.taille, poids: a.poids, mg: a.mg, poidsCible: a.poidsCible, metier: a.metier, pas: a.pas, seances: a.seances, duree: a.duree, cardio: a.cardio, niveau: a.niveau, split: a.split, splitPerso: a.splitPerso, persoJours: a.persoJours, persoVide: a.persoVide, regime: a.regime, repasNb: a.repasNb, exclus: a.exclus, focus: a.focus, supps: a.supps, suppsAutre: a.suppsAutre, whey: a.whey, fait: Apex.today() };
       Store.patch('cfg', null, Object.assign({ onboarded: true, q }, base, {
-        focus: groupes, supps: Apex.suppsListe(a.supps, a.suppsAutre), seanceTypes: prog.seanceTypes, programme: prog.programme, planning: prog.planning, photosJour: 0,
+        focus: groupes, supps: Apex.suppsListe(a.supps, a.suppsAutre), seanceTypes: prog.seanceTypes, programme: prog.programme, planning: prog.planning, photosJour: 0, repasNb: a.repasNb || 4,
         repasModeles: Apex.modelesPour(a, foods), aliments: Object.assign({}, cfgNow.aliments, Apex.wheyAliments(a.whey)),
       }));
       toast((a.prenom.trim() ? a.prenom.trim() + ', ton' : 'Ton') + ' plan est prêt : ' + p.salle.kcal + ' / ' + p.repos.kcal + ' kcal.' + ia); onClose();
@@ -5655,6 +5666,8 @@ function Wizard({ redo, onClose }) {
       <${MultiChips} items=${Apex.FOCUS_CHOIX} value=${a.focus} onToggle=${v => toggle('focus', v)} />
       <p className="mut" style=${{ fontSize: 12 }}>${a.focus.length ? a.focus.length + ' choisi' + (a.focus.length > 1 ? 's' : '') + '. Conseil : 3 maximum pour que ça reste efficace.' : 'Aucun : programme équilibré.'}</p>`,
     alim: () => html`<h1>Ton alimentation</h1>
+      <div className="stack"><span className="fld-l">Combien de repas par jour ?<b>${a.repasNb || 4}</b></span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${(a.repasNb || 4) === n} onClick=${() => set({ repasNb: n })}>${n} repas</button>`)}</div>
+        <span className="mut" style=${{ fontSize: 12 }}>${REPAS_TXT[a.repasNb || 4]}</span></div>
       <div className="stack"><span className="fld-l">Régime</span><${Opts} items=${REGIMES} value=${a.regime} onPick=${v => set({ regime: v })} /></div>
       <label className="fld" htmlFor="w-excl"><span className="fld-l">Allergies ou aliments à éviter</span><input id="w-excl" className="inp" type="text" maxLength="120" placeholder="ex. arachides, gluten, poisson" value=${a.exclus} onChange=${e => set({ exclus: e.target.value })} /></label>
       <p className="mut" style=${{ fontSize: 12 }}>Ces aliments sont retirés de ton plan repas et remplacés par des équivalents.</p>`,
