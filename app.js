@@ -3498,7 +3498,7 @@ function DebriefCard({ date, go, onEdit, photos }) {
   };
   return html`<${Card} cls="c5 r2" title=${cfg.profil.prenom ? 'Bonjour ' + cfg.profil.prenom : 'Debrief matinal'} sub=${(cfg.profil.prenom ? 'Debrief matinal · ' : '') + dMid(date)} right=${html`<button type="button" className="btn sm" onClick=${onEdit}>Modifier</button>`}>
     <div className=${cx('verdict', v[0])}><i><${Icon} n=${v[2]} s=${22} w=${2.2} /></i><div><b>${v[1]}</b><span>${todo.length ? todo[0].txt : 'Sommeil, pas et calories sont dans la cible. Garde le plan du jour.'}</span></div></div>
-    <div className="tiles">
+    <div className="tiles t2">
       <div className="tile"><span>Poids</span><b>${f1(j.poids)}<small>kg</small></b><em>moy. 7 j ${m ? f1(m.v) : '–'}</em></div>
       <div className="tile"><span>Rythme</span><b>${t ? sgn(t.pct) : '–'}<small>%/sem</small></b><em>${t ? sgn(t.dk, f2) + ' kg' : 'dès 2 semaines'}</em></div>
       <div className="tile"><span>Sommeil</span><b>${f1(j.sommeil)}<small>h</small></b><em>${j.sommeilQ != null ? 'qualité ' + j.sommeilQ + '/10' : ''}</em></div>
@@ -3715,14 +3715,39 @@ function Qty({ it, f, onChange, pesee }) {
   </div>`;
 }
 
+/* Détail d'un repas : chaque aliment avec sa quantité, ses kcal et ses macros, puis le total. */
+const qteTxt = (it, f) => (it.x ? '1 portion' : f.u ? fq(it.q) + ' ' + (it.q > 1 && !/[sx]$/.test(String(f.u[0]).split(' ')[0]) ? String(f.u[0]).replace(/^(\S+)/, '$1s') : f.u[0]) : f0(it.q) + ' g');
+function MealDetail({ m, foods, onClose, onSwap }) {
+  const t = Apex.totMeal(m, foods), rows = m.items.map(it => ({ it, f: Apex.foodOf(it, foods), x: Apex.mac(it, foods) })).filter(r => r.f);
+  const bar = x => { const k = x.p * 4 + x.g * 4 + x.l * 9 || 1; return html`<div className="md-bar" aria-hidden="true"><i style=${{ width: x.p * 4 / k * 100 + '%', background: 'var(--p)' }}></i><i style=${{ width: x.g * 4 / k * 100 + '%', background: 'var(--g)' }}></i><i style=${{ width: x.l * 9 / k * 100 + '%', background: 'var(--l)' }}></i></div>`; };
+  const cel = (v, u, c) => html`<span className="md-c"><b style=${c ? { color: c } : null}>${f0(v)}</b><small>${u}</small></span>`;
+  return html`<${Sheet} title=${m.nom + (m.h ? ' · ' + m.h : '')} onClose=${onClose}>
+    <div className="md-tot">
+      <div><b>${f0(t.k)}</b><small>kcal</small></div>
+      <div><b style=${{ color: 'var(--p)' }}>${f0(t.p)} g</b><small>Protéines</small></div>
+      <div><b style=${{ color: 'var(--g)' }}>${f0(t.g)} g</b><small>Glucides</small></div>
+      <div><b style=${{ color: 'var(--l)' }}>${f0(t.l)} g</b><small>Lipides</small></div>
+    </div>
+    ${bar(t)}
+    ${rows.length ? html`<div className="md-l">${rows.map(r => html`<div key=${r.it.id} className="md-r">
+      <div className="md-n"><b>${r.f.n}</b><span>${qteTxt(r.it, r.f)} · ${f0(r.x.k)} kcal${r.x.f ? ' · fibres ' + fq(Math.round(r.x.f * 10) / 10) + ' g' : ''}</span></div>
+      <div className="md-m">${cel(r.x.p, 'P', 'var(--p)')}${cel(r.x.g, 'G', 'var(--g)')}${cel(r.x.l, 'L', 'var(--l)')}</div>
+      ${bar(r.x)}
+      <button type="button" className="btn sm ghost md-sw" onClick=${() => { onClose(); onSwap(r.it); }}><${Icon} n="swap" s=${15} />Remplacer</button>
+    </div>`)}</div>` : html`<div className="empty"><span>Aucun aliment dans ce repas.</span></div>`}
+    <p className="mut" style=${{ fontSize: 12 }}>${m.ok ? 'Repas coché comme mangé.' : 'Repas prévu, pas encore coché.'} Valeurs calculées pour la quantité indiquée.</p>
+  <//>`;
+}
+
 function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel }) {
-  const t = Apex.totMeal(m, foods);
+  const t = Apex.totMeal(m, foods); const [det, setDet] = useState(false);
   return html`<article className=${cx('meal', m.ok && 'ok')}>
     <div className="meal-h">
       <button type="button" className="chk" aria-pressed=${!!m.ok} aria-label=${(m.ok ? 'Marquer non mangé : ' : 'Marquer mangé : ') + m.nom} onClick=${onToggle}><${Icon} n="check" s=${18} w=${2.5} /></button>
-      <div className="meal-t"><b>${m.nom}</b><span>${m.h || ''}${m.ok ? ' · mangé' : ''}</span></div>
-      <div className="meal-k"><b>${f0(t.k)}</b><span>kcal · ${macTxt(t)}</span></div>
+      <button type="button" className="meal-t meal-open" onClick=${() => setDet(true)} aria-label=${'Détail du repas ' + m.nom}><b>${m.nom}${m.items.length > 0 && html`<${Icon} n="chevR" s=${14} />`}</b><span>${m.h || ''}${m.ok ? ' · mangé' : ''}${m.items.length ? ' · détail' : ''}</span></button>
+      <button type="button" className="meal-k meal-open" onClick=${() => setDet(true)} tabIndex="-1" aria-hidden="true"><b>${f0(t.k)}</b><span>kcal · ${macTxt(t)}</span></button>
     </div>
+    ${det && html`<${MealDetail} m=${m} foods=${foods} onSwap=${onSwap} onClose=${() => setDet(false)} />`}
     ${m.items.length > 0 && html`<div className="its">${m.items.map(it => {
       const f = Apex.foodOf(it, foods); if (!f) return null; const x = Apex.mac(it, foods);
       return html`<div key=${it.id} className=${cx('it', !(it.q > 0) && 'zero')}>
