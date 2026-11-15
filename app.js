@@ -2021,7 +2021,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     [['banane', 1, 1], ['galette', 3, 1], ['miel', 15, 0]],
   ];
   const LEGUMES = ['haricots', 'brocoli', 'courgette', 'epinards', 'poelee', 'poivron', 'champignons', 'salade'];
-  function corrigerMenu(sem, cfg) {
+  /* opts.libre : la personne a formulé une demande → on n'impose plus les règles par repas, on retire seulement ses exclusions. */
+  function corrigerMenu(sem, cfg, opts) {
     const foods = A.allFoods(cfg), q = cfg.q || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {}, wheyOk = (!cfg.q || !!q.whey) && !!foods[WHEY];
     const dispo = id => !!foods[id] && !ex[id] && (id !== WHEY || wheyOk);
     const item = (id, qte, adj) => ({ a: id, q: qte, adj: adj && foods[id].r ? 1 : 0 });
@@ -2030,6 +2031,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     SEMAINE.forEach((d, di) => {
       if (!sem[d]) return;
       out[d] = sem[d].map(m => {
+        if (opts && opts.libre) { const items = m.items.filter(it => it.x || dispo(it.a)); return items.length ? Object.assign({}, m, { items }) : m; }
         if (m.items.some(it => it.x)) return m;
         const kind = SLOT(m.nom); let items = m.items.filter(it => dispo(it.a));
         if (!items.length && kind !== 'post' && kind !== 'pre') items = m.items.slice();
@@ -2052,6 +2054,20 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return out;
   }
   const structureRepas = n => ({ 3: 'Petit-déj, Déjeuner, Dîner.', 4: 'Petit-déj, Déjeuner, Collation (les jours de séance : Pré-séance), Dîner.', 5: 'Petit-déj, Déjeuner, Pré-séance, Post-séance, Dîner (les jours de repos : Petit-déj, Déjeuner, Collation, Collation, Dîner).', 6: 'Petit-déj, Collation, Déjeuner, Pré-séance, Post-séance, Dîner (les jours de repos : Petit-déj, Collation, Déjeuner, Collation, Dîner, Collation du soir).' }[n] || 'Petit-déj, Déjeuner, Collation, Dîner.');
+  /* ---------- l'IA s'adapte à toute demande et varie les menus ---------- */
+  const INSPI = ['méditerranéenne', 'asiatique (wok, riz, sauce soja, gingembre)', 'mexicaine (tacos, chili, burrito bowl)', 'française de bistrot', 'indienne douce (curry, dal, tikka)', 'libanaise (taboulé, houmous, grillades)', 'italienne (pâtes, risotto, piccata)', 'japonaise (poke, donburi, teriyaki)', 'street food healthy (burger, wrap, kebab maison)', 'marocaine (tajine, couscous)', 'grecque (souvlaki, tzatziki, feta)', 'coréenne (bibimbap, bœuf bulgogi)', 'de saison et du terroir', 'tout au four ou à l’air fryer', 'bowls colorés et frais', 'brunch salé et sucré', 'thaïe (curry, salade de bœuf, riz jasmin)', 'espagnole (paella, tortilla, plancha)'];
+  const inspiration = () => INSPI[Math.floor(Math.random() * INSPI.length)];
+  /* Aliments et plats les plus présents ces derniers jours (mangés ou prévus) et dans la semaine enregistrée : à ne pas resservir. */
+  function recentsRepas(journal, cfg, date, n) {
+    const foods = A.allFoods(cfg), cpt = {};
+    const vu = it => { const nom = it.x ? it.x.n : foods[it.a] && foods[it.a].c !== 'leg' && foods[it.a].c !== 'fruit' ? foods[it.a].n : null; if (nom) cpt[nom] = (cpt[nom] || 0) + 1; };
+    for (let i = 0; i <= (n || 10); i++) { const j = journal && journal[A.addDays(date, -i)]; ((j && j.repas) || []).forEach(m => (m.items || []).forEach(vu)); }
+    Object.keys(cfg.repasSemaine || {}).forEach(d => (cfg.repasSemaine[d] || []).forEach(m => (m.items || []).forEach(vu)));
+    return Object.keys(cpt).sort((a, b) => cpt[b] - cpt[a]).slice(0, 18).map(k => k + (cpt[k] > 1 ? ' ×' + cpt[k] : ''));
+  }
+  const blocDemande = txt => 'LA DEMANDE DE LA PERSONNE PRIME SUR TOUT LE RESTE (sauf ses exclusions et son régime) : « ' + String(txt).slice(0, 700) + ' ».\nElle peut être de n’importe quel type : une envie (cuisine d’un pays, plat précis, sucré ou salé, « que des plats froids »), une situation (restaurant, fast-food, cantine, voyage, soirée, pas de cuisine, petit budget, peu de temps, batch cooking), un format (nombre ou horaires des repas, jeûne, un seul gros repas, brunch, cheat meal contrôlé), un objectif (plus de protéines, moins de glucides le soir, digestion légère…). Interprète-la intelligemment et applique-la à la lettre ; les règles par défaut ne valent que là où la demande ne dit rien. Restaurant ou fast-food : utilise des plats libres chiffrés de façon réaliste (carte typique de ce type d’enseigne).';
+  const blocVariete = o => 'VARIÉTÉ (important) : propose des repas différents de ceux d’habitude, jamais le même plat principal deux fois.' + (o.recents && o.recents.length ? ' Déjà très présent ces derniers jours, à éviter ou à limiter : ' + o.recents.join(', ') + '.' : '') + ' Inspiration tirée au hasard pour cette fois (à suivre si la demande ne dit rien d’autre) : cuisine ' + (o.inspiration || inspiration()) + '. Varie les sources de protéines, les féculents, les légumes, les modes de cuisson et les assaisonnements.' + (o.refus && o.refus.length ? '\nLa personne a refusé la proposition précédente : propose quelque chose de CLAIREMENT différent de ' + o.refus.join(', ') + '.' : '');
+
   function promptMenuSemaine(o) {
     const cfg = o.cfg, ip = A.iaProfil(cfg), n = o.repas || 4, liste = alimentsPourIA(cfg), q = cfg.q || {};
     const cibles = SEMAINE.map(d => { const t = cfg.planning && cfg.planning[d], c = t ? cfg.cibles.salle : cfg.cibles.repos; return d + ' = ' + JOURS[d] + ' : ' + (t ? 'jour de séance (' + t + ')' : 'repos') + ', cible ' + c.kcal + ' kcal, P ' + c.p + ' g, G ' + c.g + ' g, L ' + c.l + ' g'; });
@@ -2060,45 +2076,48 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       'Profil : ' + ip.ligne + ', objectif ' + ip.objTxt + (q.regime && q.regime !== 'omnivore' ? ', régime ' + q.regime : '') + (q.exclus ? ', aliments à éviter : ' + q.exclus : '') + '.',
       'Cibles par jour (clé du JSON = numéro du jour, 0 = dimanche) :\n' + cibles.join('\n'),
       'Nombre de repas par jour : ' + n + '. Structure par défaut : ' + structureRepas(n) + ' Si les contraintes de la personne décrivent les repas voulus (leur nombre, leurs noms, par exemple « petit-déj, midi, pré-séance, post-séance, dîner »), suis-les à la lettre tous les jours. Chaque repas a une heure "h" au format HH:MM (pré-séance 1 h 30 à 2 h avant la séance, post-séance dans l’heure qui suit, dîner 1 h à 1 h 30 après).',
-      'RÈGLES DE DIÉTÉTIQUE SPORTIVE PAR REPAS (impératives, un menu qui ne les respecte pas est corrigé par l’app) :\n- Les VRAIS GROS REPAS sont le déjeuner et le dîner : viande ou poisson, féculent (riz, pâtes, pommes de terre…), légumes et un peu de bonne matière grasse, en grosses portions (chacun environ 30 à 35 % des calories du jour). Varie les protéines d’un jour à l’autre (volaille, poisson, bœuf maigre, œufs, légumineuses).\n- Les autres repas sont LÉGERS (environ 8 à 15 % des calories chacun) : jamais de plat cuisiné, de viande ni de féculent cuit.\n- Petit-déj léger : protéine (skyr, fromage blanc, œufs, whey) + flocons d’avoine ou pain complet + un fruit.\n- Pré-séance légère : glucides faciles à digérer + un peu de protéines, très peu de lipides et de fibres (ex. flocons d’avoine + banane + skyr ; galettes de riz + miel + fromage blanc ; pain + miel + fromage blanc). Jamais de légumes, de fruits à coque, de viande ni d’œufs.\n- Post-séance légère : un shake ou une collation rapide à digérer : whey (ou skyr / fromage blanc) + banane ou fruit + galettes de riz + miel. Jamais de viande, de poisson, d’œufs, de riz cuit, de pâtes, de légumes ni de fruits à coque : le vrai repas vient ensuite, au dîner.\n- Collation : skyr, fromage blanc ou whey + un fruit.\n- Les protéines sont réparties sur tous les repas et la cible protéines du jour doit être atteinte ; la whey est un vrai outil (1 dose en pré ou post-séance, ou au petit-déj). Donne des quantités indicatives qui respectent ces proportions : l’app recale ensuite le total sur les macros.',
-      o.contraintes ? 'CONTRAINTES DE LA PERSONNE, à respecter strictement (horaires des repas, lieux, cantine, matériel, budget, temps de préparation, goûts) : « ' + String(o.contraintes).slice(0, 600) + ' ». Adapte les repas et leurs horaires en conséquence ; si une contrainte l’impose, propose une solution (par exemple un repas déplacé, plus léger ou à emporter).' : 'Aucune contrainte particulière.',
+      'RÈGLES DE DIÉTÉTIQUE SPORTIVE PAR REPAS (' + (o.contraintes ? 'par défaut : la demande de la personne passe avant' : 'impératives, un menu qui ne les respecte pas est corrigé par l’app') + ') :\n- Les VRAIS GROS REPAS sont le déjeuner et le dîner : viande ou poisson, féculent (riz, pâtes, pommes de terre…), légumes et un peu de bonne matière grasse, en grosses portions (chacun environ 30 à 35 % des calories du jour). Varie les protéines d’un jour à l’autre (volaille, poisson, bœuf maigre, œufs, légumineuses).\n- Les autres repas sont LÉGERS (environ 8 à 15 % des calories chacun) : jamais de plat cuisiné, de viande ni de féculent cuit.\n- Petit-déj léger : protéine (skyr, fromage blanc, œufs, whey) + flocons d’avoine ou pain complet + un fruit.\n- Pré-séance légère : glucides faciles à digérer + un peu de protéines, très peu de lipides et de fibres (ex. flocons d’avoine + banane + skyr ; galettes de riz + miel + fromage blanc ; pain + miel + fromage blanc). Jamais de légumes, de fruits à coque, de viande ni d’œufs.\n- Post-séance légère : un shake ou une collation rapide à digérer : whey (ou skyr / fromage blanc) + banane ou fruit + galettes de riz + miel. Jamais de viande, de poisson, d’œufs, de riz cuit, de pâtes, de légumes ni de fruits à coque : le vrai repas vient ensuite, au dîner.\n- Collation : skyr, fromage blanc ou whey + un fruit.\n- Les protéines sont réparties sur tous les repas et la cible protéines du jour doit être atteinte ; la whey est un vrai outil (1 dose en pré ou post-séance, ou au petit-déj). Donne des quantités indicatives qui respectent ces proportions : l’app recale ensuite le total sur les macros.',
+      o.contraintes ? blocDemande(o.contraintes) + ' Elle peut viser toute la semaine ou des jours précis (« vendredi resto », « dimanche brunch ») : applique-la où elle s’adresse.' : 'Aucune demande particulière.',
+      blocVariete(o) + ' Sur la semaine, chaque jour a des plats différents.',
       'Aliments de référence (id=nom ; quantité en g ou en unité indiquée ; kcal/P/G/L pour 100 g). Les aliments marqués ★ ont été ajoutés par la personne à sa bibliothèque : privilégie-les quand ils conviennent au repas :\n' + base.join('\n'),
       'Règles : chaque repas contient 2 à 8 éléments sous la forme ["id", quantité]. Pour un plat qui n’est pas dans la liste (cantine, restaurant, plat maison), utilise un objet {"n":"nom","k":kcal,"p":protéines,"g":glucides,"l":lipides} pour la portion entière, avec une estimation honnête. Les quantités seront recalées par l’app sur les cibles : concentre-toi sur le choix des aliments, la variété (pas le même menu tous les jours), les horaires et la faisabilité. Protéines réparties sur les repas, féculents autour de l’entraînement.',
       'Réponds uniquement par un objet JSON : {"jours":{"1":[{"nom":"Petit-déj","h":"08:00","items":[["avoine",60],["skyr",200]]}],"2":[...],"3":[...],"4":[...],"5":[...],"6":[...],"0":[...]}}. Les 7 jours doivent être présents.'].join('\n\n');
   }
-  function validerMenuSemaine(r, cfg) {
+  /* Un jour proposé par l'IA → repas validés (aliments connus ou plats libres chiffrés), ou null si invalide. */
+  function validerJourIA(day, foods, min) {
+    if (!Array.isArray(day) || day.length < (min == null ? 2 : min) || day.length > 8) return null;
+    const meals = [];
+    for (let i = 0; i < day.length; i++) {
+      const m = day[i]; if (!m || !Array.isArray(m.items) || m.items.length < 1 || m.items.length > 9) return null;
+      const items = [];
+      for (const it of m.items) {
+        if (Array.isArray(it)) {
+          const f = foods[it[0]], q = Number(it[1]); if (!f || !(q > 0) || q > (f.u ? 20 : 1200)) return null;
+          items.push({ a: f.id, q: f.u ? Math.round(q * 2) / 2 : Math.round(q), adj: f.r ? 1 : 0 });
+        } else if (it && typeof it === 'object' && it.n) {
+          const k = Number(it.k); if (!(k >= 20 && k <= 2500)) return null;
+          items.push({ x: { n: String(it.n).slice(0, 60), k: Math.round(k), p: Math.round(+it.p || 0), g: Math.round(+it.g || 0), l: Math.round(+it.l || 0), f: Math.round(+it.f || 0) }, q: 1 });
+        } else return null;
+      }
+      meals.push({ id: 'm' + (i + 1), nom: String(m.nom || 'Repas').trim().slice(0, 24) || 'Repas', h: heureProp(m.h), items });
+    }
+    return meals;
+  }
+  function validerMenuSemaine(r, cfg, opts) {
     try {
       const foods = A.allFoods(cfg), J = r && r.jours; if (!J || typeof J !== 'object') return null;
       const out = {};
-      SEMAINE.forEach(d => {
-        const day = J[d]; if (!Array.isArray(day) || day.length < 2 || day.length > 8) return;
-        const meals = [];
-        for (let i = 0; i < day.length; i++) {
-          const m = day[i]; if (!m || !Array.isArray(m.items) || m.items.length < 1 || m.items.length > 9) return;
-          const items = [];
-          for (const it of m.items) {
-            if (Array.isArray(it)) {
-              const f = foods[it[0]], q = Number(it[1]); if (!f || !(q > 0) || q > (f.u ? 20 : 1200)) return;
-              items.push({ a: f.id, q: f.u ? Math.round(q * 2) / 2 : Math.round(q), adj: f.r ? 1 : 0 });
-            } else if (it && typeof it === 'object' && it.n) {
-              const k = Number(it.k); if (!(k >= 20 && k <= 2500)) return;
-              items.push({ x: { n: String(it.n).slice(0, 60), k: Math.round(k), p: Math.round(+it.p || 0), g: Math.round(+it.g || 0), l: Math.round(+it.l || 0), f: Math.round(+it.f || 0) }, q: 1 });
-            } else return;
-          }
-          meals.push({ id: 'm' + (i + 1), nom: String(m.nom || 'Repas').trim().slice(0, 24) || 'Repas', h: heureProp(m.h), items });
-        }
-        out[d] = meals;
-      });
+      SEMAINE.forEach(d => { const meals = validerJourIA(J[d], foods); if (meals) out[d] = meals; });
       const ok = Object.keys(out); if (ok.length < 4) return null;
       const manquants = []; SEMAINE.forEach(d => { if (!out[d]) { manquants.push(d); out[d] = out[ok[manquants.length % ok.length]]; } });
-      return { semaine: corrigerMenu(out, cfg), manquants };
+      return { semaine: corrigerMenu(out, cfg, opts), manquants };
     } catch (e) { return null; }
   }
   /* Recale les quantités de chaque jour sur ses cibles (kcal, protéines, glucides, lipides) : l'IA choisit, l'app calcule. */
   /* Optimiseur d'un jour : ajuste finement les quantités (descente de coordonnées) pour coller aux 4 cibles (kcal, P, G, L)
      tout en gardant les gros repas au déjeuner et au dîner et les autres repas légers. Les plats libres et les légumes ne bougent pas. */
   const PART_MAX = { pdj: 0.2, pre: 0.14, post: 0.15, col: 0.12 };
-  function optimiserJour(meals, c, foods) {
+  function optimiserJour(meals, c, foods, opts) {
     const ms = meals.map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0).map(i => Object.assign({}, i)) }));
     const vars = [];
     ms.forEach((m, mi) => { if (m.ok) return; m.items.forEach(it => { const f = it.x ? null : foods[it.a]; if (!f || f.c === 'leg') return; const hi = f.id === WHEY ? 2 : Math.min(it.q * 2.4, f.u ? 8 : f.l > 40 ? 40 : 700), lo = f.id === WHEY ? 0 : Math.max(f.u ? 0.5 : 5, it.q * 0.4); vars.push({ it, f, mi, q0: it.q, lo, hi: Math.max(hi, lo) }); }); });
@@ -2110,7 +2129,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       let j = 5 * e(T.k, c.kcal) + (T.p < c.p ? 4 : 0.5) * e(T.p, c.p) + 4 * e(T.g, c.g) + 3 * e(T.l, c.l);
       if (c.pMin && T.p < c.pMin) j += 50 * e(T.p, c.pMin);
       if (T.p > c.p * 1.2) j += 6 * e(T.p, c.p * 1.2); // pas de surplus de protéines pour « boucher » les calories
-      ms.forEach((m, i) => { const sh = mk[i] / c.kcal, cap = PART_MAX[kind[i]]; if (cap && sh > cap) j += 40 * (sh - cap) * (sh - cap); if (kind[i] === 'main' && sh < 0.27) j += 15 * (0.27 - sh) * (0.27 - sh); });
+      if (!(opts && opts.libre)) ms.forEach((m, i) => { const sh = mk[i] / c.kcal, cap = PART_MAX[kind[i]]; if (cap && sh > cap) j += 40 * (sh - cap) * (sh - cap); if (kind[i] === 'main' && sh < 0.27) j += 15 * (0.27 - sh) * (0.27 - sh); });
       vars.forEach(v => { const r = v.it.q / v.q0 - 1; j += 0.002 * r * r; });
       return j;
     };
@@ -2154,22 +2173,57 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     }
     return aj;
   }
-  function etalonnerSemaine(cfg, semaine) {
+  /* Recale un jour (modèle de repas) sur une cible c : ajustement, compléments protéines / glucides, optimiseur fin. */
+  function etalonnerRepas(cfg, tpl, c, foods, opts) {
+    const meals = tpl.map(m => ({ id: m.id, nom: m.nom, h: m.h, ok: false, items: m.items.map(it => (it.x ? { id: A.uid(), q: it.q, x: it.x } : { id: A.uid(), a: it.a, q: it.q, adj: it.adj ? 1 : 0 })) }));
+    const calc = ms => A.ajuster(ms, c, foods, { tous: true, echelle: Math.max(c.kcal, 600) / 2200 }).map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0) })).filter(m => m.items.length);
+    const somme = ms => ms.reduce((s, m) => A.add(s, A.totMeal(m, foods)), A.Z());
+    let aj = completerGlucides(meals, completerProteines(meals, calc(meals), cfg, c, foods, calc), cfg, c, foods, calc); // protéines sous la cible : complément (whey, skyr, fromage blanc), puis recale
+    aj = optimiserJour(aj, c, foods, opts); const t = somme(aj);
+    return { meals: aj, tot: { k: Math.round(t.k), p: Math.round(t.p), g: Math.round(t.g), l: Math.round(t.l) } };
+  }
+  function etalonnerSemaine(cfg, semaine, opts) {
     const foods = A.allFoods(cfg), lun = A.lundi(A.today()), res = {}, totaux = {};
     SEMAINE.forEach((d, i) => {
       const tpl = semaine[d]; if (!tpl) return;
-      const c = A.cibleDuJour(cfg, null, A.addDays(lun, i));
-      const meals = tpl.map(m => ({ id: m.id, nom: m.nom, h: m.h, ok: false, items: m.items.map(it => (it.x ? { id: A.uid(), q: it.q, x: it.x } : { id: A.uid(), a: it.a, q: it.q, adj: it.adj ? 1 : 0 })) }));
-      const calc = ms => A.ajuster(ms, c, foods, { tous: true, echelle: c.kcal / 2200 }).map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0) })).filter(m => m.items.length);
-      const somme = ms => ms.reduce((s, m) => A.add(s, A.totMeal(m, foods)), A.Z());
-      let aj = completerGlucides(meals, completerProteines(meals, calc(meals), cfg, c, foods, calc), cfg, c, foods, calc), t = somme(aj); // protéines sous la cible : complément (whey, skyr, fromage blanc), puis recale
-      aj = optimiserJour(aj, c, foods); t = somme(aj);
-      res[d] = repasEnModele(aj, foods); totaux[d] = { k: Math.round(t.k), p: Math.round(t.p), g: Math.round(t.g), l: Math.round(t.l), cible: c };
+      const c = A.cibleDuJour(cfg, null, A.addDays(lun, i)), r = etalonnerRepas(cfg, tpl, c, foods, opts);
+      res[d] = repasEnModele(r.meals, foods); totaux[d] = Object.assign({ cible: c }, r.tot);
     });
     return { semaine: res, totaux };
   }
 
-  Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine, optimiserJour });
+  /* ---------- une seule journée par l'IA : complète la journée en cours (repas déjà mangés gardés), sur ce qu'il reste ---------- */
+  function resteJour(c, mange) {
+    const r = { kcal: Math.round(c.kcal - mange.k), p: Math.round(c.p - mange.p), g: Math.round(c.g - mange.g), l: Math.round(c.l - mange.l) };
+    return Object.assign({}, c, { kcal: r.kcal, p: Math.max(0, r.p), g: Math.max(0, r.g), l: Math.max(0, r.l), pMin: 0 });
+  }
+  function promptMenuJour(o) {
+    const cfg = o.cfg, ip = A.iaProfil(cfg), q = cfg.q || {}, c = o.cible, r = o.reste, liste = alimentsPourIA(cfg), seance = o.seance;
+    const base = liste.slice().sort((a, b) => (b.c === 'perso' ? 1 : 0) - (a.c === 'perso' ? 1 : 0)).map(f => (f.c === 'perso' ? '★ ' : '') + f.id + '=' + f.n + (f.u ? ' (en ' + f.u[0] + ', 1 = ' + f.u[1] + ' g)' : ' (en g)') + ' ' + f.k + '/' + f.p + '/' + f.g + '/' + f.l);
+    const deja = (o.deja || []).map(m => '- ' + (m.h ? m.h + ' ' : '') + m.nom + ' : ' + m.txt);
+    return ['Tu es diététicien. Compose les repas qui restent à manger AUJOURD’HUI pour cette personne, selon ce qu’il lui reste de ses macros et SES CONTRAINTES.',
+      'Profil : ' + ip.ligne + ', objectif ' + ip.objTxt + (q.regime && q.regime !== 'omnivore' ? ', régime ' + q.regime : '') + (q.exclus ? ', aliments à éviter : ' + q.exclus : '') + '.',
+      'Journée : ' + (seance ? 'jour de séance (' + seance + ')' : 'jour de repos') + ', cible totale ' + c.kcal + ' kcal, P ' + c.p + ' g, G ' + c.g + ' g, L ' + c.l + ' g. Il est ' + (o.heure || '08:00') + '.',
+      deja.length ? 'Déjà mangé aujourd’hui (à ne pas reproposer) :\n' + deja.join('\n') : 'Rien n’a encore été mangé aujourd’hui.',
+      'IL RESTE À MANGER : ' + r.kcal + ' kcal, P ' + r.p + ' g, G ' + r.g + ' g, L ' + r.l + ' g. Compose exactement ' + o.repas + ' repas, tous après ' + (o.heure || '08:00') + ' ; chaque repas a une heure "h" au format HH:MM.' + (o.repas === 1 ? ' Un seul repas : fais-en un vrai repas complet.' : ''),
+      'RÈGLES DE DIÉTÉTIQUE SPORTIVE PAR DÉFAUT' + (o.contraintes ? ' (la demande passe avant)' : '') + ' : déjeuner et dîner sont les vrais gros repas (viande ou poisson, féculent, légumes, un peu de bonne matière grasse). Les autres repas sont légers (petit-déj : protéine + avoine ou pain + fruit ; pré-séance : glucides digestes + un peu de protéines, peu de lipides ; post-séance : whey ou skyr + fruit + galettes de riz ; collation : skyr, fromage blanc ou whey + fruit). Protéines réparties sur les repas.',
+      o.contraintes ? blocDemande(o.contraintes) : 'Aucune demande particulière.',
+      blocVariete(o),
+      'Aliments de référence (id=nom ; quantité en g ou en unité indiquée ; kcal/P/G/L pour 100 g). ★ = ajoutés par la personne, à privilégier quand ils conviennent :\n' + base.join('\n'),
+      'Chaque repas contient 2 à 8 éléments ["id", quantité]. Pour un plat absent de la liste (cantine, restaurant, plat maison), un objet {"n":"nom","k":kcal,"p":…,"g":…,"l":…} pour la portion entière. L’app recale ensuite les quantités sur ce qu’il reste : concentre-toi sur le choix, la variété et la faisabilité.',
+      'Réponds uniquement par un objet JSON : {"repas":[{"nom":"Déjeuner","h":"12:30","items":[["riz",80],["poulet",150]]}]}.'].join('\n\n');
+  }
+  /* Valide la réponse, corrige les repas selon les règles, recale sur le reste du jour. */
+  function menuJourIA(r, cfg, reste, dow, opts) {
+    try {
+      const foods = A.allFoods(cfg), meals = validerJourIA(r && r.repas, foods, 1); if (!meals) return null;
+      const corr = (corrigerMenu({ [dow]: meals }, cfg, opts) || {})[dow] || meals;
+      if (reste.kcal < 150) return { meals: corr.map(m => Object.assign({}, m, { ok: false })), tot: null };
+      return etalonnerRepas(cfg, corr, reste, foods, opts);
+    } catch (e) { return null; }
+  }
+
+  Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine, optimiserJour, promptMenuJour, menuJourIA, resteJour, validerJourIA, recentsRepas, inspiration });
 })();
 
 /* ---- 14-program-logic.js ---- */
@@ -2657,7 +2711,7 @@ const AI = (() => {
 /* Messages d'erreur communs (coach, assistant, estimations). */
 const aiMsg = e => {
   const c = e && e.code;
-  if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].indexOf(c) >= 0) return AI.hasAny() ? 'Clé refusée ou IA indisponible. Vérifie tes clés dans Réglages, section IA.' : 'Aucune IA connectée. Ajoute-en une dans Réglages, section IA.';
+  if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].indexOf(c) >= 0) return AI.hasAny() ? 'Clé refusée ou IA indisponible. Vérifie tes clés dans Paramètres › Intelligence artificielle.' : 'Aucune IA connectée. Ajoute-en une dans Paramètres › Intelligence artificielle.';
   if (c === 'rate_limited') return window.APEX_STANDALONE ? 'Quota gratuit atteint pour le moment. Réessaie dans un moment : le reste de l’app fonctionne normalement.' : 'Ton quota Claude est atteint. L’IA revient quand il se réinitialise ; le reste de l’app fonctionne normalement.';
   if (c === 'session_expired') return 'Session expirée : reconnecte-toi à Claude.';
   if (c === 'refused' || c === 'empty_completion' || c === 'invalid_json') return 'Réponse inexploitable. Reformule avec aliments et quantités.';
@@ -3777,13 +3831,14 @@ function MealWeekSheet({ cfg, progId, onClose }) {
   <//>`;
 }
 
-function PlanCard({ cfg, onWeek, onIA, onLib }) {
+function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib }) {
   const choisi = !!cfg.repasMode, mode = cfg.repasMode || 'libre', prog = cfg.repasProg || '', conseille = Apex.programmeConseille(cfg), pesee = cfg.repasPesee !== false, setCfg = p => Store.patch('cfg', null, p);
   const nSem = cfg.repasSemaine ? Object.keys(cfg.repasSemaine).length : 0, base = prog || conseille, sample = Store.caps().sample;
   const peseeSeg = html`<div className="row sb"><span className="fld-l" style=${{ margin: 0 }}>Quantités</span><${Seg} neutral label="Pesée des aliments" value=${pesee} onChange=${v => setCfg({ repasPesee: v })} options=${[[true, 'Je pèse'], [false, 'Sans pesée']]} /></div>`;
   if (!choisi) return html`<${Card} title="Tes repas">
     <div className="choix">
-      <button type="button" className="big" onClick=${onIA}><i><${Icon} n="sparkles" s=${22} /></i><b>L’IA fait ma semaine</b><span>Selon tes macros et tes contraintes.</span></button>
+      <button type="button" className="big" onClick=${onIAJour}><i><${Icon} n="sparkles" s=${22} /></i><b>L’IA fait ma journée</b><span>Selon ce qu’il te reste et ta demande du jour.</span></button>
+      <button type="button" className="big" onClick=${onIA}><i><${Icon} n="clock" s=${22} /></i><b>L’IA fait ma semaine</b><span>Selon tes macros et tes contraintes.</span></button>
       <button type="button" className="big" onClick=${() => setCfg({ repasMode: 'libre' })}><i><${Icon} n="plus" s=${22} /></i><b>Je compose moi-même</b><span>Ce que tu manges est déduit de ton quota.</span></button>
     </div>
     <div className="row sb"><button type="button" className="btn sm ghost" onClick=${() => setCfg({ repasMode: 'programme' })}>Voir des menus tout faits</button><button type="button" className="btn sm" onClick=${onLib}><${Icon} n="plus" s=${16} />Ma bibliothèque d’aliments</button></div>
@@ -3800,49 +3855,93 @@ function PlanCard({ cfg, onWeek, onIA, onLib }) {
       <div className="progs">${Apex.PROGRAMMES_ORDRE.map(id => { const p = Apex.PROGRAMMES[id]; return html`<button key=${id} type="button" className="prog" aria-pressed=${prog === id} onClick=${() => { setCfg({ repasProg: id }); toast('Programme « ' + p.n + ' » choisi'); }}>
         <span className="prog-h"><i><${Icon} n=${p.ic} s=${18} /></i><b>${p.n}</b>${conseille === id && html`<em>Conseillé</em>`}</span><small>${p.tag}</small></button>`; })}</div>
       <div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${prog ? 'Actif : ' + Apex.PROGRAMMES[prog].n : 'Choisis un menu'}</span><button type="button" className="btn sm" onClick=${() => onWeek(base)}><${Icon} n="clock" s=${16} />Voir la semaine</button></div></div>`}
-    ${mode !== 'programme' && html`<button type="button" className="btn pri wide" onClick=${onIA}><${Icon} n="sparkles" s=${18} />${nSem ? 'Refaire ma semaine avec l’IA' : 'Faire ma semaine avec l’IA'}</button>`}
+    <button type="button" className="btn pri wide" onClick=${onIAJour}><${Icon} n="sparkles" s=${18} />Faire ma journée avec l’IA</button>
+    ${mode !== 'programme' && html`<button type="button" className="btn wide" onClick=${onIA}><${Icon} n="clock" s=${18} />${nSem ? 'Refaire ma semaine avec l’IA' : 'Faire ma semaine avec l’IA'}</button>`}
     ${mode === 'perso' && nSem > 0 && html`<p className="mut" style=${{ fontSize: 12 }}>Semaine enregistrée : ${nSem} / 7 jours.</p>`}
     <button type="button" className="btn wide" onClick=${onLib}><${Icon} n="plus" s=${18} />Ajouter un aliment à ma bibliothèque</button>
     ${options}
   <//>`;
 }
 
-/* Menu de la semaine par l'IA : contraintes en texte libre, aperçu jour par jour, quantités recalées sur les macros. */
-function MenuIASheet({ onClose }) {
-  const st = useStore(), cfg = st.cfg(), sample = st.caps().sample, foods = Apex.allFoods(cfg);
-  const [repas, setRepas] = useState(() => +lsGet('menu:repas', 4)); const [txt, setTxt] = useState(() => lsGet('menu:txt', ''));
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [res, setRes] = useState(null);
-  const IDEES = ['Je ne peux pas déjeuner avant 12 h', 'Je mange à la cantine le midi', 'Repas rapides à préparer', 'Batch cooking le dimanche', 'Petit budget', 'Sans cuisson au travail'];
+/* Menus par l'IA, pour une journée (jour = date) ou toute la semaine. Demande libre de tout type (elle prime sur les règles
+   par défaut), variété (plats récents évités, inspiration tirée au hasard), « Une autre idée » qui interdit de reproposer
+   les mêmes plats. Journée : les repas déjà cochés sont gardés, l'IA compose le reste et l'app recale sur ce qu'il reste. */
+const IDEES_JOUR = ['Resto ce soir', 'Fast-food le midi', 'Que des plats froids', 'Rapide, moins de 10 min', 'Cuisine asiatique', 'Cuisine mexicaine', 'Cheat meal contrôlé', 'Brunch', 'Plus de protéines', 'Pas de cuisine (au travail)'];
+const IDEES_SEM = ['Je ne peux pas déjeuner avant 12 h', 'Je mange à la cantine le midi', 'Repas rapides à préparer', 'Batch cooking le dimanche', 'Petit budget', 'Vendredi soir resto', 'Cuisine du monde', 'Sans cuisson au travail'];
+function MenuIASheet({ onClose, jour }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), sample = st.caps().sample, foods = Apex.allFoods(cfg), day = !!jour;
+  const j = day ? (S.journal[jour] || {}) : {}, c = day ? Apex.cibleDuJour(cfg, j, jour) : null, meals = j.repas || [];
+  const manges = meals.filter(m => m.ok && m.items.length), mange = manges.reduce((s, m) => Apex.add(s, Apex.totMeal(m, foods)), Apex.Z());
+  const reste = day ? Apex.resteJour(c, mange) : null;
+  const defRepas = day ? Math.max(1, Math.min(6, meals.filter(m => !m.ok).length || (manges.length ? 2 : 4))) : +lsGet('menu:repas', 4);
+  const [repas, setRepas] = useState(defRepas); const [txt, setTxt] = useState(() => (day ? '' : lsGet('menu:txt', '')));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [res, setRes] = useState(null); const refus = useRef([]);
+  const IDEES = day ? IDEES_JOUR : IDEES_SEM;
   const ajoute = p => setTxt(t => (t.indexOf(p) >= 0 ? t : (t ? t.replace(/[. ]+$/, '') + '. ' : '') + p));
-  const run = async () => {
-    if (!sample) return; lsSet('menu:repas', repas); lsSet('menu:txt', txt); setBusy(true); setErr(''); setRes(null);
+  const nom = it => (it.x ? it.x.n : (foods[it.a] ? foods[it.a].n : it.a));
+  const qte = it => { if (it.x) return ''; const f = foods[it.a]; if (!f) return ''; if (!f.u) return ' ' + Math.round(it.q) + ' g'; const u = String(f.u[0]).split(' ')[0]; return ' ' + fq(it.q) + ' ' + (it.q > 1 && !/[sx]$/.test(u) ? u + 's' : u); };
+  const plats = r => { const ms = day ? r.meals : [].concat.apply([], Object.keys(r.semaine).map(d => r.semaine[d])); return ms.map(m => m.items.filter(it => it.x || (foods[it.a] && foods[it.a].c !== 'leg')).map(nom).slice(0, 3).join(' + ')).filter(Boolean); };
+  const heure = () => { if (jour !== Apex.today()) return '07:00'; const d = new Date(); return Apex.pad(d.getHours()) + ':' + Apex.pad(Math.floor(d.getMinutes() / 15) * 15); };
+  const run = async autre => {
+    if (!sample) return;
+    refus.current = autre && res ? refus.current.concat(plats(res)).slice(-14) : [];
+    if (!day) { lsSet('menu:repas', repas); lsSet('menu:txt', txt); }
+    setBusy(true); setErr(''); if (!autre) setRes(null);
+    const recents = Apex.recentsRepas(S.journal, cfg, jour || Apex.today(), 10), opts = { libre: !!txt.trim() };
     try {
-      const prompt = Apex.promptMenuSemaine({ cfg, repas, contraintes: txt });
-      const r = await Promise.race([sample.json(prompt, { modelTier: 'default', cache: false, maxTokens: 8192 }), new Promise((_, ko) => setTimeout(() => ko({ code: 'upstream_error' }), 150000))]);
-      const v = Apex.validerMenuSemaine(r, cfg);
-      if (!v) setErr('La proposition de l’IA était incomplète. Relance, ou simplifie tes contraintes.');
-      else setRes(Object.assign({ manquants: v.manquants }, Apex.etalonnerSemaine(cfg, v.semaine)));
+      if (day) {
+        const prompt = Apex.promptMenuJour({ cfg, cible: c, reste, repas, contraintes: txt, heure: heure(), seance: c.statut === 'salle' ? Apex.seanceDuJour(cfg, j, jour) : '', recents, refus: refus.current,
+          deja: manges.map(m => ({ nom: m.nom, h: m.h, txt: m.items.map(it => nom(it) + qte(it)).join(', ') })) });
+        const r = await Promise.race([sample.json(prompt, { modelTier: 'default', cache: false, maxTokens: 4096 }), new Promise((_, ko) => setTimeout(() => ko({ code: 'upstream_error' }), 120000))]);
+        const v = Apex.menuJourIA(r, cfg, reste, Apex.dow(jour), opts);
+        if (!v) setErr('La proposition de l’IA était incomplète. Relance, ou reformule ta demande.'); else setRes(v);
+      } else {
+        const prompt = Apex.promptMenuSemaine({ cfg, repas, contraintes: txt, recents, refus: refus.current });
+        const r = await Promise.race([sample.json(prompt, { modelTier: 'default', cache: false, maxTokens: 8192 }), new Promise((_, ko) => setTimeout(() => ko({ code: 'upstream_error' }), 150000))]);
+        const v = Apex.validerMenuSemaine(r, cfg, opts);
+        if (!v) setErr('La proposition de l’IA était incomplète. Relance, ou simplifie ta demande.');
+        else setRes(Object.assign({ manquants: v.manquants }, Apex.etalonnerSemaine(cfg, v.semaine, opts)));
+      }
     } catch (e) { setErr(aiMsg(e) || 'Échec de la demande. Réessaie.'); }
     setBusy(false);
   };
-  const apply = () => { Store.patch('cfg', null, { repasMode: 'perso', repasSemaine: res.semaine }); toast('Ta semaine est prête. Charge le menu de chaque jour dans l’onglet Repas.'); onClose(); };
-  const nom = it => (it.x ? it.x.n : (foods[it.a] ? foods[it.a].n : it.a));
-  return html`<${Sheet} title="Ma semaine avec l’IA" onClose=${onClose}>
-    ${!sample ? html`<div className="note"><${Icon} n="alert" /><div><span><b>L’IA n’est pas connectée.</b> Active-la dans Réglages, section IA, ou compose tes repas toi-même.</span></div></div>`
+  const apply = () => {
+    if (day) {
+      const neufs = res.meals.map(m => Object.assign({}, m, { id: Apex.uid(), ok: false, items: m.items.map(it => Object.assign({}, it, { id: Apex.uid() })) }));
+      Store.patch('journal', jour, { date: jour, repas: manges.concat(neufs), man: null });
+      toast(manges.length ? 'Ta journée est complétée' : 'Ta journée est prête'); onClose(); return;
+    }
+    Store.patch('cfg', null, { repasMode: 'perso', repasSemaine: res.semaine }); toast('Ta semaine est prête. Charge le menu de chaque jour dans l’onglet Repas.'); onClose();
+  };
+  const t = day && res ? (res.tot || res.meals.reduce((s, m) => Apex.add(s, Apex.totMeal(m, foods)), Apex.Z())) : null;
+  const titre = day ? 'Ma journée avec l’IA' : 'Ma semaine avec l’IA';
+  return html`<${Sheet} title=${titre} onClose=${onClose}>
+    ${!sample ? html`<div className="note"><${Icon} n="alert" /><div><span><b>L’IA n’est pas connectée.</b> Active-la dans Paramètres › IA, ou compose tes repas toi-même.</span></div></div>`
     : !res ? html`<${React.Fragment}>
-      <p className="sec" style=${{ fontSize: 13 }}>L’IA compose les 7 jours, l’app calcule les quantités sur tes macros.</p>
-      <div className="stack"><span className="fld-l">Repas par jour<b>${repas}</b></span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repas === n} onClick=${() => setRepas(n)}>${n}</button>`)}</div></div>
-      <label className="fld" htmlFor="menu-txt"><span className="fld-l">Tes contraintes</span>
-        <textarea id="menu-txt" className="inp" maxLength="600" rows="4" placeholder="ex. je ne peux pas déjeuner avant 12 h, je mange à la cantine, je m’entraîne à 18 h, pas de four…" value=${txt} onChange=${e => setTxt(e.target.value)}></textarea></label>
+      ${day ? html`<div className="ia-reste"><span>${manges.length ? 'Il te reste' : 'Objectif du ' + dMid(jour)}</span><b>${f0(Math.max(0, reste.kcal))} kcal</b><small>P ${reste.p} · G ${reste.g} · L ${reste.l}${manges.length ? ' · ' + manges.length + ' repas déjà mangé' + (manges.length > 1 ? 's' : '') + ', gardé' + (manges.length > 1 ? 's' : '') : ''}</small></div>`
+      : html`<p className="sec" style=${{ fontSize: 13 }}>L’IA compose les 7 jours, l’app calcule les quantités sur tes macros.</p>`}
+      ${day && reste.kcal < 150 && html`<div className="note"><${Icon} n="info" /><div><span>Ton objectif du jour est déjà atteint : l’IA proposera des idées très légères.</span></div></div>`}
+      <div className="stack"><span className="fld-l">${day ? 'Repas à composer' : 'Repas par jour'}<b>${repas}</b></span><div className="chips">${(day ? [1, 2, 3, 4, 5] : [3, 4, 5, 6]).map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repas === n} onClick=${() => setRepas(n)}>${n}</button>`)}</div></div>
+      <label className="fld" htmlFor="menu-txt"><span className="fld-l">Ta demande<b>tout est possible</b></span>
+        <textarea id="menu-txt" className="inp" maxLength="700" rows="3" placeholder=${day ? 'ex. resto japonais ce soir, je veux un burger ce midi, que des plats froids, pas le temps de cuisiner…' : 'ex. cantine le midi, séance à 18 h, vendredi soir resto, cuisine du monde, petit budget…'} value=${txt} onChange=${e => setTxt(e.target.value)}></textarea></label>
       <div className="chips">${IDEES.map(p => html`<button key=${p} type="button" className="chip" onClick=${() => ajoute(p)}>${p}</button>`)}</div>
       ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
-      <button type="button" className="btn pri wide" disabled=${busy} onClick=${run}><${Icon} n="sparkles" s=${18} />${busy ? 'L’IA compose ta semaine (≈ 30 s)…' : 'Générer ma semaine'}</button>
-      <p className="mut" style=${{ fontSize: 12 }}>Une demande d’IA. Remplace « Ma semaine » ; tes journées saisies ne changent pas.</p>
+      <button type="button" className="btn pri wide" disabled=${busy} onClick=${() => run(false)}><${Icon} n="sparkles" s=${18} />${busy ? (day ? 'L’IA compose ta journée…' : 'L’IA compose ta semaine (≈ 30 s)…') : day ? 'Composer ma journée' : 'Générer ma semaine'}</button>
+      <p className="mut" style=${{ fontSize: 12 }}>${day ? 'Une demande d’IA. Les repas déjà cochés restent ; les autres sont remplacés.' : 'Une demande d’IA. Remplace « Ma semaine » ; tes journées saisies ne changent pas.'} Menus variés : l’IA évite tes plats des derniers jours.</p>
+    <//>` : day ? html`<${React.Fragment}>
+      <div className="row sb"><${Pill} st="good">Journée prête<//><span className="mut" style=${{ fontSize: 12 }}>${t ? '≈ ' + f0(t.k) + ' kcal · P ' + f0(t.p) + ' · G ' + f0(t.g) + ' · L ' + f0(t.l) : ''}${reste.kcal > 0 ? ' / ' + f0(reste.kcal) + ' restants' : ''}</span></div>
+      ${manges.length > 0 && html`<p className="mut" style=${{ fontSize: 12 }}>Déjà mangé, gardé : ${manges.map(m => m.nom).join(', ')}.</p>`}
+      <div className="ia-j">${res.meals.map((m, i) => html`<div key=${i} className="ia-m"><b>${m.h ? m.h + ' · ' : ''}${m.nom}</b><span>${m.items.map(it => nom(it) + qte(it)).join(' · ')}</span></div>`)}</div>
+      ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
+      <button type="button" className="btn pri wide" disabled=${busy} onClick=${apply}><${Icon} n="check" s=${18} />Appliquer à ma journée</button>
+      <div className="row"><button type="button" className="btn grow" disabled=${busy} onClick=${() => run(true)}><${Icon} n="refresh" s=${18} />${busy ? 'Nouvelle idée…' : 'Une autre idée'}</button><button type="button" className="btn ghost" disabled=${busy} onClick=${() => setRes(null)}>Modifier ma demande</button></div>
     <//>` : html`<${React.Fragment}>
       <div className="row sb"><${Pill} st="good">Semaine prête<//><span className="mut" style=${{ fontSize: 12 }}>${res.manquants.length ? res.manquants.length + ' jour(s) copié(s) d’un autre' : '7 jours composés'}</span></div>
-      <div className="wk">${Apex.SEMAINE_ORDRE.map(d => { const t = res.totaux[d], tpl = res.semaine[d]; return html`<div key=${d} className="wk-d"><h3>${Apex.JOURS[d]}<small>${t ? f0(t.k) + ' kcal · P ' + t.p + ' · G ' + t.g + ' · L ' + t.l : ''}</small></h3>
+      <div className="wk">${Apex.SEMAINE_ORDRE.map(d => { const tt = res.totaux[d], tpl = res.semaine[d]; return html`<div key=${d} className="wk-d"><h3>${Apex.JOURS[d]}<small>${tt ? f0(tt.k) + ' kcal · P ' + tt.p + ' · G ' + tt.g + ' · L ' + tt.l : ''}</small></h3>
         ${tpl.map(m => html`<p key=${m.id}><b>${m.h ? m.h + ' ' : ''}${m.nom}</b><span>${m.items.map(nom).join(' · ')}</span></p>`)}</div>`; })}</div>
-      <div className="row"><button type="button" className="btn pri grow" onClick=${apply}><${Icon} n="check" s=${18} />Appliquer ma semaine</button><button type="button" className="btn" onClick=${() => setRes(null)}>Modifier</button></div>
+      ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
+      <button type="button" className="btn pri wide" disabled=${busy} onClick=${apply}><${Icon} n="check" s=${18} />Appliquer ma semaine</button>
+      <div className="row"><button type="button" className="btn grow" disabled=${busy} onClick=${() => run(true)}><${Icon} n="refresh" s=${18} />${busy ? 'Nouvelle semaine…' : 'Une autre semaine'}</button><button type="button" className="btn ghost" disabled=${busy} onClick=${() => setRes(null)}>Modifier</button></div>
     <//>`}
   <//>`;
 }
@@ -3861,7 +3960,7 @@ function SuppCard({ supL, supp, date }) {
     ${supL.length > 0 && html`<div className="supc-bar" role="img" aria-label=${n + ' compléments pris sur ' + supL.length}><i style=${{ width: Math.round(n / supL.length * 100) + '%' }}></i></div>`}
     ${supL.length ? html`<div className="supp">${supL.map(x => html`<button key=${x.id} type="button" aria-pressed=${!!supp[x.id]} onClick=${() => toggle(x.id)}>
       <span className="chk" aria-pressed=${!!supp[x.id]}><${Icon} n="check" s=${16} w=${2.5} /></span><span><b>${x.n}</b><span>${x.note || ''}</span></span></button>`)}</div>`
-    : html`<div className="empty"><span>Aucun complément. Ajoute les tiens dans Réglages, onglet Repas.</span></div>`}
+    : html`<div className="empty"><span>Aucun complément. Ajoute les tiens dans Paramètres › Repas et aliments.</span></div>`}
     <p className="mut" style=${{ fontSize: 12 }}>Les protéines en poudre ajoutées au plan repas comptent dans le total, pas besoin de les cocher ici.</p>
     ${fx > 0 && html`<div className="fx" aria-hidden="true">
       <svg className="fx-ring" viewBox="0 0 80 80"><circle cx="40" cy="40" r="34" /><path d="M24 41l11 11 21-23" /></svg>
@@ -3874,7 +3973,7 @@ const SLOTS_VIDES = { salle: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], [
 function Repas({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
   const j = S.journal[date] || {}, meals = j.repas || [], c = Apex.cibleDuJour(cfg, j, date), t = Apex.totJour(j, foods);
-  const [sheet, setSheet] = useState(null), [wk, setWk] = useState(''), [ia, setIa] = useState(false), [lib, setLib] = useState(false);
+  const [sheet, setSheet] = useState(null), [wk, setWk] = useState(''), [ia, setIa] = useState(false), [iaJ, setIaJ] = useState(false), [lib, setLib] = useState(false);
   const put = ms => Store.patch('journal', date, { date, repas: ms });
   const mapMeal = (mid, fn) => put(meals.map(m => (m.id === mid ? fn(m) : m)));
   const mapItem = (mid, iid, fn) => mapMeal(mid, m => Object.assign({}, m, { items: m.items.map(i => (i.id === iid ? fn(i) : i)).filter(Boolean) }));
@@ -3936,7 +4035,7 @@ function Repas({ date }) {
           ${man && html`<div className="note"><${Icon} n="info" /><div><span>Ce bilan vient du check-in. Les repas cochés ne comptent pas tant qu’il est actif.</span>
             <${Confirm} label="Revenir au planner" sure="Effacer le bilan saisi ?" onYes=${() => Store.patch('journal', date, { date, man: null })} /></div></div>`}
         <//>
-        <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => setIa(true)} onLib=${() => setLib(true)} />
+        <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => setIa(true)} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} />
         <${Card} title="Repas" sub="Touche un aliment pour le remplacer" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
           ${meals.length && (mode === 'libre' || !vide) ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods} pesee=${pesee}
             onToggle=${() => mapMeal(m.id, x => Object.assign({}, x, { ok: !x.ok }))}
@@ -3959,6 +4058,7 @@ function Repas({ date }) {
       </div>
     </div>
     ${ia && html`<${MenuIASheet} onClose=${() => setIa(false)} />`}
+    ${iaJ && html`<${MenuIASheet} jour=${date} onClose=${() => setIaJ(false)} />`}
     ${lib && html`<${FoodLibSheet} onClose=${() => setLib(false)} />`}
     ${wk && html`<${MealWeekSheet} cfg=${cfg} progId=${wk} onClose=${() => setWk('')} />`}
     ${sheet && sheet.t === 'add' && sh && html`<${AddSheet} foods=${foods} title=${'Ajouter · ' + sh.nom} onClose=${() => setSheet(null)} onAdd=${it => addItems(sh.id, [it])} />`}
@@ -4748,7 +4848,7 @@ function VolumeCard({ date }) {
     ${any && Object.keys(GRP).length ? html`<div className="grid" style=${{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>${Object.keys(GRP).map(k => { const G = GRP[k];
       const data = weeks.map(w => { const v = Apex.volumeEntre(S.seances, w, Apex.addDays(w, 6), exos).vol; return { d: w, v: G.m.reduce((s, m) => s + (v[m] || 0), 0), t: G.min, name: 'semaine du ' + dTiny(w) }; });
       return html`<div key=${k} className="stack"><span className="fld-l">${G.n}<b>${G.min}–${G.max} séries</b></span><${BarChart} h=${150} data=${data} unit=" séries" tName="Minimum" label=${'Volume hebdomadaire ' + G.n} /></div>`; })}</div>`
-    : html`<div className="empty"><span>${Object.keys(GRP).length ? html`<b>Aucune séance notée.</b> Cibles hebdo : ${Object.keys(GRP).map(k => GRP[k].n + ' ' + GRP[k].min + '–' + GRP[k].max).join(', ')}.` : html`<b>Aucun point faible défini.</b> Ajoute-en dans Réglages, onglet Points faibles.`}</span></div>`}
+    : html`<div className="empty"><span>${Object.keys(GRP).length ? html`<b>Aucune séance notée.</b> Cibles hebdo : ${Object.keys(GRP).map(k => GRP[k].n + ' ' + GRP[k].min + '–' + GRP[k].max).join(', ')}.` : html`<b>Aucun point faible défini.</b> Ajoute-en dans Paramètres › Points faibles.`}</span></div>`}
   <//>`;
 }
 
@@ -5008,7 +5108,7 @@ function AdaptSheet({ date, plan, type, onApply, onClose }) {
         <label className="fld" htmlFor="ad-dou"><span className="fld-l">Zone sensible</span><input id="ad-dou" className="inp" type="text" maxLength="80" placeholder="ex. épaule droite, genou" value=${dou} onChange=${e => setDou(e.target.value)} /></label>
         ${sample && html`<label className="fld" htmlFor="ad-note"><span className="fld-l">Remarque pour l’IA</span><input id="ad-note" className="inp" type="text" maxLength="120" placeholder="ex. je veux finir par des bras" value=${note} onChange=${e => setNote(e.target.value)} /></label>`}</div>`}
       <button type="button" className="btn pri wide" disabled=${busy} onClick=${run}><${Icon} n="sparkles" s=${18} />${busy ? (sample ? 'L’IA optimise ta séance…' : 'Adaptation…') : (sample ? 'Optimiser avec l’IA' : 'Adapter la séance')}</button>
-      ${!sample && html`<p className="mut" style=${{ fontSize: 12 }}>Sans IA connectée, l’adaptation suit les règles de l’app (temps, matériel, priorité). Connecte une IA dans Réglages pour des conseils personnalisés.</p>`}
+      ${!sample && html`<p className="mut" style=${{ fontSize: 12 }}>Sans IA connectée, l’adaptation suit les règles de l’app (temps, matériel, priorité). Connecte une IA dans Paramètres pour des conseils personnalisés.</p>`}
     <//>` : html`<${React.Fragment}>
       <div className="row sb"><${Pill} st=${res.src === 'ia' ? 'good' : ''}>${res.src === 'ia' ? 'Optimisée par l’IA' : 'Adaptée par l’app'}<//><span className="mut">≈ ${res.duree} min · ${res.plan.reduce((s, x) => s + x.n, 0)} séries</span></div>
       <div className="rows">${res.plan.map(x => html`<div key=${x.e} className="mini"><span>${exos[x.e] ? exos[x.e].n : x.e}</span><span className="mut">${exos[x.e] ? Apex.MUSCLES[exos[x.e].m] : ''}</span><b>${x.n}<small>séries</small></b></div>`)}</div>
@@ -5347,7 +5447,7 @@ function Coach({ date }) {
   if (!sample) return html`<div>
     <div className="view-h"><h1>Coach</h1><p>IA intégrée à l’app.</p></div>
     <${Card} title="Coach indisponible dans cette vue">
-      <div className="empty"><span><b>Le coach a besoin d’une IA.</b> ${STANDALONE ? 'Active l’IA gratuite dans Réglages, section IA : ' : 'Ouvre Macrolya depuis l’app Claude ou claude.ai, connecté à ton compte : '}le coach lit tes données et enregistre repas, debrief et séries quand tu lui parles.</span></div>
+      <div className="empty"><span><b>Le coach a besoin d’une IA.</b> ${STANDALONE ? 'Active l’IA gratuite dans Paramètres › Intelligence artificielle : ' : 'Ouvre Macrolya depuis l’app Claude ou claude.ai, connecté à ton compte : '}le coach lit tes données et enregistre repas, debrief et séries quand tu lui parles.</span></div>
     <//>
   </div>`;
   return html`<div>
@@ -5632,7 +5732,7 @@ function IABanner() {
     <button type="button" className="ib sm" aria-label="Plus tard" onClick=${() => { AI.setConsent('0'); Store.refreshAI(); }}><${Icon} n="x" s=${16} /></button>
     ${sheet && html`<${Sheet} title="Activer l’IA gratuite" onClose=${() => setSheet(false)}>
       <p className="sec" style=${{ fontSize: 14 }}>Macrolya utilise Google Gemini. Quand tu parles au coach, adaptes une séance ou lances un debrief, ton message et les données utiles (poids, repas, séances) sont envoyés à Google.</p>
-      <div className="note"><${Icon} n="info" /><div><span>Niveau gratuit : limites partagées par minute et par jour, et Google peut réutiliser les échanges pour améliorer ses produits. N’écris rien de sensible. Tu peux désactiver l’IA à tout moment dans Réglages.</span></div></div>
+      <div className="note"><${Icon} n="info" /><div><span>Niveau gratuit : limites partagées par minute et par jour, et Google peut réutiliser les échanges pour améliorer ses produits. N’écris rien de sensible. Tu peux désactiver l’IA à tout moment dans Paramètres.</span></div></div>
       <button type="button" className="btn pri wide" disabled=${busy} onClick=${go}><${Icon} n="check" s=${18} />${busy ? 'Activation…' : 'J’accepte, activer l’IA'}</button>
       <button type="button" className="btn wide ghost" onClick=${() => { AI.setConsent('0'); Store.refreshAI(); setSheet(false); }}>Non merci, sans IA</button>
     <//>`}
@@ -5900,8 +6000,8 @@ function PrivacySheet({ onClose }) {
       <p><b>Pourquoi.</b> Uniquement pour sauvegarder tes données et les retrouver sur un autre téléphone. Aucune publicité, aucune revente, aucun partage, aucun profilage.</p>
       <p><b>Où.</b> Chez Google Firebase : Authentication gère l’email et le mot de passe (l’app ne voit jamais ton mot de passe), Cloud Firestore stocke les données dans l’Union européenne. Les échanges sont chiffrés.</p>
       <p><b>Qui y accède.</b> Toi seul depuis l’app : les règles de la base n’autorisent chaque compte qu’à ses propres données. Techniquement, l’administrateur du projet Firebase pourrait y accéder ; il s’engage à ne pas les consulter.</p>
-      <p><b>Durée.</b> Tant que ton compte existe. « Supprimer mon compte » (Réglages, section Compte) efface définitivement tes données en ligne et ton compte.</p>
-      <p><b>Tes droits.</b> Accès et portabilité (export JSON dans Réglages, section Données), rectification (modifie dans l’app), effacement (suppression du compte), retrait du consentement à tout moment. Tu peux aussi saisir la CNIL (cnil.fr).</p>
+      <p><b>Durée.</b> Tant que ton compte existe. « Supprimer mon compte » (Paramètres › Compte) efface définitivement tes données en ligne et ton compte.</p>
+      <p><b>Tes droits.</b> Accès et portabilité (export JSON dans Paramètres › Données), rectification (modifie dans l’app), effacement (suppression du compte), retrait du consentement à tout moment. Tu peux aussi saisir la CNIL (cnil.fr).</p>
       <p><b>Sans compte.</b> L’app fonctionne entièrement sur ton téléphone, sans rien envoyer.</p>
     </div>
   <//>`;
@@ -6040,7 +6140,7 @@ function SanteBody() {
         <li>Ouvre le fichier téléchargé (notification ou dossier Téléchargements).</li>
         <li>Si Android le demande, autorise l’installation depuis ton navigateur.</li>
         <li>Ouvre Macrolya et connecte-toi avec ton compte : tes données reviennent.</li>
-        <li>Réglages › Santé › « Connecter Health Connect ».</li>
+        <li>Paramètres › Santé et montres › « Connecter Health Connect ».</li>
       </ol>
       <p className="mut" style=${{ fontSize: 12 }}>Version de test, installée hors Play Store. Sur Android 13 ou moins, installe aussi l’app « Health Connect » depuis le Play Store. Tu peux ensuite retirer la version web de ton écran d’accueil.</p>`
     : html`<div className="note"><${Icon} n="info" /><div><span><b>${iphone ? 'Bientôt dans l’app iPhone.' : 'Disponible dans l’app Android et iPhone.'}</b> Apple Santé et Health Connect ne sont accessibles qu’aux apps installées, pas à la version web. ${iphone ? 'La version iPhone de Macrolya arrive : tu pourras y relier Apple Santé (Apple Watch, Garmin, Oura…).' : 'Ouvre cette page sur ton téléphone Android pour télécharger l’app.'}</span></div></div>`}
@@ -6092,7 +6192,7 @@ const JOURS = [[1, 'Lundi'], [2, 'Mardi'], [3, 'Mercredi'], [4, 'Jeudi'], [5, 'V
 
 function SettingsSheet({ onClose }) {
   const st = useStore(), cfg = st.cfg(), sy = st.sync(), foods = Apex.allFoods(cfg);
-  const [sec, setSec] = useState('profil'); const [imp, setImp] = useState(''); const [msg, setMsg] = useState(''); const [dump, setDump] = useState('');
+  const [sec, setSec] = useState(null); const [imp, setImp] = useState(''); const [msg, setMsg] = useState(''); const [dump, setDump] = useState('');
   const setP = k => v => { if (v != null) Store.patch('cfg', null, { profil: Object.assign({}, cfg.profil, { [k]: v }) }); };
   const setC = (s, k) => v => { if (v == null) return; const o = Object.assign({}, cfg.cibles[s], { [k]: v }); o.g = Math.max(0, Math.round((o.kcal - o.p * 4 - o.l * 9) / 4)); Store.patch('cfg', null, { cibles: Object.assign({}, cfg.cibles, { [s]: o }) }); };
   const setFood = (id, k) => v => { if (v == null) return; const f = Object.assign({}, foods[id]); if (k === 'dose') f.u = [f.u[0].replace(/[\d.,]+ ?g/, fq(v) + ' g'), v]; else f[k] = v; f.etq = 0; Store.patch('cfg', null, { aliments: Object.assign({}, cfg.aliments, { [id]: f }) }); };
@@ -6109,9 +6209,19 @@ function SettingsSheet({ onClose }) {
     <${Num} id=${'c-' + s + '-l'} label="Lipides" unit="g" value=${cfg.cibles[s].l} onChange=${setC(s, 'l')} dec=${0} min=${cfg.cibles.planchers.l} max=${200} />
     <div className="fld"><span className="fld-l">Glucides</span><div className="inp" style=${{ display: 'grid', alignItems: 'center' }}>${cfg.cibles[s].g} g</div></div>
   </div>`;
-  const SECS = [].concat(STANDALONE && Cloud.on() ? [['compte', 'Compte']] : [], [['profil', 'Profil'], ['seances', 'Séances'], ['focus', 'Points faibles'], ['repas', 'Repas']], STANDALONE ? [['sante', 'Santé']] : [], [['claude', 'IA'], ['partage', 'Partager'], ['data', 'Données']]);
-  return html`<${Sheet} title="Réglages et données" onClose=${onClose}>
-    <div className="chips" role="group" aria-label="Sections">${SECS.map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${sec === x[0]} onClick=${() => setSec(x[0])}>${x[1]}</button>`)}</div>
+  /* Paramètres façon iPhone : rubriques groupées, un appui ouvre la rubrique, « ‹ Paramètres » revient à la liste. */
+  const cu = STANDALONE && Cloud.on() ? Cloud.user() : null, se = STANDALONE ? Sante.etat() : null;
+  const GR = [
+    ['Mon compte', [].concat(STANDALONE && Cloud.on() ? [['compte', 'Compte', 'user', cu ? cu.email : 'Sauvegarde et synchro entre téléphones']] : [], [['profil', 'Profil et objectifs', 'target', 'Taille, poids, cibles, planning']])],
+    ['Entraînement', [['seances', 'Séances', 'dumbbell', 'Types de séances et exercices'], ['focus', 'Points faibles', 'trend', 'Muscles à prioriser']]],
+    ['Nutrition', [['repas', 'Repas et aliments', 'utensils', 'Compléments, aliments perso, étiquettes']]],
+    ['Connexions', [].concat(STANDALONE ? [['sante', 'Santé et montres', 'heart', se && se.on ? 'Connecté' : 'Apple Santé, Health Connect']] : [], [['claude', 'Intelligence artificielle', 'sparkles', st.caps().sample ? 'Activée' : 'Coach, menus et séances par l’IA']])],
+    ['Application', [['partage', 'Partager l’app', 'send', 'Lien, QR code, installation'], ['data', 'Données', 'download', 'Export, import, version']]],
+  ].filter(g => g[1].length);
+  const cur = sec ? [].concat.apply([], GR.map(g => g[1])).find(x => x[0] === sec) : null;
+  return html`<${Sheet} title=${cur ? cur[1] : 'Paramètres'} onClose=${onClose}>
+    ${!cur ? html`<div className="prm">${GR.map(g => html`<div key=${g[0]} className="prm-g"><span className="prm-t">${g[0]}</span><div className="prm-l">${g[1].map(x => html`<button key=${x[0]} type="button" className="prm-r" onClick=${() => setSec(x[0])}><i className=${'prm-i prm-' + x[0]}><${Icon} n=${x[2]} s=${18} /></i><span><b>${x[1]}</b><small>${x[3]}</small></span><${Icon} n="chevR" s=${18} /></button>`)}</div></div>`)}</div>`
+    : html`<button type="button" className="prm-back" onClick=${() => setSec(null)}><${Icon} n="chevL" s=${18} />Paramètres</button>`}
     ${sec === 'profil' && html`<${React.Fragment}>
     <button type="button" className="btn wide" onClick=${() => { Store.patch('cfg', null, { onboarded: false }); onClose(); }}><${Icon} n="sparkles" s=${18} />Refaire le questionnaire de démarrage</button>
     <h3>Profil</h3>
@@ -6210,7 +6320,7 @@ function App() {
       <span className=${cx('sync', sc[0])} role="status"><i></i>${sc[1]}</span>
       <span className="grow"></span>
       <button type="button" className="ib" aria-label="Actualiser l’app" onClick=${refreshApp}><${Icon} n="refresh" /></button>
-      <button type="button" className="ib top-gear" aria-label="Réglages et données" onClick=${() => setOpen(true)}><${Icon} n="sliders" /></button>
+      <button type="button" className="ib top-gear" aria-label="Paramètres" onClick=${() => setOpen(true)}><${Icon} n="sliders" /></button>
       ${tab !== 'coach' && html`<div className="top-ctl">
         <div className="daynav">
           <button type="button" className="ib sm" aria-label="Jour précédent" onClick=${() => setDate(Apex.addDays(date, -1))}><${Icon} n="chevL" s=${18} /></button>
