@@ -4119,6 +4119,7 @@ function ImportMenuSheet({ onClose }) {
     toast('Menu enregistré pour ' + nS + ' jour' + (nS > 1 ? 's' : '') + (nJ ? ', ' + nJ + ' jour' + (nJ > 1 ? 's' : '') + ' de cette semaine remplis' : '')); onClose();
   };
   const ordre = [1, 2, 3, 4, 5, 6, 0].filter(d => res && res.semaine[d]);
+  const remplace = ordre.filter(d => (Store.cfg().repasSemaine || {})[d]).length;
   return html`<${Sheet} title="Coller mon menu" onClose=${onClose}>
     ${!res && html`<${React.Fragment}>
       <p className="mut" style=${{ fontSize: 13 }}>Colle ton menu de la semaine tel quel : un jour par ligne, puis un repas par ligne avec les aliments et les quantités. Tes quantités sont gardées exactement.</p>
@@ -4135,7 +4136,7 @@ function ImportMenuSheet({ onClose }) {
       ${res.manquants.length > 0 && html`<div className="note"><${Icon} n="alert" /><div><span>${res.manquants.length} aliment${res.manquants.length > 1 ? 's' : ''} non reconnu${res.manquants.length > 1 ? 's' : ''}, ignoré${res.manquants.length > 1 ? 's' : ''} : ${res.manquants.slice(0, 6).join(' ; ')}${res.manquants.length > 6 ? '…' : ''}. ${res.iaErr ? 'IA : ' + res.iaErr : res.sansIA ? 'Active l’IA pour les reconnaître.' : 'Ajoute-les ensuite dans le repas.'}</span></div></div>`}
       <label className="chk-l" htmlFor="im-rempl"><input id="im-rempl" type="checkbox" checked=${rempl} onChange=${e => setRempl(e.target.checked)} /><span>Remplir aussi les 7 prochains jours <small>(sauf les jours où un repas est déjà coché)</small></span></label>
       <p className="mut" style=${{ fontSize: 12 }}>Enregistré comme « Ma semaine » : chaque jour, « Charger mon menu » reprend ces repas avec tes quantités. Les jours absents du menu ne changent pas.</p>
-      <div className="row"><button type="button" className="btn ghost" onClick=${() => setRes(null)}>Modifier le texte</button><button type="button" className="btn pri grow" disabled=${!ordre.length} onClick=${enregistrer}><${Icon} n="check" s=${18} />Enregistrer ma semaine</button></div>
+      <div className="row"><button type="button" className="btn ghost" onClick=${() => setRes(null)}>Modifier le texte</button>${remplace ? html`<${Confirm} cls="pri grow" icon="check" label="Remplacer ma semaine" sure=${'Remplacer ' + remplace + ' jour' + (remplace > 1 ? 's' : '') + ' enregistré' + (remplace > 1 ? 's' : '') + ' ? Touche encore'} onYes=${enregistrer} />` : html`<button type="button" className="btn pri grow" disabled=${!ordre.length} onClick=${enregistrer}><${Icon} n="check" s=${18} />Enregistrer ma semaine</button>`}</div>
     <//>`}
   <//>`;
 }
@@ -4154,6 +4155,12 @@ function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib, onImp }) {
     <div className="row sb"><button type="button" className="btn sm ghost" onClick=${() => setCfg({ repasMode: 'programme' })}>Voir des menus tout faits</button><button type="button" className="btn sm" onClick=${onLib}><${Icon} n="plus" s=${16} />Ma bibliothèque d’aliments</button></div>
   <//>`;
   const MODES = [['perso', 'Ma semaine'], ['libre', 'Libre'], ['programme', 'Menus faits']];
+  const verrou = mode === 'perso' && nSem > 0;
+  const actions = html`<${React.Fragment}>
+    <button type="button" className=${cx('btn wide', !verrou && 'pri')} onClick=${onIAJour}><${Icon} n="sparkles" s=${18} />Faire ma journée avec l’IA</button>
+    ${mode !== 'programme' && html`<button type="button" className="btn wide" onClick=${onIA}><${Icon} n="clock" s=${18} />${nSem ? 'Refaire ma semaine avec l’IA' : 'Faire ma semaine avec l’IA'}</button>`}
+    <button type="button" className="btn wide" onClick=${onImp}><${Icon} n="note" s=${18} />${nSem ? 'Coller un nouveau menu' : 'Coller mon menu de la semaine'}</button>
+  <//>`;
   const options = html`<details className="more"><summary>Options</summary><div className="stack">
     ${peseeSeg}
     ${!pesee && html`<p className="mut" style=${{ fontSize: 12 }}>Sans pesée, tu comptes en portions (une assiette moyenne).</p>`}
@@ -4165,10 +4172,9 @@ function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib, onImp }) {
       <div className="progs">${Apex.PROGRAMMES_ORDRE.map(id => { const p = Apex.PROGRAMMES[id]; return html`<button key=${id} type="button" className="prog" aria-pressed=${prog === id} onClick=${() => { setCfg({ repasProg: id }); toast('Programme « ' + p.n + ' » choisi'); }}>
         <span className="prog-h"><i><${Icon} n=${p.ic} s=${18} /></i><b>${p.n}</b>${conseille === id && html`<em>Conseillé</em>`}</span><small>${p.tag}</small></button>`; })}</div>
       <div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${prog ? 'Actif : ' + Apex.PROGRAMMES[prog].n : 'Choisis un menu'}</span><button type="button" className="btn sm" onClick=${() => onWeek(base)}><${Icon} n="clock" s=${16} />Voir la semaine</button></div></div>`}
-    <button type="button" className="btn pri wide" onClick=${onIAJour}><${Icon} n="sparkles" s=${18} />Faire ma journée avec l’IA</button>
-    ${mode !== 'programme' && html`<button type="button" className="btn wide" onClick=${onIA}><${Icon} n="clock" s=${18} />${nSem ? 'Refaire ma semaine avec l’IA' : 'Faire ma semaine avec l’IA'}</button>`}
-    <button type="button" className="btn wide" onClick=${onImp}><${Icon} n="note" s=${18} />Coller mon menu de la semaine</button>
-    ${mode === 'perso' && nSem > 0 && html`<p className="mut" style=${{ fontSize: 12 }}>Semaine enregistrée : ${nSem} / 7 jours.</p>`}
+    ${verrou ? html`<div className="sem-ok"><i><${Icon} n="check" s=${18} /></i><div><b>Ma semaine est enregistrée</b><span>${nSem} / 7 jours · tes repas et tes quantités sont gardés. Chaque jour, « Charger mon menu » les reprend.</span></div></div>
+      <details className="more"><summary>Changer mon menu</summary><div className="stack">${actions}</div></details>`
+    : actions}
     <button type="button" className="btn wide" onClick=${onLib}><${Icon} n="plus" s=${18} />Ajouter un aliment à ma bibliothèque</button>
     ${options}
   <//>`;
@@ -4226,6 +4232,8 @@ function MenuIASheet({ onClose, jour }) {
   };
   const t = day && res ? (res.tot || res.meals.reduce((s, m) => Apex.add(s, Apex.totMeal(m, foods)), Apex.Z())) : null;
   const titre = day ? 'Ma journée avec l’IA' : 'Ma semaine avec l’IA';
+  const semExiste = !day && !!(Store.cfg().repasSemaine && Object.keys(Store.cfg().repasSemaine).length);
+  const prevus = day ? ((Store.get().journal[jour] || {}).repas || []).filter(m => !m.ok && m.items && m.items.length).length : 0;
   return html`<${Sheet} title=${titre} onClose=${onClose}>
     ${!sample ? html`<div className="note"><${Icon} n="alert" /><div><span><b>L’IA n’est pas connectée.</b> Active-la dans Paramètres › IA, ou compose tes repas toi-même.</span></div></div>`
     : !res ? html`<${React.Fragment}>
@@ -4244,14 +4252,14 @@ function MenuIASheet({ onClose, jour }) {
       ${manges.length > 0 && html`<p className="mut" style=${{ fontSize: 12 }}>Déjà mangé, gardé : ${manges.map(m => m.nom).join(', ')}.</p>`}
       <div className="ia-j">${res.meals.map((m, i) => html`<div key=${i} className="ia-m"><b>${m.h ? m.h + ' · ' : ''}${m.nom}</b><span>${m.items.map(it => nom(it) + qte(it)).join(' · ')}</span></div>`)}</div>
       ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
-      <button type="button" className="btn pri wide" disabled=${busy} onClick=${apply}><${Icon} n="check" s=${18} />Appliquer à ma journée</button>
+      ${prevus ? html`<${Confirm} cls="pri wide" icon="check" label="Appliquer à ma journée" sure=${'Remplacer tes ' + prevus + ' repas prévus ? Touche encore'} onYes=${apply} />` : html`<button type="button" className="btn pri wide" disabled=${busy} onClick=${apply}><${Icon} n="check" s=${18} />Appliquer à ma journée</button>`}
       <div className="row"><button type="button" className="btn grow" disabled=${busy} onClick=${() => run(true)}><${Icon} n="refresh" s=${18} />${busy ? 'Nouvelle idée…' : 'Une autre idée'}</button><button type="button" className="btn ghost" disabled=${busy} onClick=${() => setRes(null)}>Modifier ma demande</button></div>
     <//>` : html`<${React.Fragment}>
       <div className="row sb"><${Pill} st="good">Semaine prête<//><span className="mut" style=${{ fontSize: 12 }}>${res.manquants.length ? res.manquants.length + ' jour(s) copié(s) d’un autre' : '7 jours composés'}</span></div>
       <div className="wk">${Apex.SEMAINE_ORDRE.map(d => { const tt = res.totaux[d], tpl = res.semaine[d]; return html`<div key=${d} className="wk-d"><h3>${Apex.JOURS[d]}<small>${tt ? f0(tt.k) + ' kcal · P ' + tt.p + ' · G ' + tt.g + ' · L ' + tt.l : ''}</small></h3>
         ${tpl.map(m => html`<p key=${m.id}><b>${m.h ? m.h + ' ' : ''}${m.nom}</b><span>${m.items.map(nom).join(' · ')}</span></p>`)}</div>`; })}</div>
       ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
-      <button type="button" className="btn pri wide" disabled=${busy} onClick=${apply}><${Icon} n="check" s=${18} />Appliquer ma semaine</button>
+      ${semExiste ? html`<${Confirm} cls="pri wide" icon="check" label="Remplacer ma semaine" sure="Ta semaine enregistrée sera remplacée. Touche encore" onYes=${apply} />` : html`<button type="button" className="btn pri wide" disabled=${busy} onClick=${apply}><${Icon} n="check" s=${18} />Appliquer ma semaine</button>`}
       <div className="row"><button type="button" className="btn grow" disabled=${busy} onClick=${() => run(true)}><${Icon} n="refresh" s=${18} />${busy ? 'Nouvelle semaine…' : 'Une autre semaine'}</button><button type="button" className="btn ghost" disabled=${busy} onClick=${() => setRes(null)}>Modifier</button></div>
     <//>`}
   <//>`;
