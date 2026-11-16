@@ -2232,6 +2232,148 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine, optimiserJour, promptMenuJour, menuJourIA, resteJour, validerJourIA, recentsRepas, inspiration });
 })();
 
+/* ---- 13b-import-menu.js ---- */
+/* Macrolya — import d'un menu écrit (copié d'une note, d'un message, d'une IA) : jours, repas, aliments et quantités.
+   Fonctions pures (testées par test-import.js). Les quantités écrites par l'utilisateur sont gardées telles quelles (menu « fixe »). */
+(function () {
+  const A = Apex;
+  const norm = s => String(s || '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’`]/g, "'");
+  const DOW = { dimanche: 0, lundi: 1, mardi: 2, mercredi: 3, jeudi: 4, vendredi: 5, samedi: 6 };
+  const NB_MOTS = { un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, demi: 0.5, 'demie': 0.5 };
+  const num = s => (s == null ? null : NB_MOTS[norm(s)] != null ? NB_MOTS[norm(s)] : parseFloat(String(s).replace(',', '.')));
+  const HEURES = [[/petit/, '08:00'], [/pre.?(seance|entrain|workout|training)/, '17:00'], [/post.?(seance|entrain|workout|training)/, '19:30'], [/dejeuner|midi/, '12:30'], [/collation|gouter|snack|en.?cas/, '16:30'], [/diner/, '20:00'], [/soir|coucher|nuit/, '22:00']];
+  const heureDe = nom => { const n = norm(nom); const x = HEURES.find(h => h[0].test(n)); return x ? x[1] : ''; };
+  const pad = n => String(n).padStart(2, '0');
+  /* unités « comptées » : grammes approximatifs si l'aliment n'a pas d'unité dans la base */
+  const UNITES = [[/soupe|^c\.?\s?a\.?\s?s\.?$|^cas$|^cs$/, 'c. à soupe', 12], [/cafe|^c\.?\s?a\.?\s?c\.?$|^cac$|^cc$/, 'c. à café', 5], [/^tranches?$/, 'tranche', 30], [/^bo[iî]tes?$/, 'boîte', 140], [/^pots?$/, 'pot', 125], [/^sachets?$/, 'sachet', 30], [/^portions?$/, 'portion', 100], [/^poign(e|é)es?$/, 'poignée', 30], [/^verres?$/, 'verre', 200], [/^bols?$/, 'bol', 250], [/^scoops?|dosettes?|doses?|mesures?$/, 'dose', 30], [/^carr(e|é)s?$/, 'carré', 10]];
+
+  /* Une ligne d'aliment : « 50 g flocons d'avoine », « 1 banane (120 g) », « 1 boîte maquereau (169 g) », « 2 c. à soupe de miel ». */
+  function lireAliment(brut) {
+    let s = String(brut || '').trim().replace(/^[-•*·]\s*/, ''); if (!s) return null;
+    let g = null; const par = s.match(/\((?:[^()]*?)(\d+(?:[.,]\d+)?)\s*(kg|g|gr|grammes?|ml|cl|l)\b[^()]*\)/i);
+    if (par) g = num(par[1]) * ({ kg: 1000, l: 1000, cl: 10 }[par[2].toLowerCase()] || 1);
+    s = s.replace(/\([^()]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+    let n = null, unite = null, m = s.match(/^(\d+(?:[.,]\d+)?)\s*(kg|g|gr|grammes?|ml|cl|l)\.?\s+(?:de\s+|d')?(.+)$/i);
+    if (m) { const v = num(m[1]) * ({ kg: 1000, l: 1000, cl: 10 }[m[2].toLowerCase()] || 1); if (g == null) g = v; s = m[3]; }
+    else if ((m = s.match(/^(\d+(?:[.,]\d+)?|une?|deux|trois|quatre|cinq|demie?)\s+(.+)$/i))) {
+      n = num(m[1]); s = m[2];
+      const w = s.match(/^((?:c\.?\s?(?:à|a)\s?(?:soupe|caf[eé]|s|c)\.?)|(?:cuill?[eè]res?\s+(?:à|a)\s+(?:soupe|caf[eé])))\s+(?:de\s+|d')?(.+)$/i) || s.match(/^(\S+)\s+(?:de\s+|d')(.+)$/i) || s.match(/^(tranches?|bo[iî]tes?|pots?|sachets?|portions?|poign[ée]es?|verres?|bols?|scoops?|doses?|carr[ée]s?)\s+(.+)$/i);
+      if (w) { const u = UNITES.find(x => x[0].test(norm(w[1]).replace(/\s+/g, ' '))); if (u) { unite = u; s = w[2]; } }
+    }
+    const nom = s.replace(/^(?:de\s+|d')/i, '').replace(/\s+/g, ' ').trim();
+    return nom ? { txt: String(brut).trim(), nom, g: g != null && g > 0 ? Math.round(g * 10) / 10 : null, n: n != null && n > 0 ? n : null, unite: unite ? unite[1] : null, gU: unite ? unite[2] : null } : null;
+  }
+  /* Découpe sur les virgules, « + » et « ; » hors parenthèses. */
+  const decouper = s => { const out = []; let cur = '', d = 0; for (const ch of String(s)) { if (ch === '(') d++; if (ch === ')') d = Math.max(0, d - 1); if (!d && (ch === ',' || ch === ';' || ch === '+')) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out.map(x => x.trim()).filter(Boolean); };
+
+  /* Texte complet → { jours: {dow: {statut, meals:[{nom, h, items:[lireAliment]}]}}, sansJour, nb } */
+  function lireMenu(texte) {
+    const jours = {}; let cur = null, sansJour = false, nb = 0;
+    String(texte || '').split(/\r?\n/).forEach(l0 => {
+      const l = l0.replace(/\*\*/g, '').trim(); if (!l) return;
+      const j = norm(l).match(/^[\s#*_>-]*(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b(.*)$/);
+      if (j && !/:\s*\d/.test(j[2])) {
+        const dw = DOW[j[1]], rest = j[2]; cur = jours[dw] = { statut: /repos|off\b/.test(rest) ? 'repos' : /seance|salle|muscu|entrain|training|push|pull|legs|upper|lower|full/.test(rest) ? 'salle' : null, meals: [] }; return;
+      }
+      const m = l.match(/^[-•*·]?\s*([^:]{2,48}?)\s*:\s*(.+)$/); if (!m) return;
+      let nom = m[1].trim(), h = '';
+      const hm = nom.match(/^(.*?)\s*(?:[-–(à@]\s*)?(\d{1,2})\s*[h:]\s*(\d{2})?\)?\s*$/i);
+      if (hm && +hm[2] < 24) { nom = hm[1].replace(/[-–(]\s*$/, '').trim() || nom; h = pad(+hm[2]) + ':' + (hm[3] || '00'); }
+      const items = decouper(m[2]).map(lireAliment).filter(Boolean); if (!items.length) return;
+      if (!cur) { sansJour = true; cur = jours[-1] = { statut: null, meals: [] }; }
+      cur.meals.push({ nom: nom.charAt(0).toUpperCase() + nom.slice(1), h: h || heureDe(nom), items }); nb += items.length;
+    });
+    if (sansJour && Object.keys(jours).length === 1) { const t = jours[-1]; delete jours[-1]; [0, 1, 2, 3, 4, 5, 6].forEach(d => { jours[d] = t; }); }
+    else delete jours[-1];
+    Object.keys(jours).forEach(d => { const ms = jours[d].meals, vus = {}; ms.forEach(x => { if (!x.h) return; if (vus[x.h]) { const [hh, mm] = x.h.split(':').map(Number); const t = hh * 60 + mm + 30; x.h = pad(Math.floor(t / 60) % 24) + ':' + pad(t % 60); } vus[x.h] = 1; }); });
+    return { jours, sansJour, nb };
+  }
+
+  /* Noms d'aliments uniques à reconnaître, avec les candidats de la base. */
+  const DESCR = ['cru', 'crue', 'crus', 'crues', 'surgele', 'surgeles', 'surgelee', 'surgelees', 'egoutte', 'egouttes', 'egouttee', 'egouttees', 'nature', 'bio', 'frais', 'fraiche', 'entier', 'entiere', 'chair'];
+  const cle = nom => norm(nom).replace(/[^a-z0-9% ]+/g, ' ').replace(/\s+/g, ' ').replace(/ %/g, '%').trim();
+  const MOTS = ['avec', 'sans', 'pour', 'aux', 'des', 'les', 'une', 'mg', 'type', 'facon'];
+  /* Synonymes courants : la façon dont on écrit un menu → le nom de la base. */
+  const SYN = [[/\b(filets?|escalopes?|aiguillettes?) de poulet\b/, 'blanc de poulet'], [/\btomates? cerises?\b/, 'tomate'], [/\b(penne|pennes|spaghettis?|tagliatelles?|fusillis?|coquillettes?|macaronis?)\b/, 'pates'], [/\bfromage frais 0\b/, 'fromage blanc 0'], [/\bblancs? d'oeufs?\b/, 'blanc d oeuf'], [/\bthon (au )?naturel\b/, 'thon naturel'], [/\bpdt\b/, 'pommes de terre']];
+  const synonyme = nom => { let s = norm(nom); SYN.forEach(x => { s = s.replace(x[0], x[1]); }); return s; };
+  function candidats(nom, foods, max) {
+    nom = synonyme(nom);
+    const base = A.chercherAliments(foods, nom, max || 6), sans = cle(nom).split(' ').filter(t => DESCR.indexOf(t) < 0).join(' ');
+    const plus = sans && sans !== cle(nom) ? A.chercherAliments(foods, sans, max || 6) : [];
+    const vus = {}, out = []; base.concat(plus).forEach(f => { if (!vus[f.id]) { vus[f.id] = 1; out.push(f); } }); return out.slice(0, max || 6);
+  }
+  /* Correspondance sûre sans IA : un aliment perso de même nom, ou un candidat qui contient tous les mots importants. */
+  function correspondanceSure(nom, foods, cands) {
+    const k = cle(nom); const perso = Object.keys(foods).map(id => foods[id]).find(f => f.c === 'perso' && cle(f.n) === k); if (perso) return perso;
+    const toks = cle(synonyme(nom)).split(' ').filter(t => (t.length >= 3 || /^\d+%$/.test(t)) && DESCR.indexOf(t) < 0 && MOTS.indexOf(t) < 0); if (!toks.length || !cands.length) return null;
+    const ok = cands.map((f, rang) => { const hay = ' ' + cle(f.n + ' ' + (f.al || '')) + ' ', mots = cle(f.n).split(' ').filter(x => x.length >= 3 && DESCR.indexOf(x) < 0 && MOTS.indexOf(x) < 0);
+      const tous = toks.every(t => /%$/.test(t) ? hay.indexOf(' ' + t) >= 0 : hay.indexOf(' ' + t) >= 0 || hay.indexOf(' ' + t.replace(/[sx]$/, '')) >= 0);
+      return tous ? { f, rang, extra: mots.filter(x => !toks.some(t => x.indexOf(t.replace(/[sx]$/, '')) === 0)).length, plat: f.est || f.c === 'ecart' || /\((bol|assiette|portion|part)\b/i.test(f.n) ? 1 : 0 } : null; }).filter(Boolean);
+    const debut = f => (cle(f.n).indexOf(toks[0].replace(/[sx]$/, '')) === 0 ? 0 : 1);
+    ok.sort((x, y) => x.plat - y.plat || debut(x.f) - debut(y.f) || x.rang - y.rang);
+    return ok.length && !ok[0].plat && ok[0].extra <= 2 ? ok[0].f : null;
+  }
+  function aReconnaitre(menu, foods) {
+    const noms = {}; Object.keys(menu.jours).forEach(d => menu.jours[d].meals.forEach(m => m.items.forEach(it => { const k = cle(it.nom); if (!noms[k]) noms[k] = { nom: it.nom, cands: candidats(it.nom, foods, 6), unite: !it.g && it.n ? it.unite || 'unité' : null }; })));
+    Object.keys(noms).forEach(k => { noms[k].sur = correspondanceSure(noms[k].nom, foods, noms[k].cands); });
+    return noms;
+  }
+  /* Prompt pour l'IA : choisir le bon aliment de la base, ou donner les valeurs pour 100 g. */
+  function promptReconnaissance(liste) {
+    return 'Tu es diététicien. Pour chaque aliment écrit par l’utilisateur, choisis dans ses candidats celui qui correspond VRAIMENT (même aliment, même état cru/cuit, même type de produit ; un produit allégé ou aromatisé n’est pas le produit nature). Si aucun ne correspond, donne ses valeurs nutritionnelles pour 100 g (table Ciqual, ou étiquette habituelle du produit ou de la marque citée).\n'
+      + 'Si l’aliment est compté à l’unité (champ "unite"), donne aussi le poids moyen d’une unité en grammes dans "pu".\n\n'
+      + liste.map((x, i) => i + '. "' + x.nom + '"' + (x.unite ? ' (compté en ' + x.unite + ')' : '') + ' — candidats : ' + (x.cands.length ? x.cands.map(f => f.id + ' = ' + f.n + ' [' + Math.round(f.k) + ' kcal' + (f.u ? ', 1 ' + f.u[0] + ' = ' + f.u[1] + ' g' : '/100 g') + ']').join(' ; ') : 'aucun')).join('\n')
+      + '\n\nRéponds uniquement par un objet JSON : {"r": [{"i": numéro, "id": "id du candidat"} ou {"i": numéro, "n": "nom court propre", "k": kcal/100 g, "p": protéines g, "g": glucides g, "l": lipides g, "f": fibres g, "pu": grammes par unité ou null}]}. Un élément par aliment, dans l’ordre.';
+  }
+  /* Vérifie la réponse de l'IA : id existant parmi les candidats, ou valeurs cohérentes. */
+  function lireReconnaissance(rep, liste, foods) {
+    const out = {}; const r = rep && Array.isArray(rep.r) ? rep.r : [];
+    r.forEach(x => {
+      const i = +x.i, it = liste[i]; if (!it) return;
+      if (x.id && foods[x.id] && (it.cands.some(f => f.id === x.id) || foods[x.id].c === 'perso')) { out[i] = { id: x.id }; return; }
+      const k = +x.k, p = +x.p || 0, g = +x.g || 0, l = +x.l || 0; if (!(k >= 0 && k <= 900) || p < 0 || g < 0 || l < 0 || p + g + l > 101) return;
+      const calc = p * 4 + g * 4 + l * 9; if (k > 20 && Math.abs(calc - k) > Math.max(25, k * 0.3)) return;
+      out[i] = { neuf: { n: String(x.n || it.nom).slice(0, 60), k: Math.round(k), p: Math.round(p * 10) / 10, g: Math.round(g * 10) / 10, l: Math.round(l * 10) / 10, f: Math.round((+x.f || 0) * 10) / 10, pu: +x.pu > 0 && +x.pu < 2000 ? Math.round(+x.pu) : null } };
+    });
+    return out;
+  }
+  const roleDe = f => (f.p >= 15 ? 'P' : f.g >= 40 ? 'G' : f.l >= 30 ? 'L' : '');
+  /* Aliment perso créé pour un nom inconnu (valeurs de l'IA). */
+  function alimentNeuf(id, v, unite) {
+    return { id, n: v.n.charAt(0).toUpperCase() + v.n.slice(1), c: 'perso', r: roleDe(v), k: v.k, p: v.p, g: v.g, l: v.l, f: v.f || 0, d: v.pu ? 1 : 100, u: v.pu ? [unite && unite !== 'unité' ? unite : 'unité', v.pu] : null, etq: 0, imp: 1 };
+  }
+  /* Quantité dans l'unité de l'aliment de la base (grammes, ou nombre d'unités). */
+  function quantite(it, f) {
+    const r2 = v => Math.round(v * 100) / 100;
+    if (f.u) { if (it.g != null) return r2(it.g / f.u[1]); return r2(it.n || 1); }
+    if (it.g != null) return Math.round(it.g);
+    const gU = it.gU || f.d || 100; return Math.round((it.n || 1) * gU);
+  }
+  /* Menu lu + correspondances {cle: food} → semaine fixe {dow: [repas]} et totaux par jour. */
+  function construireSemaine(menu, corr, foods) {
+    const semaine = {}, totaux = {}, manquants = [];
+    Object.keys(menu.jours).forEach(d => {
+      const meals = menu.jours[d].meals.map((m, i) => ({ id: 'm' + (i + 1), nom: m.nom, h: m.h || '', fixe: 1, items: m.items.map(it => { const f = corr[cle(it.nom)]; if (!f) { manquants.push(it.txt); return null; } return { a: f.id, q: quantite(it, f) }; }).filter(Boolean) })).filter(m => m.items.length);
+      if (!meals.length) return;
+      semaine[d] = meals;
+      totaux[d] = meals.reduce((t, m) => A.add(t, A.totMeal({ items: m.items }, foods)), A.Z());
+    });
+    return { semaine, totaux, manquants };
+  }
+  /* Repas du journal à partir du modèle fixe (nouveaux identifiants, rien de coché). */
+  const repasDepuisFixe = tpl => tpl.map(m => ({ id: m.id, nom: m.nom, h: m.h, ok: false, items: m.items.map(x => ({ id: A.uid(), a: x.a, q: x.q })) }));
+
+  /* planDuJour : un jour importé (repas « fixe ») garde les quantités écrites, sans recalage. */
+  const planAvant = A.planDuJour;
+  A.planDuJour = function (cfg, statut, cible, date) {
+    const tpl = A.modeleDuJour(cfg, statut, date);
+    if (cfg && cfg.repasMode === 'perso' && Array.isArray(tpl) && tpl.length && tpl.every(m => m.fixe)) { const foods = A.allFoods(cfg); return repasDepuisFixe(tpl).map(m => Object.assign({}, m, { items: m.items.filter(it => foods[it.a] && it.q > 0) })).filter(m => m.items.length); }
+    return planAvant(cfg, statut, cible, date);
+  };
+
+  Object.assign(A, { lireAliment, lireMenu, cleAliment: cle, candidatsImport: candidats, aReconnaitre, promptReconnaissance, lireReconnaissance, alimentNeuf, quantiteImport: quantite, construireSemaine, repasDepuisFixe });
+})();
+
 /* ---- 14-program-logic.js ---- */
 /* Macrolya — espace programme : paramètres par exercice (séries, répétitions, RIR), bibliothèque par muscle,
    volume hebdomadaire, demande à l'IA. Fonctions pures (testées par test-program.js). */
@@ -3929,7 +4071,67 @@ function MealWeekSheet({ cfg, progId, onClose }) {
   <//>`;
 }
 
-function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib }) {
+/* Coller un menu écrit : chaque jour, chaque repas, chaque aliment avec la quantité écrite. L'IA reconnaît les aliments inconnus. */
+const EX_MENU = 'LUNDI (séance)\nPetit-déjeuner : 50 g flocons d’avoine, 30 g whey, 1 banane (120 g)\nDéjeuner : 150 g filet de poulet cru, 100 g riz basmati cru, 200 g brocolis\nCollation 16h30 : 150 g skyr, 1 kiwi\nDîner : 130 g saumon, 200 g pommes de terre, salade\n\nMARDI (repos)\n…';
+function ImportMenuSheet({ onClose }) {
+  const st = useStore(), sample = st.caps().sample;
+  const [txt, setTxt] = useState(() => lsGet('import:menu', '')); const [busy, setBusy] = useState(''); const [err, setErr] = useState(''); const [res, setRes] = useState(null); const [rempl, setRempl] = useState(true);
+  const ctl = useRef(null); useEffect(() => () => { if (ctl.current) ctl.current.abort(); }, []);
+  const analyser = async () => {
+    setErr(''); setRes(null); lsSet('import:menu', txt.slice(0, 20000));
+    const menu = Apex.lireMenu(txt); if (!menu.nb) { setErr('Aucun repas trouvé. Écris un jour par ligne (« LUNDI »), puis un repas par ligne : « Déjeuner : 150 g poulet, 100 g riz ».'); return; }
+    const cfg = Store.cfg(), foods = Apex.allFoods(cfg), noms = Apex.aReconnaitre(menu, foods), corr = {}, neufs = {}, liste = [];
+    Object.keys(noms).forEach(k => { if (noms[k].sur) corr[k] = noms[k].sur; else liste.push(Object.assign({ k }, noms[k])); });
+    let iaErr = '';
+    if (liste.length && sample) {
+      setBusy('L’IA reconnaît ' + liste.length + ' aliment' + (liste.length > 1 ? 's' : '') + '…');
+      if (ctl.current) ctl.current.abort(); ctl.current = new AbortController();
+      try {
+        const rep = await sample.json(Apex.promptReconnaissance(liste), { signal: ctl.current.signal, cache: false });
+        const m = Apex.lireReconnaissance(rep, liste, foods);
+        liste.forEach((x, i) => { const r = m[i]; if (!r) return; if (r.id) corr[x.k] = foods[r.id]; else if (r.neuf) { const id = 'u_' + Apex.uid(), fd = Apex.alimentNeuf(id, r.neuf, x.unite); neufs[id] = fd; corr[x.k] = fd; } });
+      } catch (e) { iaErr = aiErr(e); }
+    }
+    const foods2 = Object.assign({}, foods, neufs), b = Apex.construireSemaine(menu, corr, foods2);
+    const recap = Object.keys(noms).map(k => ({ nom: noms[k].nom, f: corr[k] || null, neuf: !!(corr[k] && neufs[corr[k].id]) }));
+    setBusy(''); setRes(Object.assign({ menu, neufs, recap, foods2, iaErr, sansIA: !sample && liste.length > 0 }, b));
+  };
+  const enregistrer = () => {
+    const cfg = Store.cfg(), S = Store.get(), today = Apex.today(); let nJ = 0;
+    Store.patch('cfg', null, { repasMode: 'perso', repasSemaine: Object.assign({}, cfg.repasSemaine || {}, res.semaine), aliments: Object.assign({}, cfg.aliments, res.neufs) });
+    if (rempl) for (let i = 0; i < 7; i++) {
+      const d = Apex.addDays(today, i), dw = Apex.dow(d), tpl = res.semaine[dw]; if (!tpl) continue;
+      const j = S.journal[d] || {}; if ((j.repas || []).some(m => m.ok) || j.man) continue;
+      const o = { date: d, repas: Apex.repasDepuisFixe(tpl) }, stt = res.menu.jours[dw] && res.menu.jours[dw].statut;
+      if (stt === 'repos') o.statut = 'repos'; else if (stt === 'salle') { o.statut = 'salle'; o.seance = j.seance || Store.cfg().planning[dw] || Apex.prochaineSeance(S.seances, Store.cfg(), d); }
+      Store.patch('journal', d, o); nJ++;
+    }
+    const nS = Object.keys(res.semaine).length;
+    toast('Menu enregistré pour ' + nS + ' jour' + (nS > 1 ? 's' : '') + (nJ ? ', ' + nJ + ' jour' + (nJ > 1 ? 's' : '') + ' de cette semaine remplis' : '')); onClose();
+  };
+  const ordre = [1, 2, 3, 4, 5, 6, 0].filter(d => res && res.semaine[d]);
+  return html`<${Sheet} title="Coller mon menu" onClose=${onClose}>
+    ${!res && html`<${React.Fragment}>
+      <p className="mut" style=${{ fontSize: 13 }}>Colle ton menu de la semaine tel quel : un jour par ligne, puis un repas par ligne avec les aliments et les quantités. Tes quantités sont gardées exactement.</p>
+      <textarea id="imp-menu" className="inp im-txt" rows="12" placeholder=${EX_MENU} value=${txt} onChange=${e => setTxt(e.target.value)} aria-label="Menu de la semaine à importer"></textarea>
+      ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
+      ${!sample && html`<div className="note"><${Icon} n="info" /><div><span>Active l’IA (Paramètres › Intelligence artificielle) pour reconnaître les produits de marque et les aliments absents de la base.</span></div></div>`}
+      <button type="button" className="btn pri wide" disabled=${!!busy || !txt.trim()} onClick=${analyser}><${Icon} n="sparkles" s=${18} />${busy || 'Lire mon menu'}</button>
+    <//>`}
+    ${res && html`<${React.Fragment}>
+      <div className="im-jours">${ordre.map(d => { const t = res.totaux[d], s = res.menu.jours[d].statut; return html`<details key=${d} className="im-j"><summary><b>${Apex.JOURS[d]}</b>${s && html`<em>${s === 'repos' ? 'repos' : 'salle'}</em>`}<span>${res.semaine[d].length} repas · ${f0(t.k)} kcal · P ${f0(t.p)} · G ${f0(t.g)} · L ${f0(t.l)}</span></summary>
+        ${res.semaine[d].map(m => html`<div key=${m.id} className="im-m"><b>${m.nom}${m.h ? ' · ' + m.h : ''}</b><span>${m.items.map(it => { const fd = res.foods2[it.a]; return fd ? qteTxt(it, fd) + ' ' + fd.n : ''; }).join(', ')}</span></div>`)}</details>`; })}</div>
+      <details className="im-rec"><summary>Aliments reconnus (${res.recap.filter(x => x.f).length} / ${res.recap.length})</summary>
+        ${res.recap.map(x => html`<div key=${x.nom} className=${cx('im-r', !x.f && 'ko')}><span>${x.nom}</span><b>${x.f ? x.f.n : 'non reconnu'}</b>${x.neuf && html`<em>nouveau · ${f0(x.f.k)} kcal/100 g</em>`}</div>`)}</details>
+      ${res.manquants.length > 0 && html`<div className="note"><${Icon} n="alert" /><div><span>${res.manquants.length} aliment${res.manquants.length > 1 ? 's' : ''} non reconnu${res.manquants.length > 1 ? 's' : ''}, ignoré${res.manquants.length > 1 ? 's' : ''} : ${res.manquants.slice(0, 6).join(' ; ')}${res.manquants.length > 6 ? '…' : ''}. ${res.iaErr ? 'IA : ' + res.iaErr : res.sansIA ? 'Active l’IA pour les reconnaître.' : 'Ajoute-les ensuite dans le repas.'}</span></div></div>`}
+      <label className="chk-l" htmlFor="im-rempl"><input id="im-rempl" type="checkbox" checked=${rempl} onChange=${e => setRempl(e.target.checked)} /><span>Remplir aussi les 7 prochains jours <small>(sauf les jours où un repas est déjà coché)</small></span></label>
+      <p className="mut" style=${{ fontSize: 12 }}>Enregistré comme « Ma semaine » : chaque jour, « Charger mon menu » reprend ces repas avec tes quantités. Les jours absents du menu ne changent pas.</p>
+      <div className="row"><button type="button" className="btn ghost" onClick=${() => setRes(null)}>Modifier le texte</button><button type="button" className="btn pri grow" disabled=${!ordre.length} onClick=${enregistrer}><${Icon} n="check" s=${18} />Enregistrer ma semaine</button></div>
+    <//>`}
+  <//>`;
+}
+
+function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib, onImp }) {
   const choisi = !!cfg.repasMode, mode = cfg.repasMode || 'libre', prog = cfg.repasProg || '', conseille = Apex.programmeConseille(cfg), pesee = cfg.repasPesee !== false, setCfg = p => Store.patch('cfg', null, p);
   const nSem = cfg.repasSemaine ? Object.keys(cfg.repasSemaine).length : 0, base = prog || conseille, sample = Store.caps().sample;
   const peseeSeg = html`<div className="row sb"><span className="fld-l" style=${{ margin: 0 }}>Quantités</span><${Seg} neutral label="Pesée des aliments" value=${pesee} onChange=${v => setCfg({ repasPesee: v })} options=${[[true, 'Je pèse'], [false, 'Sans pesée']]} /></div>`;
@@ -3937,6 +4139,7 @@ function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib }) {
     <div className="choix">
       <button type="button" className="big" onClick=${onIAJour}><i><${Icon} n="sparkles" s=${22} /></i><b>L’IA fait ma journée</b><span>Selon ce qu’il te reste et ta demande du jour.</span></button>
       <button type="button" className="big" onClick=${onIA}><i><${Icon} n="clock" s=${22} /></i><b>L’IA fait ma semaine <${ProTag} /></b><span>Selon tes macros et tes contraintes.</span></button>
+      <button type="button" className="big" onClick=${onImp}><i><${Icon} n="note" s=${22} /></i><b>Coller mon menu</b><span>Ta semaine écrite (note, message, IA) : chaque repas de chaque jour.</span></button>
       <button type="button" className="big" onClick=${() => setCfg({ repasMode: 'libre' })}><i><${Icon} n="plus" s=${22} /></i><b>Je compose moi-même</b><span>Ce que tu manges est déduit de ton quota.</span></button>
     </div>
     <div className="row sb"><button type="button" className="btn sm ghost" onClick=${() => setCfg({ repasMode: 'programme' })}>Voir des menus tout faits</button><button type="button" className="btn sm" onClick=${onLib}><${Icon} n="plus" s=${16} />Ma bibliothèque d’aliments</button></div>
@@ -3955,6 +4158,7 @@ function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib }) {
       <div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${prog ? 'Actif : ' + Apex.PROGRAMMES[prog].n : 'Choisis un menu'}</span><button type="button" className="btn sm" onClick=${() => onWeek(base)}><${Icon} n="clock" s=${16} />Voir la semaine</button></div></div>`}
     <button type="button" className="btn pri wide" onClick=${onIAJour}><${Icon} n="sparkles" s=${18} />Faire ma journée avec l’IA</button>
     ${mode !== 'programme' && html`<button type="button" className="btn wide" onClick=${onIA}><${Icon} n="clock" s=${18} />${nSem ? 'Refaire ma semaine avec l’IA' : 'Faire ma semaine avec l’IA'}</button>`}
+    <button type="button" className="btn wide" onClick=${onImp}><${Icon} n="note" s=${18} />Coller mon menu de la semaine</button>
     ${mode === 'perso' && nSem > 0 && html`<p className="mut" style=${{ fontSize: 12 }}>Semaine enregistrée : ${nSem} / 7 jours.</p>`}
     <button type="button" className="btn wide" onClick=${onLib}><${Icon} n="plus" s=${18} />Ajouter un aliment à ma bibliothèque</button>
     ${options}
@@ -4077,7 +4281,7 @@ const slotsVides = (cfg, statut) => ((SLOTS_N[statut] || SLOTS_N.repos)[repasNb(
 function Repas({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
   const j = S.journal[date] || {}, meals = j.repas || [], c = Apex.cibleDuJour(cfg, j, date), t = Apex.totJour(j, foods);
-  const [sheet, setSheet] = useState(null), [wk, setWk] = useState(''), [ia, setIa] = useState(false), [iaJ, setIaJ] = useState(false), [lib, setLib] = useState(false);
+  const [sheet, setSheet] = useState(null), [wk, setWk] = useState(''), [ia, setIa] = useState(false), [iaJ, setIaJ] = useState(false), [lib, setLib] = useState(false), [imp, setImp] = useState(false);
   const put = ms => Store.patch('journal', date, { date, repas: ms });
   const mapMeal = (mid, fn) => put(meals.map(m => (m.id === mid ? fn(m) : m)));
   const mapItem = (mid, iid, fn) => mapMeal(mid, m => Object.assign({}, m, { items: m.items.map(i => (i.id === iid ? fn(i) : i)).filter(Boolean) }));
@@ -4141,7 +4345,7 @@ function Repas({ date }) {
           ${man && html`<div className="note"><${Icon} n="info" /><div><span>Ce bilan vient du check-in. Les repas cochés ne comptent pas tant qu’il est actif.</span>
             <${Confirm} label="Revenir au planner" sure="Effacer le bilan saisi ?" onYes=${() => Store.patch('journal', date, { date, man: null })} /></div></div>`}
         <//>
-        <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => (estPro() ? setIa(true) : ouvrirPro())} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} />
+        <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => (estPro() ? setIa(true) : ouvrirPro())} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} onImp=${() => setImp(true)} />
         <${Card} title="Repas" sub="Touche un aliment pour voir son détail" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
           ${!man && html`<div className="rp-nb"><span>Repas par jour</span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repasNb(cfg) === n} onClick=${() => setNb(n)}>${n}</button>`)}</div></div>`}
           ${vide && mode !== 'libre' && !man && html`<div className="note acc"><${Icon} n="utensils" /><div><span>${mode === 'perso' && !semOk ? 'Remplis tes repas, ou charge le menu de base puis enregistre-le pour les ' + jourNom + 's.' : 'Remplis tes repas toi-même, ou charge le menu du ' + jourNom + ' calé sur ' + f0(c.kcal) + ' kcal.'}</span><button type="button" className="btn sm pri" onClick=${gen}><${Icon} n="utensils" s=${16} />${mode === 'perso' && semOk ? 'Charger mon menu du ' + jourNom : 'Charger le menu du ' + jourNom}</button></div></div>`}
@@ -4168,6 +4372,7 @@ function Repas({ date }) {
     </div>
     ${ia && html`<${MenuIASheet} onClose=${() => setIa(false)} />`}
     ${iaJ && html`<${MenuIASheet} jour=${date} onClose=${() => setIaJ(false)} />`}
+    ${imp && html`<${ImportMenuSheet} onClose=${() => setImp(false)} />`}
     ${lib && html`<${FoodLibSheet} onClose=${() => setLib(false)} />`}
     ${wk && html`<${MealWeekSheet} cfg=${cfg} progId=${wk} onClose=${() => setWk('')} />`}
     ${sheet && sheet.t === 'add' && sh && html`<${AddSheet} foods=${foods} title=${'Ajouter · ' + sh.nom} onClose=${() => setSheet(null)} onAdd=${it => addItems(sh.id, [it])} />`}
