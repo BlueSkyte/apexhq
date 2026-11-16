@@ -4221,7 +4221,7 @@ function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib, onImp }) {
       ${tuile('sparkles', verrou ? 'Compléter ma journée' : 'Ma journée avec l’IA', 'Garde ce que tu as mangé, l’IA propose le reste', onIAJour, 'pri')}
       ${verrou ? tuile('sliders', 'Changer mon menu', 'Nouvelle semaine, menu collé, bibliothèque', () => setChg(true))
         : html`<${React.Fragment}>
-          ${mode !== 'programme' && tuile('clock', 'Ma semaine avec l’IA', 'Sept jours calés sur tes macros', onIA)}
+          ${mode !== 'programme' && tuile('clock', html`Ma semaine avec l’IA <${ProTag} />`, 'Sept jours calés sur tes macros', onIA)}
           ${tuile('note', 'Coller mon menu', 'Ta semaine écrite, jour par jour', onImp)}
           ${tuile('plus', 'Ma bibliothèque', 'Tes aliments et plats perso', onLib)}
         <//>`}
@@ -5228,7 +5228,7 @@ function ProjectionCard({ date, win }) {
     if (t && e && e.jours > 0) { const n = Math.min(e.jours, 84); to = Apex.addDays(l.d, n); series.push({ name: 'Projection', c: 'var(--ink-2)', type: 'dash', pts: [{ d: l.d, v: l.v }, { d: to, v: l.v + t.dk / 7 * n }] }); }
   }
   const from = win ? Apex.addDays(date, -win) : null;
-  return html`<${ChartCard} cls="c7" title="Poids et projection" sub="Moyenne 7 j prolongée au rythme actuel"
+  return html`<${ChartCard} cls="c7" title=${html`Poids et projection <${ProTag} />`} sub="Moyenne 7 j prolongée au rythme actuel"
     legend=${raw.length ? [['Moyenne 7 j', 'var(--acc-hi)'], ['Pesée', 'var(--ink-3)', 'dot'], ['Projection', 'var(--ink-2)', 'dash'], ['Cible', 'var(--ink-3)', 'dash']] : null}
     table=${raw.length ? { cols: ['Date', 'Pesée (kg)', 'Moy. 7 j (kg)'], rows: raw.slice().reverse().slice(0, 60).map(p => { const x = mm.find(q => q.d === p.d); return [dMid(p.d), f1(p.v), x ? f2(x.v) : '–']; }) } : null}>
     <${LineChart} h=${250} unit=" kg" from=${from} to=${to} label="Poids, moyenne 7 jours et projection vers la cible" series=${series} refs=${raw.length ? [{ v: cfg.profil.poidsCible, label: f0(cfg.profil.poidsCible) + ' kg' }] : []}
@@ -5250,7 +5250,7 @@ function ApportCard({ date, win }) {
 function AdherenceCard({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(); const [n, setN] = useState(7);
   const a = Apex.adherence(S.journal, cfg, date, n), row = (lab, x, c) => html`<${Meter} label=${lab} v=${x[0]} max=${x[1] || n} c=${c} unit=${'j' + (x[1] ? ' · ' + Math.round(x[0] / x[1] * 100) + ' %' : '')} />`;
-  return html`<${Card} cls="c5" title="Adhérence" sub="Jours conformes sur jours renseignés" right=${html`<${Seg} neutral label="Fenêtre d’adhérence" value=${n} onChange=${setN} options=${[[7, '7 j'], [28, '28 j']]} />`}>
+  return html`<${Card} cls="c5" title=${html`Adhérence <${ProTag} />`} sub="Jours conformes sur jours renseignés" right=${html`<${Seg} neutral label="Fenêtre d’adhérence" value=${n} onChange=${setN} options=${[[7, '7 j'], [28, '28 j']]} />`}>
     <div className="stack" style=${{ gap: 14 }}>
       ${row('Calories à ±5 %', a.kcal, 'var(--acc-hi)')}
       ${row('Protéines ≥ ' + cfg.cibles.planchers.p + ' g', a.prot, 'var(--p)')}
@@ -5266,7 +5266,7 @@ function ForceCard({ date, win }) {
   Object.keys(GR).slice(0, 4).forEach((k, i) => { const lk = Apex.liftCle(S.seances, k, cfg); if (!lk) return; const h = lk.h.filter(x => x.e1 > 0 && x.date >= from); if (!h.length) return; const b = h[0].e1, nm = GR[k].n, col = COLS[i], lab = nm + ' · ' + (exos[lk.id] ? exos[lk.id].n : lk.id);
     series.push({ name: lab, c: col, type: 'line', pts: h.map(x => ({ d: x.date, v: x.e1 / b * 100 })) }); legend.push([lab, col]);
     const l = h[h.length - 1], m = Apex.mm7(S.journal, l.date); rows.push([nm, exos[lk.id] ? exos[lk.id].n : lk.id, f1(b), f1(l.e1), sgn((l.e1 / b - 1) * 100) + ' %', m ? f2(l.e1 / m.v) : '–']); });
-  return html`<${ChartCard} cls="c7" title="Progression de force" sub="e1RM en base 100 à la 1re séance de la période" legend=${legend.length ? legend : null}
+  return html`<${ChartCard} cls="c7" title=${html`Progression de force <${ProTag} />`} sub="e1RM en base 100 à la 1re séance de la période" legend=${legend.length ? legend : null}
     table=${rows.length ? { cols: ['Piste', 'Mouvement', 'e1RM départ', 'e1RM actuel', 'Évolution', 'e1RM / poids'], rows } : null}>
     <${LineChart} h=${250} fmt=${f0} from=${from || null} label="Progression de force en base 100" series=${series} refs=${series.length ? [{ v: 100, label: '100' }] : []}
       empty=${html`<span><b>Pas encore de séance notée.</b> En sèche, tenir sa force = garder son muscle. Chaque piste suit le mouvement clé d’un point faible.</span>`} />
@@ -5277,7 +5277,7 @@ function VolumeCard({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), l0 = Apex.lundi(date), weeks = [];
   for (let i = 5; i >= 0; i--) weeks.push(Apex.addDays(l0, -7 * i));
   const any = Object.keys(S.seances).length > 0, GRP = Apex.groupes(cfg);
-  return html`<${Card} cls="c12" title="Volume hebdo des points faibles" sub="Séries directes par semaine, repère = minimum visé">
+  return html`<${Card} cls="c12" title=${html`Volume hebdo des points faibles <${ProTag} />`} sub="Séries directes par semaine, repère = minimum visé">
     ${any && Object.keys(GRP).length ? html`<div className="grid" style=${{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>${Object.keys(GRP).map(k => { const G = GRP[k];
       const data = weeks.map(w => { const v = Apex.volumeEntre(S.seances, w, Apex.addDays(w, 6), exos).vol; return { d: w, v: G.m.reduce((s, m) => s + (v[m] || 0), 0), t: G.min, name: 'semaine du ' + dTiny(w) }; });
       return html`<div key=${k} className="stack"><span className="fld-l">${G.n}<b>${G.min}–${G.max} séries</b></span><${BarChart} h=${150} data=${data} unit=" séries" tName="Minimum" label=${'Volume hebdomadaire ' + G.n} /></div>`; })}</div>`
@@ -5369,7 +5369,7 @@ function CoachCard({ date }) {
     catch (e) { if (e && e.code === 'cancelled') { setOut(e.text || ''); } else { setErr(aiErr(e)); if (!e || e.code === 'refused') setOut(''); else if (e.text) setOut(e.text); } }
     setBusy(false);
   };
-  return html`<${Card} cls="c5" title="Bilan coach" sub="Analyse des 14 derniers jours par l’IA">
+  return html`<${Card} cls="c5" title=${html`Bilan coach <${ProTag} />`} sub="Analyse des 14 derniers jours par l’IA">
     ${out ? html`<div className="pre" aria-live="polite">${out}</div>` : html`<div className="empty"><span>Verdict, constats chiffrés et ajustements à partir de tes données. Utilise ton quota d’IA gratuit.</span></div>`}
     ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
     <div className="row">
