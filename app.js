@@ -2906,7 +2906,7 @@ const Cloud = (() => {
     INVALID_EMAIL: 'Adresse email invalide.', MISSING_EMAIL: 'Adresse email manquante.', MISSING_PASSWORD: 'Mot de passe manquant.',
     WEAK_PASSWORD: 'Mot de passe trop faible : 8 caractères minimum.', PASSWORD_DOES_NOT_MEET_REQUIREMENTS: 'Mot de passe trop faible : 8 caractères minimum.',
     TOO_MANY_ATTEMPTS_TRY_LATER: 'Trop d’essais. Réessaie dans quelques minutes.', USER_DISABLED: 'Ce compte est désactivé.', USER_NOT_FOUND: 'Compte introuvable.',
-    CREDENTIAL_TOO_OLD_LOGIN_AGAIN: 'Reconnecte-toi puis recommence.', TOKEN_EXPIRED: 'Session expirée : reconnecte-toi.', INVALID_REFRESH_TOKEN: 'Session expirée : reconnecte-toi.', INVALID_ID_TOKEN: 'Session expirée : reconnecte-toi.',
+    CREDENTIAL_TOO_OLD_LOGIN_AGAIN: 'Reconnecte-toi puis recommence.', ACCES_REFUSE: 'Inscription impossible avec cette adresse.', TOKEN_EXPIRED: 'Session expirée : reconnecte-toi.', INVALID_REFRESH_TOKEN: 'Session expirée : reconnecte-toi.', INVALID_ID_TOKEN: 'Session expirée : reconnecte-toi.',
     OPERATION_NOT_ALLOWED: 'La connexion par email n’est pas activée dans Firebase.', API_KEY_INVALID: 'Configuration Firebase invalide.',
     PERMISSION_DENIED: 'Accès refusé par la base (règles de sécurité).', UNAUTHENTICATED: 'Session expirée : reconnecte-toi.', RESOURCE_EXHAUSTED: 'Quota gratuit du jour atteint : la synchro reprend plus tard.',
   };
@@ -2925,14 +2925,21 @@ const Cloud = (() => {
     keep(); emit();
   };
   const clean = e => String(e || '').trim().toLowerCase();
+  /* Adresses refusées (accès retiré par l'auteur de l'app) : on compare la partie avant @, sans accents, points, tirets ni chiffres. */
+  const BLOQUES = ['leclerc', 'timothe', 'timote', 'timoth'];
+  const bloque = e => { const l = clean(e).split('@')[0].normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, ''); return BLOQUES.some(b => l.indexOf(b) >= 0); };
+  const refus = () => mkErr('ACCES_REFUSE', 403);
+  if (ses && bloque(ses.email)) { ses = null; try { localStorage.removeItem(LA); } catch (e) { /* sans effet */ } }
 
   async function signUp(name, email, pw) {
+    if (bloque(email)) throw refus();
     const j = await post(ak('signUp'), { email: clean(email), password: pw, returnSecureToken: true });
     setSes(j, { name: name || '' });
     try { await post(ak('update'), { idToken: j.idToken, displayName: name || '', returnSecureToken: false }); } catch (e) { /* prénom gardé dans le profil de l'app */ }
     return ses;
   }
   async function signIn(email, pw) {
+    if (bloque(email)) throw refus();
     const prev = ses && ses.uid, j = await post(ak('signInWithPassword'), { email: clean(email), password: pw, returnSecureToken: true });
     setSes(j, { name: j.displayName || (ses && ses.name) || '' });
     return { uid: ses.uid, same: prev === ses.uid };
