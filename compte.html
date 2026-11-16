@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Macrolya · Nouveau mot de passe</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="icons/icon-192.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+:root { --bg: #0b0b0e; --card: #141317; --line: rgba(255, 255, 255, .1); --ink: #f4f2ee; --ink2: #b9b6ae; --ink3: #85827b; --acc: #ec6a35; --acc-hi: #ff9a5c; --good: #4fd88a; --bad: #ff7a6b; }
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: radial-gradient(110% 60% at 50% 0%, rgba(255, 122, 61, .22), transparent 65%), var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: grid; place-items: center; padding: 28px 16px calc(28px + env(safe-area-inset-bottom)); }
+main { width: min(420px, 100%); }
+.brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 22px; font-weight: 800; letter-spacing: .12em; font-size: 18px; }
+.brand svg { width: 30px; height: 24px; }
+.card { background: linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .02)); border: 1px solid var(--line); border-radius: 26px; padding: 26px 22px 22px; box-shadow: 0 30px 80px rgba(0, 0, 0, .45); }
+.ic { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; margin: 0 auto 14px; background: rgba(236, 106, 53, .16); color: var(--acc-hi); }
+.ic.ok { background: rgba(79, 216, 138, .15); color: var(--good); } .ic.ko { background: rgba(255, 122, 107, .14); color: var(--bad); }
+h1 { font-size: 24px; line-height: 1.2; text-align: center; margin: 0 0 6px; }
+p.sub { text-align: center; color: var(--ink2); margin: 0 0 20px; font-size: 15px; }
+p.sub b { color: var(--ink); word-break: break-all; }
+label { display: block; font-size: 13px; color: var(--ink2); margin: 14px 0 6px; font-weight: 600; }
+.f { position: relative; }
+input { width: 100%; height: 54px; border-radius: 16px; border: 1px solid var(--line); background: rgba(0, 0, 0, .35); color: var(--ink); font: inherit; font-size: 17px; padding: 0 52px 0 16px; outline: none; transition: border-color .2s, box-shadow .2s; }
+input:focus { border-color: var(--acc-hi); box-shadow: 0 0 0 4px rgba(255, 154, 92, .15); }
+.eye { position: absolute; right: 6px; top: 6px; width: 42px; height: 42px; border: 0; border-radius: 12px; background: transparent; color: var(--ink3); display: grid; place-items: center; cursor: pointer; }
+.force { display: flex; gap: 6px; margin-top: 10px; } .force i { flex: 1; height: 5px; border-radius: 9px; background: var(--line); transition: background .25s; }
+.hint { font-size: 12.5px; color: var(--ink3); margin-top: 8px; min-height: 18px; }
+.btn { width: 100%; height: 56px; margin-top: 22px; border: 0; border-radius: 18px; font: inherit; font-size: 17px; font-weight: 700; color: #1a0d06; background: linear-gradient(180deg, var(--acc-hi), var(--acc)); box-shadow: 0 12px 30px rgba(236, 106, 53, .35); cursor: pointer; transition: transform .1s, opacity .2s; text-decoration: none; display: grid; place-items: center; }
+.btn:active { transform: scale(.98); } .btn[disabled] { opacity: .45; box-shadow: none; cursor: default; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); box-shadow: none; margin-top: 10px; }
+.err { margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: rgba(255, 122, 107, .1); border: 1px solid rgba(255, 122, 107, .3); color: #ffb3a9; font-size: 14px; display: none; }
+.foot { text-align: center; color: var(--ink3); font-size: 12.5px; margin-top: 18px; }
+.foot a { color: var(--ink2); }
+.hide { display: none !important; }
+.spin { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--acc-hi); animation: s .8s linear infinite; margin: 10px auto; } @keyframes s { to { transform: rotate(360deg); } }
+</style></head>
+<body><main>
+  <div class="brand"><svg viewBox="0 0 378 300" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9a5c"/><stop offset="1" stop-color="#e2552a"/></linearGradient></defs><path transform="translate(29 0)" d="M0 267 L100 33 L160 153 L220 33 L320 267" fill="none" stroke="url(#g)" stroke-width="58" stroke-linejoin="round" stroke-linecap="round"/></svg>MACROLYA</div>
+  <section class="card" id="v-load"><div class="spin" role="status" aria-label="Vérification du lien"></div><p class="sub" style="margin:8px 0 0">Vérification du lien…</p></section>
+
+  <section class="card hide" id="v-form">
+    <div class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+    <h1>Nouveau mot de passe</h1>
+    <p class="sub">Pour le compte <b id="mail"></b></p>
+    <form id="f" novalidate>
+      <label for="pw">Nouveau mot de passe</label>
+      <div class="f"><input id="pw" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="eye" data-for="pw" aria-label="Afficher le mot de passe">👁</button></div>
+      <div class="force" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div class="hint" id="hint">8 caractères minimum.</div>
+      <label for="pw2">Confirme-le</label>
+      <div class="f"><input id="pw2" type="password" autocomplete="new-password" required><button type="button" class="eye" data-for="pw2" aria-label="Afficher la confirmation">👁</button></div>
+      <div class="err" id="err" role="alert"></div>
+      <button class="btn" id="go" type="submit" disabled>Enregistrer mon mot de passe</button>
+    </form>
+  </section>
+
+  <section class="card hide" id="v-ok">
+    <div class="ic ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <h1>C’est fait 💪</h1>
+    <p class="sub">Ton mot de passe est changé. Reviens dans Macrolya et connecte-toi avec le nouveau.</p>
+    <a class="btn" href="./">Ouvrir Macrolya</a>
+  </section>
+
+  <section class="card hide" id="v-ko">
+    <div class="ic ko"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg></div>
+    <h1 id="ko-t">Lien expiré</h1>
+    <p class="sub" id="ko-m">Ce lien n’est plus valable (il sert une seule fois et expire après 1 heure). Redemande-en un depuis l’app : Connexion › « Mot de passe oublié ? ».</p>
+    <a class="btn" href="./">Ouvrir Macrolya</a>
+  </section>
+  <p class="foot">Tu n’as rien demandé ? Ignore simplement l’email : ton mot de passe ne change pas.<br><a href="confidentialite.html">Confidentialité</a></p>
+</main>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), mode = q.get('mode'), code = q.get('oobCode'), key = q.get('apiKey') || 'AIzaSyAAM7fLuA42_fmWuwLzI_O6c6oFC8wME-M';
+  var $ = function (id) { return document.getElementById(id); };
+  var show = function (id) { ['v-load', 'v-form', 'v-ok', 'v-ko'].forEach(function (v) { $(v).classList.toggle('hide', v !== id); }); };
+  var ko = function (t, m) { $('ko-t').textContent = t; $('ko-m').textContent = m; show('v-ko'); };
+  var MSG = { EXPIRED_OOB_CODE: ['Lien expiré', 'Ce lien a expiré (il est valable 1 heure). Redemande-en un depuis l’app : Connexion › « Mot de passe oublié ? ».'], INVALID_OOB_CODE: ['Lien déjà utilisé', 'Ce lien a déjà servi ou il est incomplet. Redemande-en un depuis l’app : Connexion › « Mot de passe oublié ? ».'], USER_DISABLED: ['Compte désactivé', 'Ce compte a été désactivé.'], USER_NOT_FOUND: ['Compte introuvable', 'Ce compte n’existe plus.'] };
+  var api = function (body) { return fetch('https://identitytoolkit.googleapis.com/v1/accounts:resetPassword?key=' + encodeURIComponent(key), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error((j.error && j.error.message) || 'ERREUR'); return j; }); }); };
+  var code0 = function (e) { return String(e && e.message || '').split(' ')[0].split(':')[0]; };
+  if (mode && mode !== 'resetPassword') { ko('Action inconnue', 'Ce lien ne correspond à aucune action de Macrolya.'); return; }
+  if (!code) { ko('Lien incomplet', 'Ouvre le lien directement depuis l’email reçu, sans le modifier.'); return; }
+  api({ oobCode: code }).then(function (j) { $('mail').textContent = j.email || ''; show('v-form'); $('pw').focus(); })
+    .catch(function (e) { var m = MSG[code0(e)]; if (m) ko(m[0], m[1]); else ko('Vérification impossible', 'Vérifie ta connexion internet puis rouvre le lien depuis l’email.'); });
+  var bars = [].slice.call(document.querySelectorAll('.force i'));
+  var check = function () {
+    var a = $('pw').value, b = $('pw2').value, s = 0;
+    if (a.length >= 8) s++; if (a.length >= 12) s++; if (/[0-9]/.test(a) && /[a-zA-Z]/.test(a)) s++; if (/[^a-zA-Z0-9]/.test(a) || /[A-Z]/.test(a) && /[a-z]/.test(a)) s++;
+    var col = ['#ff7a6b', '#ffb347', '#ffd166', '#4fd88a'][Math.max(0, s - 1)];
+    bars.forEach(function (x, i) { x.style.background = i < s ? col : ''; });
+    $('hint').textContent = a.length < 8 ? (8 - a.length) + ' caractère' + (8 - a.length > 1 ? 's' : '') + ' de plus.' : ['Faible : ajoute des chiffres ou des symboles.', 'Correct.', 'Bon mot de passe.', 'Excellent 💪'][Math.max(0, s - 1)];
+    $('go').disabled = !(a.length >= 8 && a === b);
+    $('err').style.display = b && a !== b && b.length >= a.length ? 'block' : 'none'; $('err').textContent = 'Les deux mots de passe ne sont pas identiques.';
+  };
+  $('pw').addEventListener('input', check); $('pw2').addEventListener('input', check);
+  [].forEach.call(document.querySelectorAll('.eye'), function (b) { b.addEventListener('click', function () { var i = $(b.getAttribute('data-for')); i.type = i.type === 'password' ? 'text' : 'password'; }); });
+  $('f').addEventListener('submit', function (e) {
+    e.preventDefault(); if ($('go').disabled) return; $('go').disabled = true; $('go').textContent = 'Enregistrement…';
+    api({ oobCode: code, newPassword: $('pw').value }).then(function () { show('v-ok'); })
+      .catch(function (er) { var c = code0(er), m = MSG[c]; if (m) { ko(m[0], m[1]); return; } $('err').style.display = 'block'; $('err').textContent = c === 'WEAK_PASSWORD' ? 'Mot de passe trop faible : 8 caractères minimum.' : 'Échec de l’enregistrement. Vérifie ta connexion et réessaie.'; $('go').disabled = false; $('go').textContent = 'Enregistrer mon mot de passe'; });
+  });
+})();
+</script>
+</body></html>

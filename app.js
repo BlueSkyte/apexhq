@@ -1960,12 +1960,23 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     let aj = calc(meals);
     if (!perso && (cfg.repasMode || 'programme') === 'programme' && cfg.repasProg && PROGRAMMES[cfg.repasProg]) aj = completerProteines(meals, aj, cfg, cible, foods, calc); // menu de l'app : complété si les protéines n'y sont pas (grosse corpulence) ; jamais le menu fait par l'utilisateur
     aj = perso ? optimiserJour(aj, cible, foods) : aj;
-    return aj.map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0) })).filter(m => m.items.length); // jamais de ligne à 0 g
+    /* plafond réaliste par aliment (profils très lourds) : 400 g de féculent sec, 500 g de viande ou poisson, 1 kg pour le reste, 8 unités */
+    const plaf = f => (f.u ? (f.id === WHEY ? 3 : 8) : f.k >= 300 ? 400 : f.r === 'P' ? 500 : 1000);
+    let out = aj.map(m => Object.assign({}, m, { items: m.items.filter(it => it.x || it.q > 0).map(it => { const f = it.a && foods[it.a]; return f && it.q > plaf(f) ? Object.assign({}, it, { q: plaf(f) }) : it; }) })).filter(m => m.items.length); // jamais de ligne à 0 g
+    /* très gros besoins (au-delà des plafonds) : collations énergétiques plutôt qu'une montagne d'un seul aliment — jamais sur un menu fait par l'utilisateur */
+    if (!perso && (cfg.repasMode || 'programme') === 'programme' && cfg.repasProg && PROGRAMMES[cfg.repasProg] && cible && cible.kcal > 0) {
+      const q = cfg.q || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {}, tot = () => out.reduce((s, m) => s + A.totMeal(m, foods).k, 0);
+      const kit = [['avoine', 80], ['banane', 1], ['amandes', 30], ['skyr', 200], ['beurrecac', 25], ['pain', 2], ['fb0', 200], ['soja', 30]].filter(x => foods[x[0]] && !ex[x[0]]).slice(0, 4);
+      for (let n = 0; n < 3 && kit.length && tot() < cible.kcal * 0.92; n++) out = out.concat({ id: 'col' + (n + 1), nom: 'Collation' + (n ? ' ' + (n + 1) : ' +'), h: ['10:30', '16:00', '22:00'][n], ok: false, items: kit.map(x => ({ id: A.uid(), a: x[0], q: x[1] })) });
+    }
+    return out;
   }
   /* Protéines sous la cible : ajoute un complément (whey, skyr, fromage blanc) à un repas adapté, puis recale (max 3 ajouts). */
   function completerProteines(meals, aj, cfg, c, foods, calc) {
     const somme = ms => ms.reduce((s, m) => A.add(s, A.totMeal(m, foods)), A.Z()), q = cfg.q || {}, ex = q.regime || q.exclus ? A.exclusIds(q, foods) : {}, wheyOk = (!cfg.q || !!q.whey) && !!foods[WHEY];
-    const bonus = [[WHEY, 1, 0], ['skyr', 150, 1], ['fb0', 150, 1]].filter(b => foods[b[0]] && !ex[b[0]] && (b[0] !== WHEY || wheyOk));
+    /* menu veggie : jamais de viande ni de poisson ajoutés, même pour un omnivore */
+    const vg = cfg.repasProg === 'veggie' ? A.exclusIds({ regime: 'vegetarien' }, foods) : {};
+    const bonus = [[WHEY, 1, 0], ['skyr', 150, 1], ['fb0', 150, 1], ['blanc', 150, 1], ['oeuf', 2, 0], ['thon', 100, 1], ['poulet', 130, 1], ['tofu', 150, 1], ['seitan', 100, 1], ['soja', 40, 1]].filter(b => foods[b[0]] && !ex[b[0]] && !vg[b[0]] && (b[0] !== WHEY || wheyOk));
     let t = somme(aj); const q0 = new Map();
     for (let k = 0; k < 6&& c.p > 0 && t.p < Math.max(c.pMin || 0, c.p * 0.95); k++) {
       const b = bonus.find(x => !meals.some(m => m.items.some(it => it.a === x[0])));
@@ -6479,13 +6490,14 @@ function PwField({ id, value, onChange, auto, onEnter, label }) {
 function AuthScreen({ start, email0, onClose, onSkip }) {
   const [m, setM] = useState(start || 'up'); const [f, setF] = useState({ prenom: '', email: email0 || '', pw: '', ok: false });
   const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(''); const [priv, setPriv] = useState(false);
+  const [attente, setAttente] = useState(0); useEffect(() => { if (attente <= 0) return undefined; const k = setTimeout(() => setAttente(attente - 1), 1000); return () => clearTimeout(k); }, [attente]);
   const set = o => { setF(Object.assign({}, f, o)); setMsg(''); };
   const mail = f.email.trim(), mailOk = MAIL_RE.test(mail), had = Store.hasData();
   const valid = m === 'up' ? f.prenom.trim().length > 0 && mailOk && f.pw.length >= PW_MIN && f.ok : m === 'in' ? mailOk && f.pw.length > 0 : m === 'reset' ? mailOk : true;
   const go = async () => {
     if (!valid || busy) return; setBusy(true); setMsg('');
     try {
-      if (m === 'reset') { await Cloud.reset(mail); setM('sent'); }
+      if (m === 'reset' || m === 'sent') { await Cloud.reset(mail); setM('sent'); setAttente(60); if (m === 'sent') toast('Nouvel email envoyé'); }
       else if (m === 'up') {
         await Cloud.signUp(f.prenom.trim(), mail, f.pw);
         if (had) Store.adopt(); else Store.wipe();
@@ -6507,7 +6519,7 @@ function AuthScreen({ start, email0, onClose, onSkip }) {
     up: ['Crée ton compte', had ? 'Tes données déjà sur ce téléphone seront sauvegardées dans ton compte, et tu les retrouveras sur n’importe quel téléphone.' : 'Email et mot de passe : tu retrouves tout (profil, repas, séances, poids) même si tu changes de téléphone.'],
     in: ['Content de te revoir', 'Connecte-toi pour récupérer tes données sur ce téléphone.'],
     reset: ['Mot de passe oublié', 'Indique l’email de ton compte : tu reçois un lien pour choisir un nouveau mot de passe.'],
-    sent: ['Email envoyé', 'Ouvre le lien reçu à ' + mail + ' (regarde aussi les spams), choisis un nouveau mot de passe, puis reviens te connecter.'],
+    sent: ['Regarde tes emails 📬', 'Si un compte Macrolya existe pour ' + mail + ', tu viens de recevoir un lien pour choisir un nouveau mot de passe.'],
     choix: ['Ce téléphone a déjà des données', 'Tu viens de te connecter à un compte. Que faire des données déjà présentes sur ce téléphone ?'],
   }[m];
   const pwOk = f.pw.length >= PW_MIN;
@@ -6528,13 +6540,20 @@ function AuthScreen({ start, email0, onClose, onSkip }) {
         <button type="button" className="opt auth-opt" onClick=${() => choisir(false)}><b>Utiliser les données de mon compte</b><span>Ce téléphone est effacé puis rempli avec ton compte. Recommandé.</span></button>
         <button type="button" className="opt auth-opt" onClick=${() => choisir(true)}><b>Fusionner avec ce téléphone</b><span>Les données du téléphone sont ajoutées à ton compte. À choisir seulement si ce sont aussi les tiennes.</span></button>
       </div>`}
+      ${m === 'sent' && html`<ol className="sent-l">
+        <li><b>Ouvre l’email « Réinitialisez votre mot de passe »</b><span>Expéditeur : noreply@macrovamacrova.firebaseapp.com. Pas reçu dans 2 minutes ? Regarde dans <b>Spam</b> ou <b>Promotions</b>.</span></li>
+        <li><b>Touche le lien et choisis ton nouveau mot de passe</b><span>8 caractères minimum. Le lien est valable 1 heure.</span></li>
+        <li><b>Reviens ici et connecte-toi</b><span>Toutes tes données t’attendent.</span></li>
+      </ol>`}
       ${msg && html`<div className="note warn" role="alert"><${Icon} n="alert" /><div><span>${msg}</span></div></div>`}
     </div></div>
     <div className="wiz-foot"><div className="wiz-in" style=${{ gap: 8 }}>
       ${m === 'up' && html`<button type="button" className="btn pri wide" disabled=${!valid || busy} onClick=${go}><${Icon} n="cloud" s=${18} />${busy ? 'Création…' : 'Créer mon compte'}</button>`}
       ${m === 'in' && html`<button type="button" className="btn pri wide" disabled=${!valid || busy} onClick=${go}><${Icon} n="user" s=${18} />${busy ? 'Connexion…' : 'Se connecter'}</button>`}
       ${m === 'reset' && html`<button type="button" className="btn pri wide" disabled=${!valid || busy} onClick=${go}><${Icon} n="mail" s=${18} />${busy ? 'Envoi…' : 'Recevoir le lien'}</button>`}
-      ${(m === 'reset' || m === 'sent') && html`<button type="button" className="btn wide" onClick=${() => { setM('in'); setMsg(''); }}>Retour à la connexion</button>`}
+      ${m === 'sent' && html`<button type="button" className="btn pri wide" onClick=${() => { setM('in'); setMsg(''); set({ pw: '' }); }}><${Icon} n="user" s=${18} />J’ai changé mon mot de passe</button>
+      <button type="button" className="btn wide" disabled=${attente > 0 || busy} onClick=${go}><${Icon} n="mail" s=${18} />${busy ? 'Envoi…' : attente > 0 ? 'Renvoyer l’email dans ' + attente + ' s' : 'Renvoyer l’email'}</button>`}
+      ${m === 'reset' && html`<button type="button" className="btn wide" onClick=${() => { setM('in'); setMsg(''); }}>Retour à la connexion</button>`}
       ${m === 'choix' && html`<button type="button" className="btn wide" onClick=${annulerChoix}>Annuler et me déconnecter</button>`}
       ${onSkip && (m === 'up' || m === 'in') && html`<button type="button" className="btn ghost wide" onClick=${onSkip}>Continuer sans compte</button>`}
     </div></div>
