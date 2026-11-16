@@ -3337,7 +3337,7 @@ function Meter({ label, v, v2, max, c, unit = 'g' }) {
   const sur = max && v > max ? v - max : 0, pct = max ? Math.round(v / max * 100) : 0;
   return html`<div className=${cx('mt', sur > 0 && 'mt-over')} style=${{ '--c': c }}>
     <div className="mt-h"><span><i></i>${label}${sur > 0 && html`<em className="mt-x">+${f0(sur)} ${unit}</em>`}</span><b><span className="mt-v">${f0(v)}<small> / ${f0(max)} ${unit}${max && v > 0 ? ' · ' + pct + ' %' : ''}</small></span></b></div>
-    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(Math.min(v, max || v)) }}></i>${sur > 0 && html`<b style=${{ left: pc(max), width: pc(sur) }}></b>`}${max && tot > max && html`<em style=${{ left: pc(max) }}></em>`}</div>
+    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(Math.min(v, max || v)) }}></i>${sur > 0 && html`<b style=${{ left: pc(max), width: pc(sur) }}></b>`}${max > 0 && html`<em className=${tot > max ? '' : 'fin'} style=${{ left: tot > max ? pc(max) : 'calc(100% - 3px)' }}></em>`}</div>
   </div>`;
 }
 /* Anneau : un tour = la cible. Au-delà, le surplus s'affiche sur un anneau intérieur fin, ambre, façon anneaux d'activité
@@ -3350,14 +3350,14 @@ function Ring({ v, v2, max, size = 150, sw = 11, children }) {
   const tr = 'rotate(-90 ' + h + ' ' + h + ')';
   const arc = (q, o, col) => html`<circle cx=${h} cy=${h} r=${r} fill="none" stroke=${col} strokeOpacity=${o} strokeWidth=${W} strokeLinecap="round" strokeDasharray=${c * q + ' ' + c} transform=${tr} />`;
   const inner = (q, o) => html`<circle cx=${h} cy=${h} r=${ri} fill="none" stroke="url(#ringOver)" strokeOpacity=${o} strokeWidth=${wi} strokeLinecap="round" strokeDasharray=${ci * q + ' ' + ci} transform=${tr} />`;
-  const plus = pOver > 0.002 || p2Over > 0.002;
+  const plus = pOver > 0.002; // l'anneau de surplus n'apparaît que pour ce qui est vraiment mangé au-delà de l'objectif
   return html`<div className=${cx('ring', pOver > 0 && 'ring-over')} style=${{ width: S, height: S }}>
     <svg width=${S} height=${S} viewBox=${'0 0 ' + S + ' ' + S} aria-hidden="true">
       <defs><linearGradient id="ringOver" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ffc46b" /><stop offset="1" stopColor="#ff8a5c" /></linearGradient></defs>
       <circle cx=${h} cy=${h} r=${r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth=${W} />
       ${p2 > p && arc(p2, 0.3, 'var(--acc-hi)')}${p > 0 && arc(p, 1, 'var(--acc-hi)')}
       ${plus && html`<circle cx=${h} cy=${h} r=${ri} fill="none" stroke="rgba(255,196,107,.12)" strokeWidth=${wi} />`}
-      ${p2Over > pOver + 0.002 && inner(p2Over, 0.35)}${pOver > 0.002 && inner(pOver, 1)}
+      ${plus && p2Over > pOver + 0.002 && inner(p2Over, 0.35)}${plus && inner(pOver, 1)}
     </svg>
     <div className="ring-c">${children}</div>
   </div>`;
