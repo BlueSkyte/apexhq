@@ -3332,13 +3332,16 @@ function Confirm({ label, sure, onYes, cls, icon }) {
 /* ---------- jauges ---------- */
 /* Barre de macro : au-delà de la cible, la barre s'étire (échelle = le plus grand des deux), un repère marque la cible
    et la partie en trop passe en rouge. */
-function Meter({ label, v, v2, max, c, unit = 'g' }) {
-  /* La barre entière = la cible : le repère blanc est au bout, le prévu et le mangé s'arrêtent au repère ; un dépassement se lit dans le badge « +X g ». */
-  const tot = max > 0 ? max : Math.max(v || 0, v2 || 0) || 1, pc = x => Math.max(0, Math.min(100, x / tot * 100)) + '%';
+/* Échelle commune des macros (grammes) : 300 g, ou plus si une cible ou une valeur dépasse. */
+const echelleMacros = (...vals) => Math.max(300, Math.ceil(Math.max(0, ...vals.filter(Apex.num)) * 1.08 / 50) * 50);
+function Meter({ label, v, v2, max, c, unit = 'g', echelle }) {
+  /* Avec une échelle commune (macros) : le repère blanc tombe à la place réelle de la cible, la couleur s'arrête au prévu / au mangé.
+     Sans échelle (autres jauges) : la barre entière = la cible. */
+  const tot = echelle > 0 ? echelle : max > 0 ? max : Math.max(v || 0, v2 || 0) || 1, pc = x => Math.max(0, Math.min(100, x / tot * 100)) + '%';
   const sur = max && v > max ? v - max : 0, pct = max ? Math.round(v / max * 100) : 0;
   return html`<div className=${cx('mt', sur > 0 && 'mt-over')} style=${{ '--c': c }}>
     <div className="mt-h"><span><i></i>${label}${sur > 0 && html`<em className="mt-x">+${f0(sur)} ${unit}</em>`}</span><b><span className="mt-v">${f0(v)}<small> / ${f0(max)} ${unit}${max && v > 0 ? ' · ' + pct + ' %' : ''}</small></span></b></div>
-    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(Math.min(v, max || v)) }}></i>${max > 0 && html`<em style=${{ left: 'calc(100% - 1px)' }}></em>`}</div>
+    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(echelle > 0 ? v : Math.min(v, max || v)) }}></i>${max > 0 && html`<em style=${{ left: echelle > 0 ? pc(max) : 'calc(100% - 1px)' }}></em>`}</div>
   </div>`;
 }
 /* Anneau : un tour = la cible. Au-delà, le surplus s'affiche sur un anneau intérieur fin, ambre, façon anneaux d'activité
@@ -3503,9 +3506,10 @@ function Hero({ date, go }) {
       <${Ring} v=${reel.k} v2=${man ? 0 : t.plan.k} max=${c.kcal} size=118 sw=10><b style=${{ fontSize: 28 }}>${reel.k > 0 ? pc + ' %' : '–'}</b><span>${reel.k > c.kcal ? 'dépassé' : 'mangé'}</span><//>
     </div>
     <div className="hero-bars">
-      <${Meter} label="Protéines" v=${reel.p} v2=${man ? 0 : t.plan.p} max=${c.p} c="var(--p)" />
-      <${Meter} label="Glucides" v=${reel.g} v2=${man ? 0 : t.plan.g} max=${c.g} c="var(--g)" />
-      <${Meter} label="Lipides" v=${reel.l} v2=${man ? 0 : t.plan.l} max=${c.l} c="var(--l)" />
+      ${(() => { const E = echelleMacros(c.p, c.g, c.l, reel.p, reel.g, reel.l, man ? 0 : t.plan.p, man ? 0 : t.plan.g, man ? 0 : t.plan.l); return html`<${React.Fragment}>
+      <${Meter} label="Protéines" v=${reel.p} v2=${man ? 0 : t.plan.p} max=${c.p} c="var(--p)" echelle=${E} />
+      <${Meter} label="Glucides" v=${reel.g} v2=${man ? 0 : t.plan.g} max=${c.g} c="var(--g)" echelle=${E} />
+      <${Meter} label="Lipides" v=${reel.l} v2=${man ? 0 : t.plan.l} max=${c.l} c="var(--l)" echelle=${E} /><//>`; })()}
     </div>
     ${c.statut === 'salle' && html`<div className="chips" role="group" aria-label="Séance du jour">
       ${Apex.types(cfg).map(tp => html`<button key=${tp} className="chip" aria-pressed=${seance === tp} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: tp })}>${tp}</button>`)}
@@ -4376,9 +4380,10 @@ function Repas({ date }) {
           <div className="sum">
             <${Ring} v=${cons.k} v2=${man ? 0 : plan.k} max=${c.kcal}><b>${f0(cons.k)}</b><span>/ ${f0(c.kcal)} kcal${c.kcal ? ' · ' + Math.round(cons.k / c.kcal * 100) + ' %' : ''}</span>${cons.k > c.kcal && html`<span className="ring-x">+${f0(cons.k - c.kcal)} kcal</span>`}<//>
             <div className="sum-r">
-              <${Meter} label="Protéines" v=${cons.p} v2=${man ? 0 : plan.p} max=${c.p} c="var(--p)" />
-              <${Meter} label="Glucides" v=${cons.g} v2=${man ? 0 : plan.g} max=${c.g} c="var(--g)" />
-              <${Meter} label="Lipides" v=${cons.l} v2=${man ? 0 : plan.l} max=${c.l} c="var(--l)" />
+              ${(() => { const E = echelleMacros(c.p, c.g, c.l, cons.p, cons.g, cons.l, man ? 0 : plan.p, man ? 0 : plan.g, man ? 0 : plan.l); return html`<${React.Fragment}>
+              <${Meter} label="Protéines" v=${cons.p} v2=${man ? 0 : plan.p} max=${c.p} c="var(--p)" echelle=${E} />
+              <${Meter} label="Glucides" v=${cons.g} v2=${man ? 0 : plan.g} max=${c.g} c="var(--g)" echelle=${E} />
+              <${Meter} label="Lipides" v=${cons.l} v2=${man ? 0 : plan.l} max=${c.l} c="var(--l)" echelle=${E} /><//>`; })()}
             </div>
           </div>
           <p className="reste">${c.kcal - cons.k < 0 ? html`<b className="over">${f0(cons.k - c.kcal)} kcal de trop</b>` : html`<b>${f0(c.kcal - cons.k)} kcal</b> à manger`} <span>${[['P', c.p - cons.p], ['G', c.g - cons.g], ['L', c.l - cons.l]].map(([k, d]) => html`<${React.Fragment} key=${k}> · ${k} ${d < 0 ? html`<b className="over">+${f0(-d)}</b>` : f0(d)}<//>`)}</span></p>
