@@ -6488,7 +6488,7 @@ function PwField({ id, value, onChange, auto, onEnter, label }) {
       <button type="button" className="ib" aria-label=${vis ? 'Masquer le mot de passe' : 'Afficher le mot de passe'} onClick=${() => setVis(!vis)}><${Icon} n=${vis ? 'eyeOff' : 'eye'} s=${19} /></button></div></label>`;
 }
 
-function AuthScreen({ start, email0, onClose, onSkip }) {
+function AuthScreen({ start, email0, onClose, onSkip, requis }) {
   const [m, setM] = useState(start || 'up'); const [f, setF] = useState({ prenom: '', email: email0 || '', pw: '', ok: false });
   const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(''); const [priv, setPriv] = useState(false);
   const [attente, setAttente] = useState(0); useEffect(() => { if (attente <= 0) return undefined; const k = setTimeout(() => setAttente(attente - 1), 1000); return () => clearTimeout(k); }, [attente]);
@@ -6517,7 +6517,7 @@ function AuthScreen({ start, email0, onClose, onSkip }) {
   const choisir = garder => { if (garder) Store.adopt(); else Store.wipe(); relance(); };
   const annulerChoix = () => { Cloud.signOut(); setM('in'); };
   const T = {
-    up: ['Crée ton compte', had ? 'Tes données déjà sur ce téléphone seront sauvegardées dans ton compte, et tu les retrouveras sur n’importe quel téléphone.' : 'Email et mot de passe : tu retrouves tout (profil, repas, séances, poids) même si tu changes de téléphone.'],
+    up: ['Crée ton compte', requis && !had ? 'Un compte gratuit est nécessaire pour utiliser Macrolya : tu retrouves tout (profil, repas, séances, poids) même si tu changes de téléphone.' : had ? 'Tes données déjà sur ce téléphone seront sauvegardées dans ton compte, et tu les retrouveras sur n’importe quel téléphone.' : 'Email et mot de passe : tu retrouves tout (profil, repas, séances, poids) même si tu changes de téléphone.'],
     in: ['Content de te revoir', 'Connecte-toi pour récupérer tes données sur ce téléphone.'],
     reset: ['Mot de passe oublié', 'Indique l’email de ton compte : tu reçois un lien pour choisir un nouveau mot de passe.'],
     sent: ['Regarde tes emails 📬', 'Si un compte Macrolya existe pour ' + mail + ', tu viens de recevoir un lien pour choisir un nouveau mot de passe.'],
@@ -6967,7 +6967,8 @@ function App() {
   useEffect(() => { document.body.dataset.statut = statut; }, [statut]);
   const go = t => { setTab(t); try { if (location.hash !== '#' + t) location.hash = t; } catch (e) { /* hash indisponible */ } try { window.scrollTo(0, 0); } catch (e) { /* sans effet */ } };
   const setStatut = v => { if (v === statut) return; if (v === 'repos') Store.patch('journal', date, { date, statut: 'repos' }); else Store.patch('journal', date, { date, statut: 'salle', seance: j.seance || cfg.planning[Apex.dow(date)] || Apex.prochaineSeance(S.seances, cfg, date) }); };
-  const u = STANDALONE ? useCloud() : null; const [skip, setSkip] = useState(() => !!lsGet('compte:skip', '')); const [auth, setAuth] = useState(null);
+  const u = STANDALONE ? useCloud() : null; /* compte obligatoire : seul le serveur de test local peut s'en passer */
+  const DEV_LOCAL = /^(127.0.0.1|localhost)$/.test(location.hostname); const [skip, setSkip] = useState(() => DEV_LOCAL && !!lsGet('compte:skip', '')); const [auth, setAuth] = useState(null);
   useEffect(() => { const f = e => { setOpen(false); setAuth((e && e.detail) || { mode: 'up' }); }; window.addEventListener('compte:open', f); return () => window.removeEventListener('compte:open', f); }, []);
   const [pro, setPro] = useState(false); useEffect(() => { const f = () => { setOpen(false); setPro(true); }; window.addEventListener('pro:open', f); return () => window.removeEventListener('pro:open', f); }, []);
   const [bv, setBv] = useState(() => STANDALONE && !lsGet('bienvenue', '') && !Object.keys(S.journal).length && !(Cloud.on() && Cloud.user()));
@@ -7001,7 +7002,7 @@ function App() {
     ${open && html`<${SettingsSheet} onClose=${() => setOpen(false)} />`}
     ${wiz && html`<${Wizard} redo=${cfg.onboarded === false} onClose=${() => {}} />`}
     ${fetching && html`<div className="boot-wait" role="status"><i></i>Récupération de tes données…</div>`}
-    ${needAuth && html`<${AuthScreen} start="up" onSkip=${() => { lsSet('compte:skip', '1'); setSkip(true); }} />`}
+    ${needAuth && html`<${AuthScreen} start="up" requis=${true} onSkip=${DEV_LOCAL ? () => { lsSet('compte:skip', '1'); setSkip(true); } : null} />`}
     ${auth && html`<${AuthScreen} start=${auth.mode} email0=${auth.email} onClose=${() => setAuth(null)} />`}
     ${pro && html`<${ProSheet} onClose=${() => setPro(false)} />`}
     ${bv && html`<${Bienvenue} onDone=${finBv} />`}
