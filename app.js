@@ -2307,7 +2307,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     const k = cle(nom); const perso = Object.keys(foods).map(id => foods[id]).find(f => f.c === 'perso' && cle(f.n) === k); if (perso) return perso;
     const toks = cle(synonyme(nom)).split(' ').filter(t => (t.length >= 3 || /^\d+%$/.test(t)) && DESCR.indexOf(t) < 0 && MOTS.indexOf(t) < 0); if (!toks.length || !cands.length) return null;
     const ok = cands.map((f, rang) => { const hay = ' ' + cle(f.n + ' ' + (f.al || '')) + ' ', mots = cle(f.n).split(' ').filter(x => x.length >= 3 && DESCR.indexOf(x) < 0 && MOTS.indexOf(x) < 0);
-      const tous = toks.every(t => /%$/.test(t) ? hay.indexOf(' ' + t) >= 0 : hay.indexOf(' ' + t) >= 0 || hay.indexOf(' ' + t.replace(/[sx]$/, '')) >= 0);
+      const motsHay = hay.trim().split(' ');
+      const tous = toks.every(t => /%$/.test(t) ? hay.indexOf(' ' + t) >= 0 : hay.indexOf(' ' + t) >= 0 || hay.indexOf(' ' + t.replace(/[sx]$/, '')) >= 0 || motsHay.some(w => w.length >= 4 && t.indexOf(w) === 0)); // « chocolat » trouve « choco »
       return tous ? { f, rang, extra: mots.filter(x => !toks.some(t => x.indexOf(t.replace(/[sx]$/, '')) === 0)).length, plat: f.est || f.c === 'ecart' || /\((bol|assiette|portion|part)\b/i.test(f.n) ? 1 : 0 } : null; }).filter(Boolean);
     const debut = f => (cle(f.n).indexOf(toks[0].replace(/[sx]$/, '')) === 0 ? 0 : 1);
     ok.sort((x, y) => x.plat - y.plat || debut(x.f) - debut(y.f) || x.rang - y.rang);
@@ -2327,13 +2328,16 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   }
   /* Vérifie la réponse de l'IA : id existant parmi les candidats, ou valeurs cohérentes. */
   function lireReconnaissance(rep, liste, foods) {
-    const out = {}; const r = rep && Array.isArray(rep.r) ? rep.r : [];
-    r.forEach(x => {
-      const i = +x.i, it = liste[i]; if (!it) return;
+    /* L'IA renvoie {r:[…]}, ou directement la liste, ou une autre clé : on prend la première liste trouvée. */
+    const out = {}; const r = Array.isArray(rep) ? rep : rep && typeof rep === 'object' ? (Array.isArray(rep.r) ? rep.r : Object.keys(rep).map(k => rep[k]).find(Array.isArray) || []) : [];
+    r.forEach((x, pos) => {
+      if (!x || typeof x !== 'object') return;
+      const i = x.i != null && liste[+x.i] ? +x.i : pos, it = liste[i]; if (!it) return;
+      if (x.id && !foods[x.id]) { const k = cle(x.id), f = it.cands.find(c => cle(c.n) === k); if (f) x.id = f.id; }
       if (x.id && foods[x.id] && (it.cands.some(f => f.id === x.id) || foods[x.id].c === 'perso')) { out[i] = { id: x.id }; return; }
       const k = +x.k, p = +x.p || 0, g = +x.g || 0, l = +x.l || 0; if (!(k >= 0 && k <= 900) || p < 0 || g < 0 || l < 0 || p + g + l > 101) return;
-      const calc = p * 4 + g * 4 + l * 9; if (k > 20 && Math.abs(calc - k) > Math.max(25, k * 0.3)) return;
-      out[i] = { neuf: { n: String(x.n || it.nom).slice(0, 60), k: Math.round(k), p: Math.round(p * 10) / 10, g: Math.round(g * 10) / 10, l: Math.round(l * 10) / 10, f: Math.round((+x.f || 0) * 10) / 10, pu: +x.pu > 0 && +x.pu < 2000 ? Math.round(+x.pu) : null } };
+      const calc = p * 4 + g * 4 + l * 9, kOk = !(k > 20 && Math.abs(calc - k) > Math.max(25, k * 0.3)) ? k : calc > 0 && calc <= 900 ? calc : null; if (kOk == null) return; // kcal incohérentes : recalculées depuis les macros
+      out[i] = { neuf: { n: String(x.n || it.nom).slice(0, 60), k: Math.round(kOk), p: Math.round(p * 10) / 10, g: Math.round(g * 10) / 10, l: Math.round(l * 10) / 10, f: Math.round((+x.f || 0) * 10) / 10, pu: +x.pu > 0 && +x.pu < 2000 ? Math.round(+x.pu) : null } };
     });
     return out;
   }
@@ -4086,11 +4090,16 @@ function ImportMenuSheet({ onClose }) {
     if (liste.length && sample) {
       setBusy('L’IA reconnaît ' + liste.length + ' aliment' + (liste.length > 1 ? 's' : '') + '…');
       if (ctl.current) ctl.current.abort(); ctl.current = new AbortController();
-      try {
-        const rep = await sample.json(Apex.promptReconnaissance(liste), { signal: ctl.current.signal, cache: false });
-        const m = Apex.lireReconnaissance(rep, liste, foods);
-        liste.forEach((x, i) => { const r = m[i]; if (!r) return; if (r.id) corr[x.k] = foods[r.id]; else if (r.neuf) { const id = 'u_' + Apex.uid(), fd = Apex.alimentNeuf(id, r.neuf, x.unite); neufs[id] = fd; corr[x.k] = fd; } });
-      } catch (e) { iaErr = aiErr(e); }
+      let vus = 0;
+      for (let d = 0; d < liste.length; d += 20) { // par paquets de 20 : réponse courte, moins de risque d'être coupée
+        const lot = liste.slice(d, d + 20);
+        try {
+          const rep = await sample.json(Apex.promptReconnaissance(lot), { signal: ctl.current.signal, cache: false, maxTokens: 4096 });
+          const m = Apex.lireReconnaissance(rep, lot, foods);
+          lot.forEach((x, i) => { const r = m[i]; if (!r) return; vus++; if (r.id) corr[x.k] = foods[r.id]; else if (r.neuf) { const id = 'u_' + Apex.uid(), fd = Apex.alimentNeuf(id, r.neuf, x.unite); neufs[id] = fd; corr[x.k] = fd; } });
+        } catch (e) { if (e && e.code === 'cancelled') return; iaErr = aiErr(e); }
+      }
+      if (!vus && !iaErr) iaErr = 'l’IA n’a pas répondu dans le bon format, réessaie.';
     }
     const foods2 = Object.assign({}, foods, neufs), b = Apex.construireSemaine(menu, corr, foods2);
     const recap = Object.keys(noms).map(k => ({ nom: noms[k].nom, f: corr[k] || null, neuf: !!(corr[k] && neufs[corr[k].id]) }));
