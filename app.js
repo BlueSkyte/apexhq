@@ -3341,7 +3341,7 @@ function Meter({ label, v, v2, max, c, unit = 'g', echelle }) {
   const sur = max && v > max ? v - max : 0, pct = max ? Math.round(v / max * 100) : 0;
   return html`<div className=${cx('mt', sur > 0 && 'mt-over')} style=${{ '--c': c }}>
     <div className="mt-h"><span><i></i>${label}${sur > 0 && html`<em className="mt-x">+${f0(sur)} ${unit}</em>`}</span><b><span className="mt-v">${f0(v)}<small> / ${f0(max)} ${unit}${max && v > 0 ? ' · ' + pct + ' %' : ''}</small></span></b></div>
-    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(echelle > 0 ? v : Math.min(v, max || v)) }}></i>${max > 0 && html`<em style=${{ left: echelle > 0 ? pc(max) : 'calc(100% - 1px)' }}></em>`}</div>
+    <div className="mt-b">${echelle > 0 ? max > 0 && html`<u style=${{ width: pc(max) }}></u>` : v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(echelle > 0 ? v : Math.min(v, max || v)) }}></i>${max > 0 && html`<em style=${{ left: echelle > 0 ? pc(max) : 'calc(100% - 1px)' }}></em>`}</div>
   </div>`;
 }
 /* Anneau : un tour = la cible. Au-delà, le surplus s'affiche sur un anneau intérieur fin, ambre, façon anneaux d'activité
@@ -3503,7 +3503,7 @@ function Hero({ date, go }) {
         <div className="hero-n">${f0(c.kcal)}<small>kcal</small></div>
         <div className="hero-s">${c.ajust !== 0 ? 'dont ' + sgn(c.ajust, f0) + ' de lissage (base ' + f0(c.base) + ')' : 'objectif du jour'}</div>
       </div>
-      <${Ring} v=${reel.k} v2=${man ? 0 : t.plan.k} max=${c.kcal} size=118 sw=10><b style=${{ fontSize: 28 }}>${reel.k > 0 ? pc + ' %' : '–'}</b><span>${reel.k > c.kcal ? 'dépassé' : 'mangé'}</span><//>
+      <${Ring} v=${reel.k} v2=${0} max=${c.kcal} size=118 sw=10><b style=${{ fontSize: 28 }}>${reel.k > 0 ? pc + ' %' : '–'}</b><span>${reel.k > c.kcal ? 'dépassé' : 'mangé'}</span><//>
     </div>
     <div className="hero-bars">
       ${(() => { const E = echelleMacros(c.p, c.g, c.l, reel.p, reel.g, reel.l, man ? 0 : t.plan.p, man ? 0 : t.plan.g, man ? 0 : t.plan.l); return html`<${React.Fragment}>
@@ -4376,9 +4376,9 @@ function Repas({ date }) {
     <div className="view-h"><h1>Repas · ${dMid(date)}</h1></div>
     <div className="grid">
       <div className="c7 stack" style=${{ gap: 14, alignContent: 'start' }}>
-        <${Card} title="Bilan du jour" sub=${man ? 'Bilan saisi à la main' : 'Mangé (plein) et prévu (clair)'} right=${man ? html`<${Pill} st=${Math.abs(ecart) <= c.kcal * 0.05 ? 'good' : Math.abs(ecart) <= 300 ? 'warn' : 'crit'}>Réel ${sgn(ecart, f0)} kcal<//>` : html`<${Pill} st=${ecartMange > 40 ? 'warn' : 'good'}>Prévu ${f0(plan.k)} kcal<//>`}>
+        <${Card} title="Bilan du jour" sub=${man ? 'Bilan saisi à la main' : 'Mangé (plein) sur ton quota (clair)'} right=${man ? html`<${Pill} st=${Math.abs(ecart) <= c.kcal * 0.05 ? 'good' : Math.abs(ecart) <= 300 ? 'warn' : 'crit'}>Réel ${sgn(ecart, f0)} kcal<//>` : html`<${Pill} st=${ecartMange > 40 ? 'warn' : 'good'}>Prévu ${f0(plan.k)} kcal<//>`}>
           <div className="sum">
-            <${Ring} v=${cons.k} v2=${man ? 0 : plan.k} max=${c.kcal}><b>${f0(cons.k)}</b><span>/ ${f0(c.kcal)} kcal${c.kcal ? ' · ' + Math.round(cons.k / c.kcal * 100) + ' %' : ''}</span>${cons.k > c.kcal && html`<span className="ring-x">+${f0(cons.k - c.kcal)} kcal</span>`}<//>
+            <${Ring} v=${cons.k} v2=${0} max=${c.kcal}><b>${f0(cons.k)}</b><span>/ ${f0(c.kcal)} kcal${c.kcal ? ' · ' + Math.round(cons.k / c.kcal * 100) + ' %' : ''}</span>${cons.k > c.kcal && html`<span className="ring-x">+${f0(cons.k - c.kcal)} kcal</span>`}<//>
             <div className="sum-r">
               ${(() => { const E = echelleMacros(c.p, c.g, c.l, cons.p, cons.g, cons.l, man ? 0 : plan.p, man ? 0 : plan.g, man ? 0 : plan.l); return html`<${React.Fragment}>
               <${Meter} label="Protéines" v=${cons.p} v2=${man ? 0 : plan.p} max=${c.p} c="var(--p)" echelle=${E} />
