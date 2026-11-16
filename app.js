@@ -3907,10 +3907,12 @@ function FoodDetail({ it, foods, onClose, onSwap, onDel, onQty, pesee }) {
   <//>`;
 }
 
-function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDelIt }) {
-  const t = Apex.totMeal(m, foods); const [det, setDet] = useState(false); const [fd, setFd] = useState(null);
+function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDelIt, onItems }) {
+  const t = Apex.totMeal(m, foods); const [det, setDet] = useState(false); const [fd, setFd] = useState(null); const [edit, setEdit] = useState(false); const [undo, setUndo] = useState(null);
+  useEffect(() => { if (!undo) return undefined; const k = setTimeout(() => setUndo(null), 6000); return () => clearTimeout(k); }, [undo]);
+  const retirer = it => { const f = Apex.foodOf(it, foods); setUndo({ items: m.items, nom: f ? f.n : 'Aliment' }); if (onItems) onItems(m.items.filter(x => x.id !== it.id)); else if (onDelIt) onDelIt(it); };
   const fdIt = fd && m.items.find(i => i.id === fd.id);
-  return html`<article className=${cx('meal', m.ok && 'ok')}>
+  return html`<article className=${cx('meal', m.ok && 'ok', edit && 'edit')}>
     <div className="meal-h">
       <button type="button" className="chk" aria-pressed=${!!m.ok} aria-label=${(m.ok ? 'Marquer non mangé : ' : 'Marquer mangé : ') + m.nom} onClick=${onToggle}><${Icon} n="check" s=${18} w=${2.5} /></button>
       <button type="button" className="meal-t meal-open" onClick=${() => setDet(true)} aria-label=${'Détail du repas ' + m.nom}><b>${m.nom}${m.items.length > 0 && html`<${Icon} n="chevR" s=${14} />`}</b><span>${m.h || ''}${m.ok ? ' · mangé' : ''}${m.items.length ? ' · détail' : ''}</span></button>
@@ -3921,14 +3923,20 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDe
     ${m.items.length > 0 && html`<div className="its">${m.items.map(it => {
       const f = Apex.foodOf(it, foods); if (!f) return null; const x = Apex.mac(it, foods);
       return html`<div key=${it.id} className=${cx('it', !(it.q > 0) && 'zero')}>
-        <button type="button" className="it-n" onClick=${() => setFd(it)} aria-label=${'Détail de ' + f.n}><b>${f.n}</b><span>${pesee === false && !f.u ? '≈ ' + f0(it.q) + ' g · ' : ''}${f0(x.k)} kcal</span></button>
+        ${edit && html`<button type="button" className="it-del" onClick=${() => retirer(it)} aria-label=${'Retirer ' + f.n}><${Icon} n="minus" s=${16} w=${2.6} /></button>`}
+        <button type="button" className="it-n" onClick=${() => (edit ? onSwap(it) : setFd(it))} aria-label=${(edit ? 'Remplacer ' : 'Détail de ') + f.n}><b>${f.n}</b><span>${pesee === false && !f.u ? '≈ ' + f0(it.q) + ' g · ' : ''}${f0(x.k)} kcal</span></button>
         <${Qty} it=${it} f=${f} pesee=${pesee} onChange=${q => onQty(it, q)} />
       </div>`;
     })}</div>`}
+    ${undo && html`<div className="undo" role="status"><span>« ${undo.nom} » retiré</span><button type="button" onClick=${() => { if (onItems) onItems(undo.items); setUndo(null); }}>Annuler</button></div>`}
     <div className="meal-f">
-      <button type="button" className=${cx('btn sm', m.items.length ? 'ghost' : 'pri')} onClick=${onAdd}><${Icon} n="plus" s=${16} />${m.items.length ? 'Aliment' : 'Ajouter un aliment'}</button>
-      <${Confirm} label="Retirer le repas" sure="Retirer ce repas ?" cls="ghost" onYes=${onDel} />
+      <button type="button" className=${cx('mf', !m.items.length && 'pri')} onClick=${onAdd}><${Icon} n="plus" s=${17} />Ajouter</button>
+      ${m.items.length > 0 && !edit && html`<button type="button" className="mf" onClick=${() => setEdit(true)}><${Icon} n="note" s=${16} />Modifier</button>`}
+      ${edit && html`<${Confirm} cls="mf dan-t" icon="trash" label="Supprimer" sure="Supprimer le repas ?" onYes=${() => { setEdit(false); onDel(); }} />`}
+      ${edit && html`<button type="button" className="mf ok" onClick=${() => setEdit(false)}><${Icon} n="check" s=${16} />Terminé</button>`}
+      ${!m.items.length && html`<${Confirm} cls="mf" icon="trash" label="Retirer" sure="Retirer ce repas ?" onYes=${onDel} />`}
     </div>
+    ${edit && html`<p className="edit-h">Touche ⊖ pour retirer, le nom pour remplacer, les chiffres pour la quantité.</p>`}
   </article>`;
 }
 
@@ -4141,7 +4149,24 @@ function ImportMenuSheet({ onClose }) {
   <//>`;
 }
 
+/* Feuille « Changer mon menu » : toutes les façons de modifier la semaine enregistrée, en grandes lignes claires. */
+function ChangerMenuSheet({ nSem, onClose, onIAJour, onIA, onImp, onLib, onVider }) {
+  const go = f => () => { onClose(); f(); };
+  const ligne = (ic, titre, sous, onClick, tag) => html`<button type="button" className="chg-r" onClick=${onClick}><i><${Icon} n=${ic} s=${20} /></i><span><b>${titre}${tag || ''}</b><small>${sous}</small></span><${Icon} n="chevR" s=${18} /></button>`;
+  return html`<${Sheet} title="Changer mon menu" onClose=${onClose}>
+    <p className="mut" style=${{ fontSize: 13, marginTop: 0 }}>Ta semaine enregistrée (${nSem} / 7 jours) ne change que si tu confirmes.</p>
+    <div className="chg-l">
+      ${ligne('sparkles', 'Compléter ma journée avec l’IA', 'Garde les repas déjà mangés, propose le reste selon ce qu’il te manque', go(onIAJour))}
+      ${ligne('clock', 'Refaire ma semaine avec l’IA', 'Sept nouveaux jours, selon tes macros et ta demande', go(onIA), html` <${ProTag} />`)}
+      ${ligne('note', 'Coller un nouveau menu', 'Remplace les jours que tu colles, garde les autres', go(onImp))}
+      ${ligne('plus', 'Ma bibliothèque d’aliments', 'Ajoute ou corrige tes aliments et plats perso', go(onLib))}
+    </div>
+    <div className="chg-dan"><span>Repartir de zéro</span><${Confirm} cls="ghost" icon="trash" label="Vider ma semaine" sure="Effacer ta semaine ? Touche encore" onYes=${() => { onVider(); toast('Semaine vidée'); onClose(); }} /></div>
+  <//>`;
+}
+
 function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib, onImp }) {
+  const [chg, setChg] = useState(false);
   const choisi = !!cfg.repasMode, mode = cfg.repasMode || 'libre', prog = cfg.repasProg || '', conseille = Apex.programmeConseille(cfg), pesee = cfg.repasPesee !== false, setCfg = p => Store.patch('cfg', null, p);
   const nSem = cfg.repasSemaine ? Object.keys(cfg.repasSemaine).length : 0, base = prog || conseille, sample = Store.caps().sample;
   const peseeSeg = html`<div className="row sb"><span className="fld-l" style=${{ margin: 0 }}>Quantités</span><${Seg} neutral label="Pesée des aliments" value=${pesee} onChange=${v => setCfg({ repasPesee: v })} options=${[[true, 'Je pèse'], [false, 'Sans pesée']]} /></div>`;
@@ -4156,27 +4181,30 @@ function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib, onImp }) {
   <//>`;
   const MODES = [['perso', 'Ma semaine'], ['libre', 'Libre'], ['programme', 'Menus faits']];
   const verrou = mode === 'perso' && nSem > 0;
-  const actions = html`<${React.Fragment}>
-    <button type="button" className=${cx('btn wide', !verrou && 'pri')} onClick=${onIAJour}><${Icon} n="sparkles" s=${18} />Faire ma journée avec l’IA</button>
-    ${mode !== 'programme' && html`<button type="button" className="btn wide" onClick=${onIA}><${Icon} n="clock" s=${18} />${nSem ? 'Refaire ma semaine avec l’IA' : 'Faire ma semaine avec l’IA'}</button>`}
-    <button type="button" className="btn wide" onClick=${onImp}><${Icon} n="note" s=${18} />${nSem ? 'Coller un nouveau menu' : 'Coller mon menu de la semaine'}</button>
-  <//>`;
+  const tuile = (ic, titre, sous, onClick, cls) => html`<button type="button" className=${cx('ta', cls)} onClick=${onClick}><i><${Icon} n=${ic} s=${20} /></i><b>${titre}</b><span>${sous}</span></button>`;
   const options = html`<details className="more"><summary>Options</summary><div className="stack">
     ${peseeSeg}
     ${!pesee && html`<p className="mut" style=${{ fontSize: 12 }}>Sans pesée, tu comptes en portions (une assiette moyenne).</p>`}
     ${mode === 'perso' && html`<div className="row"><${Confirm} label=${'Partir du menu ' + Apex.PROGRAMMES[base].n} sure="Remplacer ma semaine ?" onYes=${() => { setCfg({ repasSemaine: Apex.semaineDepuis(cfg, base) }); toast('Ta semaine est prête : modifie chaque jour'); }} />
-      ${nSem > 0 && html`<${Confirm} label="Vider ma semaine" sure="Tout effacer ?" cls="ghost" onYes=${() => setCfg({ repasSemaine: null })} />`}</div>`}
+</div>`}
   </div></details>`;
   return html`<${Card} title="Mes repas" right=${html`<${Seg} neutral label="Mode des repas" value=${mode} onChange=${v => setCfg({ repasMode: v })} options=${MODES} />`}>
     ${mode === 'programme' && html`<div className="stack">
       <div className="progs">${Apex.PROGRAMMES_ORDRE.map(id => { const p = Apex.PROGRAMMES[id]; return html`<button key=${id} type="button" className="prog" aria-pressed=${prog === id} onClick=${() => { setCfg({ repasProg: id }); toast('Programme « ' + p.n + ' » choisi'); }}>
         <span className="prog-h"><i><${Icon} n=${p.ic} s=${18} /></i><b>${p.n}</b>${conseille === id && html`<em>Conseillé</em>`}</span><small>${p.tag}</small></button>`; })}</div>
       <div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${prog ? 'Actif : ' + Apex.PROGRAMMES[prog].n : 'Choisis un menu'}</span><button type="button" className="btn sm" onClick=${() => onWeek(base)}><${Icon} n="clock" s=${16} />Voir la semaine</button></div></div>`}
-    ${verrou ? html`<div className="sem-ok"><i><${Icon} n="check" s=${18} /></i><div><b>Ma semaine est enregistrée</b><span>${nSem} / 7 jours · tes repas et tes quantités sont gardés. Chaque jour, « Charger mon menu » les reprend.</span></div></div>
-      <details className="more"><summary>Changer mon menu</summary><div className="stack">${actions}</div></details>`
-    : actions}
-    <button type="button" className="btn wide" onClick=${onLib}><${Icon} n="plus" s=${18} />Ajouter un aliment à ma bibliothèque</button>
+    ${verrou && html`<div className="sem-ok"><i><${Icon} n="check" s=${18} /></i><div><b>Ma semaine est enregistrée</b><span>${nSem} / 7 jours · tes repas et tes quantités sont gardés.</span></div></div>`}
+    <div className="tg">
+      ${tuile('sparkles', verrou ? 'Compléter ma journée' : 'Ma journée avec l’IA', 'Garde ce que tu as mangé, l’IA propose le reste', onIAJour, 'pri')}
+      ${verrou ? tuile('sliders', 'Changer mon menu', 'Nouvelle semaine, menu collé, bibliothèque', () => setChg(true))
+        : html`<${React.Fragment}>
+          ${mode !== 'programme' && tuile('clock', 'Ma semaine avec l’IA', 'Sept jours calés sur tes macros', onIA)}
+          ${tuile('note', 'Coller mon menu', 'Ta semaine écrite, jour par jour', onImp)}
+          ${tuile('plus', 'Ma bibliothèque', 'Tes aliments et plats perso', onLib)}
+        <//>`}
+    </div>
     ${options}
+    ${chg && html`<${ChangerMenuSheet} nSem=${nSem} onClose=${() => setChg(false)} onIAJour=${onIAJour} onIA=${onIA} onImp=${onImp} onLib=${onLib} onVider=${() => setCfg({ repasSemaine: null })} />`}
   <//>`;
 }
 
@@ -4363,7 +4391,7 @@ function Repas({ date }) {
             <${Confirm} label="Revenir au planner" sure="Effacer le bilan saisi ?" onYes=${() => Store.patch('journal', date, { date, man: null })} /></div></div>`}
         <//>
         <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => (estPro() ? setIa(true) : ouvrirPro())} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} onImp=${() => setImp(true)} />
-        <${Card} title="Repas" sub="Touche un aliment pour voir son détail" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
+        <${Card} title="Repas" sub="Touche un aliment pour son détail · « Modifier » pour retirer ou remplacer" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
           ${!man && html`<div className="rp-nb"><span>Repas par jour</span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repasNb(cfg) === n} onClick=${() => setNb(n)}>${n}</button>`)}</div></div>`}
           ${vide && mode !== 'libre' && !man && html`<div className="note acc"><${Icon} n="utensils" /><div><span>${mode === 'perso' && !semOk ? 'Remplis tes repas, ou charge le menu de base puis enregistre-le pour les ' + jourNom + 's.' : 'Remplis tes repas toi-même, ou charge le menu du ' + jourNom + ' calé sur ' + f0(c.kcal) + ' kcal.'}</span><button type="button" className="btn sm pri" onClick=${gen}><${Icon} n="utensils" s=${16} />${mode === 'perso' && semOk ? 'Charger mon menu du ' + jourNom : 'Charger le menu du ' + jourNom}</button></div></div>`}
           ${meals.length ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods} pesee=${pesee}
@@ -4372,6 +4400,7 @@ function Repas({ date }) {
             onSwap=${it => setSheet({ t: 'swap', mid: m.id, iid: it.id })}
             onAdd=${() => setSheet({ t: 'add', mid: m.id })}
             onDelIt=${it => mapItem(m.id, it.id, () => null)}
+            onItems=${its => mapMeal(m.id, x => Object.assign({}, x, { items: its }))}
             onDel=${() => put(meals.filter(x => x.id !== m.id))} />`)}</div>`
           : mode === 'libre' ? html`<div className="empty"><span><b>Journée libre.</b> Ajoute un repas puis tes aliments ${pesee ? 'avec leur poids' : 'en portions'} : les calories et les macros se calculent tout seuls.</span>
             <div className="row"><button type="button" className="btn pri" onClick=${addMeal}><${Icon} n="plus" s=${18} />Ajouter un repas</button></div></div>`
