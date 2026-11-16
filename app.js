@@ -3333,11 +3333,12 @@ function Confirm({ label, sure, onYes, cls, icon }) {
 /* Barre de macro : au-delà de la cible, la barre s'étire (échelle = le plus grand des deux), un repère marque la cible
    et la partie en trop passe en rouge. */
 function Meter({ label, v, v2, max, c, unit = 'g' }) {
-  const tot = Math.max(max || 0, v || 0, v2 || 0) || 1, pc = x => Math.max(0, Math.min(100, x / tot * 100)) + '%';
+  /* La cible tombe toujours à 85 % de la barre : les repères des trois macros sont alignés, les 15 % restants montrent le dépassement. */
+  const tot = max > 0 ? max / 0.85 : Math.max(v || 0, v2 || 0) || 1, pc = x => Math.max(0, Math.min(100, x / tot * 100)) + '%';
   const sur = max && v > max ? v - max : 0, pct = max ? Math.round(v / max * 100) : 0;
   return html`<div className=${cx('mt', sur > 0 && 'mt-over')} style=${{ '--c': c }}>
     <div className="mt-h"><span><i></i>${label}${sur > 0 && html`<em className="mt-x">+${f0(sur)} ${unit}</em>`}</span><b><span className="mt-v">${f0(v)}<small> / ${f0(max)} ${unit}${max && v > 0 ? ' · ' + pct + ' %' : ''}</small></span></b></div>
-    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(Math.min(v, max || v)) }}></i>${sur > 0 && html`<b style=${{ left: pc(max), width: pc(sur) }}></b>`}${max > 0 && html`<em className=${tot > max ? '' : 'fin'} style=${{ left: tot > max ? pc(max) : 'calc(100% - 3px)' }}></em>`}</div>
+    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(Math.min(v, max || v)) }}></i>${sur > 0 && html`<b style=${{ left: pc(max), width: pc(Math.min(sur, tot - max)) }}></b>`}${max > 0 && html`<em style=${{ left: pc(max) }}></em>`}</div>
   </div>`;
 }
 /* Anneau : un tour = la cible. Au-delà, le surplus s'affiche sur un anneau intérieur fin, ambre, façon anneaux d'activité
