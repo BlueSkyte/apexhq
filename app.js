@@ -4734,8 +4734,9 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
     <div className="wo-xh" data-sort-zone="1">
       <span className="mfig-box" onClick=${onEdit}><${MuscleFig} m=${e.m} s=${e.s} h=${46} /></span>
       <button type="button" className="wo-xt" onClick=${onEdit} aria-label=${'Modifier ' + e.n}><b>${e.n}</b><span><i className="badge">${Apex.MUSCLES[e.m] || ''}</i>${e.uni ? html` <i className="badge uni">1 côté</i>` : ''}${record ? html` <i className="badge rec">Record</i>` : ''}</span></button>
-      <span className=${cx('wo-ok', toutCoche && 'on')} role="img" aria-label=${nCoche + ' séries validées sur ' + normales.length}>${toutCoche ? html`<${Icon} n="check" s=${20} w=${2.8} />` : html`<b>${nCoche}</b><small>/${normales.length}</small>`}</span>
-      <button type="button" className="ib" aria-label=${'Options : ' + e.n} onClick=${onEdit}><${Icon} n="more" s=${22} /></button>
+      ${toutCoche ? html`<button type="button" className="wo-ok on" aria-label=${'Replier ' + e.n + ' (toutes les séries validées)'} onClick=${() => setOuvert(false)}><${Icon} n="check" s=${20} w=${2.8} /></button>`
+        : html`<span className="wo-ok" role="img" aria-label=${nCoche + ' séries validées sur ' + normales.length}><span className="wo-okn"><b>${nCoche}</b><small>/${normales.length}</small></span></span>`}
+      ${toutCoche ? html`<button type="button" className="ib wo-fold" aria-label=${'Replier ' + e.n} onClick=${() => setOuvert(false)}><${Icon} n="up" s=${22} /></button>` : html`<button type="button" className="ib" aria-label=${'Options : ' + e.n} onClick=${onEdit}><${Icon} n="more" s=${22} /></button>`}
     </div>
     <div className="wo-meta">
       <div className="wo-rest" role="group" aria-label="Temps de repos de cet exercice">
