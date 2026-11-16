@@ -3333,12 +3333,12 @@ function Confirm({ label, sure, onYes, cls, icon }) {
 /* Barre de macro : au-delà de la cible, la barre s'étire (échelle = le plus grand des deux), un repère marque la cible
    et la partie en trop passe en rouge. */
 function Meter({ label, v, v2, max, c, unit = 'g' }) {
-  /* La cible tombe toujours à 85 % de la barre : les repères des trois macros sont alignés, les 15 % restants montrent le dépassement. */
-  const tot = max > 0 ? max / 0.85 : Math.max(v || 0, v2 || 0) || 1, pc = x => Math.max(0, Math.min(100, x / tot * 100)) + '%';
+  /* La barre entière = la cible : le repère blanc est au bout, le prévu et le mangé s'arrêtent au repère ; un dépassement se lit dans le badge « +X g ». */
+  const tot = max > 0 ? max : Math.max(v || 0, v2 || 0) || 1, pc = x => Math.max(0, Math.min(100, x / tot * 100)) + '%';
   const sur = max && v > max ? v - max : 0, pct = max ? Math.round(v / max * 100) : 0;
   return html`<div className=${cx('mt', sur > 0 && 'mt-over')} style=${{ '--c': c }}>
     <div className="mt-h"><span><i></i>${label}${sur > 0 && html`<em className="mt-x">+${f0(sur)} ${unit}</em>`}</span><b><span className="mt-v">${f0(v)}<small> / ${f0(max)} ${unit}${max && v > 0 ? ' · ' + pct + ' %' : ''}</small></span></b></div>
-    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(Math.min(v, max || v)) }}></i>${sur > 0 && html`<b style=${{ left: pc(max), width: pc(Math.min(sur, tot - max)) }}></b>`}${max > 0 && html`<em style=${{ left: pc(max) }}></em>`}</div>
+    <div className="mt-b">${v2 > v && html`<u style=${{ width: pc(v2) }}></u>`}<i style=${{ width: pc(Math.min(v, max || v)) }}></i>${max > 0 && html`<em style=${{ left: 'calc(100% - 1px)' }}></em>`}</div>
   </div>`;
 }
 /* Anneau : un tour = la cible. Au-delà, le surplus s'affiche sur un anneau intérieur fin, ambre, façon anneaux d'activité
@@ -4333,7 +4333,7 @@ function Repas({ date }) {
   const mapItem = (mid, iid, fn) => mapMeal(mid, m => Object.assign({}, m, { items: m.items.map(i => (i.id === iid ? fn(i) : i)).filter(Boolean) }));
   const sumK = ms => ms.reduce((s, m) => s + Apex.totMeal(m, foods).k, 0);
   const cons = t.man || t.eat, plan = t.plan, man = !!t.man;
-  const ecart = man ? t.man.k - c.kcal : plan.k - c.kcal;
+  const ecart = man ? t.man.k - c.kcal : plan.k - c.kcal, ecartMange = cons.k - c.kcal; // l'alerte ne porte que sur ce qui est mangé
   const fitted = meals.length && !man ? Apex.ajuster(meals, c, foods) : meals, fitK = man ? t.man.k : sumK(fitted);
   const canFit = !man && meals.length > 0 && Math.abs(fitK - plan.k) > 15, exc = fitK - c.kcal;
   const lis = exc > 60 && !j.lisse ? Apex.lissage(exc, cfg, S.journal, date) : null;
@@ -4372,7 +4372,7 @@ function Repas({ date }) {
     <div className="view-h"><h1>Repas · ${dMid(date)}</h1></div>
     <div className="grid">
       <div className="c7 stack" style=${{ gap: 14, alignContent: 'start' }}>
-        <${Card} title="Bilan du jour" sub=${man ? 'Bilan saisi à la main' : 'Mangé (plein) et prévu (clair)'} right=${html`<${Pill} st=${Math.abs(ecart) <= c.kcal * 0.05 ? 'good' : Math.abs(ecart) <= 300 ? 'warn' : 'crit'}>${man ? 'Réel' : 'Prévu'} ${sgn(ecart, f0)} kcal<//>`}>
+        <${Card} title="Bilan du jour" sub=${man ? 'Bilan saisi à la main' : 'Mangé (plein) et prévu (clair)'} right=${man ? html`<${Pill} st=${Math.abs(ecart) <= c.kcal * 0.05 ? 'good' : Math.abs(ecart) <= 300 ? 'warn' : 'crit'}>Réel ${sgn(ecart, f0)} kcal<//>` : html`<${Pill} st=${ecartMange > 40 ? 'warn' : 'good'}>Prévu ${f0(plan.k)} kcal<//>`}>
           <div className="sum">
             <${Ring} v=${cons.k} v2=${man ? 0 : plan.k} max=${c.kcal}><b>${f0(cons.k)}</b><span>/ ${f0(c.kcal)} kcal${c.kcal ? ' · ' + Math.round(cons.k / c.kcal * 100) + ' %' : ''}</span>${cons.k > c.kcal && html`<span className="ring-x">+${f0(cons.k - c.kcal)} kcal</span>`}<//>
             <div className="sum-r">
@@ -4382,8 +4382,9 @@ function Repas({ date }) {
             </div>
           </div>
           <p className="reste">${c.kcal - cons.k < 0 ? html`<b className="over">${f0(cons.k - c.kcal)} kcal de trop</b>` : html`<b>${f0(c.kcal - cons.k)} kcal</b> à manger`} <span>${[['P', c.p - cons.p], ['G', c.g - cons.g], ['L', c.l - cons.l]].map(([k, d]) => html`<${React.Fragment} key=${k}> · ${k} ${d < 0 ? html`<b className="over">+${f0(-d)}</b>` : f0(d)}<//>`)}</span></p>
-          ${ecart > 40 && html`<div className="note acc"><${Icon} n="alert" /><div>
-            <span><b>${sgn(ecart, f0)} kcal</b> au-dessus de ta cible.</span>
+          ${!man && ecartMange <= 40 && ecart > 40 && html`<div className="note"><${Icon} n="info" /><div><span>Ton menu prévu fait <b>${f0(plan.k)} kcal</b>, soit ${sgn(ecart, f0)} par rapport à ta cible. Rien n’est compté tant que tu ne coches pas un repas.</span>${canFit && html`<button type="button" className="btn sm" onClick=${refit}><${Icon} n="refresh" s=${16} />Ajuster les quantités</button>`}</div></div>`}
+          ${(man ? ecart : ecartMange) > 40 && html`<div className="note acc"><${Icon} n="alert" /><div>
+            <span><b>${sgn(man ? ecart : ecartMange, f0)} kcal</b> au-dessus de ta cible.</span>
             ${canFit && html`<button type="button" className="btn sm pri" onClick=${refit}><${Icon} n="refresh" s=${16} />Recaler le reste</button>`}
             ${!canFit && lis && lis.plan.length > 0 && html`<button type="button" className="btn sm" onClick=${lisser}>Lisser sur ${lis.plan.length} jour${lis.plan.length > 1 ? 's' : ''}</button>`}
           </div></div>`}
