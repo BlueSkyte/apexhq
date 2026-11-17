@@ -3935,11 +3935,9 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDe
     <div className="meal-f">
       <button type="button" className=${cx('mf', !m.items.length && 'pri')} onClick=${onAdd}><${Icon} n="plus" s=${17} />Ajouter</button>
       ${m.items.length > 0 && !edit && html`<button type="button" className="mf" onClick=${() => setEdit(true)}><${Icon} n="note" s=${16} />Modifier</button>`}
-      ${edit && html`<${Confirm} cls="mf dan-t" icon="trash" label="Supprimer" sure="Supprimer le repas ?" onYes=${() => { setEdit(false); onDel(); }} />`}
+      <${Confirm} cls="mf dan-t" icon="trash" label="Supprimer" sure="Confirmer" onYes=${() => { setEdit(false); onDel(); }} />
       ${edit && html`<button type="button" className="mf ok" onClick=${() => setEdit(false)}><${Icon} n="check" s=${16} />Terminé</button>`}
-      ${!m.items.length && html`<${Confirm} cls="mf" icon="trash" label="Retirer" sure="Retirer ce repas ?" onYes=${onDel} />`}
     </div>
-    ${edit && html`<p className="edit-h">Touche ⊖ pour retirer, le nom pour remplacer, les chiffres pour la quantité.</p>`}
   </article>`;
 }
 
@@ -4374,7 +4372,7 @@ function Repas({ date }) {
     <div className="view-h"><h1>Repas · ${dMid(date)}</h1></div>
     <div className="grid">
       <div className="c7 stack" style=${{ gap: 14, alignContent: 'start' }}>
-        <${Card} title="Bilan du jour" sub=${man ? 'Bilan saisi à la main' : 'Mangé (plein) sur ton quota (clair)'} right=${man ? html`<${Pill} st=${Math.abs(ecart) <= c.kcal * 0.05 ? 'good' : Math.abs(ecart) <= 300 ? 'warn' : 'crit'}>Réel ${sgn(ecart, f0)} kcal<//>` : html`<${Pill} st=${ecartMange > 40 ? 'warn' : 'good'}>Prévu ${f0(plan.k)} kcal<//>`}>
+        <${Card} title="Bilan du jour" sub=${man ? 'Bilan saisi à la main' : null} right=${man ? html`<${Pill} st=${Math.abs(ecart) <= c.kcal * 0.05 ? 'good' : Math.abs(ecart) <= 300 ? 'warn' : 'crit'}>Réel ${sgn(ecart, f0)} kcal<//>` : plan.k > 0 && html`<${Pill} st=${ecartMange > 40 ? 'warn' : 'good'}>Prévu ${f0(plan.k)} kcal<//>`}>
           <div className="sum">
             <${Ring} v=${cons.k} v2=${0} max=${c.kcal}><b>${f0(cons.k)}</b><span>/ ${f0(c.kcal)} kcal${c.kcal ? ' · ' + Math.round(cons.k / c.kcal * 100) + ' %' : ''}</span>${cons.k > c.kcal && html`<span className="ring-x">+${f0(cons.k - c.kcal)} kcal</span>`}<//>
             <div className="sum-r">
@@ -4396,8 +4394,8 @@ function Repas({ date }) {
             <${Confirm} label="Revenir au planner" sure="Effacer le bilan saisi ?" onYes=${() => Store.patch('journal', date, { date, man: null })} /></div></div>`}
         <//>
         <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => (estPro() ? setIa(true) : ouvrirPro())} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} onImp=${() => setImp(true)} />
-        <${Card} title="Repas" sub="Touche un aliment pour son détail · « Modifier » pour retirer ou remplacer" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Repas ou écart</button>`}>
-          ${!man && html`<div className="rp-nb"><span>Repas par jour</span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repasNb(cfg) === n} onClick=${() => setNb(n)}>${n}</button>`)}</div></div>`}
+        <${Card} title="Repas" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Ajouter</button>`}>
+          ${!man && vide && html`<div className="rp-nb"><span>Repas par jour</span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repasNb(cfg) === n} onClick=${() => setNb(n)}>${n}</button>`)}</div></div>`}
           ${vide && mode !== 'libre' && !man && html`<div className="note acc"><${Icon} n="utensils" /><div><span>${mode === 'perso' && !semOk ? 'Remplis tes repas, ou charge le menu de base puis enregistre-le pour les ' + jourNom + 's.' : 'Remplis tes repas toi-même, ou charge le menu du ' + jourNom + ' calé sur ' + f0(c.kcal) + ' kcal.'}</span><button type="button" className="btn sm pri" onClick=${gen}><${Icon} n="utensils" s=${16} />${mode === 'perso' && semOk ? 'Charger mon menu du ' + jourNom : 'Charger le menu du ' + jourNom}</button></div></div>`}
           ${meals.length ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods} pesee=${pesee}
             onToggle=${() => mapMeal(m.id, x => Object.assign({}, x, { ok: !x.ok }))}
@@ -4418,7 +4416,7 @@ function Repas({ date }) {
         ${j.repasTxt && html`<${Card} title="Journal du jour" sub="Texte repris du QG Sèche"><div className="pre">${j.repasTxt}</div><//>`}
       </div>
       <div className="c5 stack" style=${{ gap: 14, alignContent: 'start' }}>
-        <${SuppCard} key=${date} supL=${supL} supp=${supp} date=${date} />
+        ${supL.length > 0 && html`<${SuppCard} key=${date} supL=${supL} supp=${supp} date=${date} />`}
       </div>
     </div>
     ${ia && html`<${MenuIASheet} onClose=${() => setIa(false)} />`}
@@ -4641,7 +4639,6 @@ function HistoCard() {
 }
 
 function Training({ date, setDate, go }) {
-  const cfg = useStore().cfg(), nS = Object.keys(cfg.planning || {}).filter(k => cfg.planning[k]).length, G = Apex.groupes(cfg), foc = Object.keys(G).map(k => G[k].n);
   const [view, setView] = useState(() => { const v = lsGet('train:view', 'seance'); return ['seance', 'prog', 'suivi'].indexOf(v) >= 0 ? v : 'seance'; });
   const pick = v => { setView(v); lsSet('train:view', v); };
   const live = wkLive(useStore().get().seances), [fin, setFin] = useState(null);
@@ -4650,7 +4647,7 @@ function Training({ date, setDate, go }) {
   if (fin) return html`<${WorkoutDone} date=${fin} go=${go} onClose=${() => { setFin(null); setDate(fin); try { window.scrollTo(0, 0); } catch (x) { /* sans effet */ } }} />`;
   if (live) return html`<div className="wo-focus"><div className="view-h"><h1>Séance en cours</h1><p>${live.type || 'Séance libre'} · coche chaque série, le repos se lance tout seul. Le reste de la muscu revient après le bilan.</p><${ChronoBtn} /></div><${Workout} date=${live.date} /></div>`;
   return html`<div>
-    <div className="view-h"><h1>Muscu · ${dMid(date)}</h1><p>${nS} séance${nS > 1 ? 's' : ''} par semaine · ${Apex.types(cfg).join(', ')}.</p><${ChronoBtn} /></div>
+    <div className="view-h"><h1>Muscu · ${dMid(date)}</h1><${ChronoBtn} /></div>
     <div className="ttabs" role="tablist" aria-label="Espace muscu">${[['prog', 'Programme', 'sliders'], ['seance', 'Séance', 'dumbbell'], ['suivi', 'Suivi', 'chart']].map(t => html`<button key=${t[0]} type="button" role="tab" aria-selected=${view === t[0]} className="ttab" onClick=${() => pick(t[0])}><${Icon} n=${t[2]} s=${18} />${t[1]}</button>`)}</div>
     ${view === 'seance' && html`<div className="grid">
       <div className="c12"><${WeekBar} date=${date} setDate=${setDate} /></div>
@@ -5597,7 +5594,6 @@ function DayPlan({ date }) {
       ${plan.length > 0 && html`<button type="button" className="btn grow" onClick=${() => setAdapt(true)}><${Icon} n="sparkles" s=${18} />Adapter à aujourd’hui</button>`}
       ${!libre && html`<button type="button" className="btn grow" onClick=${versProgramme}><${Icon} n="sliders" s=${18} />Modifier le programme</button>`}
     </div>
-    <p className="mut" style=${{ fontSize: 12 }}>« Adapter » ajuste juste cette fois (temps dispo, matériel, douleur, forme). Pendant la séance, tu valides chaque série une par une ; tu peux aussi y ajouter, remplacer ou retirer un exercice.</p>
     ${adapt && html`<${AdaptSheet} date=${date} plan=${plan} type=${libre ? 'libre' : type} onClose=${() => setAdapt(false)} onApply=${r => Store.patch('journal', date, { date, plan: r.plan, planNote: { src: r.src, notes: r.notes, duree: r.duree } })} />`}
   <//>`;
 }
