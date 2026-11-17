@@ -3504,7 +3504,6 @@ function ChartCard({ title, sub, cls, legend, table, children }) {
 
 /* ---- 30-ui-dashboard.js ---- */
 /* Macrolya — onglet 1 : statut du jour, check-in matinal à jeun, lecture, poids, mensurations. */
-const ST_LAB = { vert: 'good', orange: 'warn', rouge: 'crit' };
 
 function Hero({ date, go }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
@@ -3537,25 +3536,6 @@ function Hero({ date, go }) {
       <button className="btn sm" onClick=${() => go('repas')}>Plan repas<${Icon} n="chevR" s=${16} /></button>
     </div>
   </section>`;
-}
-
-function Lecture({ date }) {
-  const st = useStore(), S = st.get(), cfg = st.cfg(), j = S.journal[date] || {};
-  const rows = Apex.lecture(S.journal, cfg, date), co = j.coach;
-  return html`<${Card} cls="c7" title="Lecture du jour" sub="Constat chiffré, puis action">
-    ${co && co.analyse && html`<div className="note acc"><${Icon} n="sparkles" /><div>
-      <div className="row"><b>Verdict coach</b>${co.verdict && html`<${Pill} st=${ST_LAB[co.verdict] || ''}>${co.verdict}<//>`}</div>
-      <span>${co.analyse}</span>
-      ${co.correction && html`<span><b>Correction :</b> ${co.correction}</span>`}
-      ${co.demain && html`<span className="pre"><b>Ensuite :</b> ${co.demain}</span>`}
-    </div></div>`}
-    ${rows.length ? html`<div className="rows">${rows.map(r => html`<div key=${r.k} className="rw">
-      <div className="rw-ic"><${Icon} n=${r.ic} s=${18} /></div>
-      <div><div className="rw-l">${r.lab}</div><div className="rw-v">${r.val}</div></div>
-      <${Pill} st=${r.st === 'info' ? '' : r.st}>${r.tag}<//>
-      <div className="rw-t">${r.txt}</div>
-    </div>`)}</div>` : !co && html`<div className="empty"><span><b>Rien à lire pour l’instant.</b> Valide le debrief matinal : poids, sommeil et forme sont comparés à tes cibles, avec l’action à faire.</span></div>`}
-  <//>`;
 }
 
 function Activite({ date, cls }) {
@@ -3618,8 +3598,7 @@ function Dashboard({ date, go, setDate }) {
       <div className="c12"><${WeekStrip} date=${date} setDate=${setDate} /></div>
       <${Hero} date=${date} go=${go} />
       <${CheckIn} date=${date} go=${go} />
-      <${Lecture} date=${date} />
-      <div className="c4 stack" style=${{ alignContent: 'start', gap: 14 }}>
+      <div className="c7 stack" style=${{ alignContent: 'start', gap: 14 }}>
         <${Activite} date=${date} />
         <button type="button" className="btn grow" onClick=${() => go('analytics')}><${Icon} n="chart" s=${18} />Courbes et progression</button>
       </div>
@@ -3675,7 +3654,8 @@ function DebriefCard({ date, go, onEdit, photos }) {
     </div>
     ${photos != null && (photos < POSES.length ? html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos : ${photos} / ${POSES.length}.</b> Face, profil, dos avant de manger.</span><button type="button" className="btn sm pri" onClick=${onEdit}><${Icon} n="camera" s=${16} />Ajouter mes photos</button></div></div>`
       : html`<div className="note good"><${Icon} n="check" /><div><span><b>Photos de la semaine faites.</b> Comparatif dans l’onglet Analyse.</span></div></div>`)}
-    ${todo.length > 1 && html`<div className="stack">${todo.slice(1, 3).map(r => html`<div key=${r.k} className="note"><${Icon} n=${r.ic} /><div><span><b>${r.lab} :</b> ${r.txt}</span></div></div>`)}</div>`}
+    ${todo.length > 1 && html`<div className="row" style=${{ flexWrap: 'wrap', gap: 6 }}>${todo.slice(1).map(r => html`<${Pill} key=${r.k} st=${r.st}>${r.lab} · ${r.tag}<//>`)}</div>`}
+    ${j.coach && j.coach.correction && html`<div className="note acc"><${Icon} n="sparkles" /><div><span><b>Coach :</b> ${j.coach.correction}</span></div></div>`}
     <div className="plan-j">
       <div><span className="fld-l">Aujourd’hui</span><b>${c.statut === 'salle' ? 'Salle' + (type ? ' · ' + type : '') : 'Repos'}</b><span className="mut">${f0(c.kcal)} kcal · P ${c.p} g</span></div>
       <div className="row" style=${{ gap: 8 }}><button type="button" className="btn sm" onClick=${() => go('repas')}><${Icon} n="utensils" s=${16} />Repas</button>${c.statut === 'salle' && html`<button type="button" className="btn sm" onClick=${() => go('training')}><${Icon} n="dumbbell" s=${16} />Séance</button>`}</div>
