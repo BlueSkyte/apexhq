@@ -499,7 +499,7 @@ const Apex = (() => {
   };
   const progOf = cfg => {
     const p = cfg && cfg.programme; if (!isObj(p)) return PROG;
-    const o = {}; Object.keys(p).forEach(t => { o[t] = (Array.isArray(p[t]) ? p[t] : []).map(x => (Array.isArray(x) ? x : (x.lo != null || x.hi != null || x.rir != null || x.rest != null ? [x.e, x.n, { lo: x.lo, hi: x.hi, rir: x.rir, rest: x.rest }] : [x.e, x.n]))).filter(x => x[0]); });
+    const o = {}; Object.keys(p).forEach(t => { o[t] = (Array.isArray(p[t]) ? p[t] : []).map(x => (Array.isArray(x) ? x : (x.lo != null || x.hi != null || x.rir != null || x.rest != null || x.tech != null ? [x.e, x.n, { lo: x.lo, hi: x.hi, rir: x.rir, rest: x.rest, tech: x.tech }] : [x.e, x.n]))).filter(x => x[0]); });
     return o;
   };
   const SUPPS_DEF = [{ id: 'crea', n: 'Créatine 3–5 g', note: 'tous les jours' }, { id: 'om3', n: 'Oméga-3', note: 'avec un repas' }, { id: 'd3', n: 'Vitamine D3', note: 'avec un repas gras' }, { id: 'ash', n: 'Ashwagandha', note: 'le soir' }];
@@ -2490,7 +2490,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   'use strict';
   const A = Apex, clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const ORDRE_MUSCLES = ['pecH', 'pec', 'dLat', 'dAnt', 'dPost', 'bic', 'tri', 'avb', 'lats', 'dosH', 'trap', 'lomb', 'quad', 'isch', 'fess', 'adduc', 'abduc', 'mol', 'abd'];
-  const OV = ['lo', 'hi', 'rir', 'rest'];
+  const OV = ['lo', 'hi', 'rir', 'rest', 'tech'];
 
   /* Réglages propres à un exercice d'une séance : {e, n, lo?, hi?, rir?}. */
   const ovOf = x => { const o = {}; if (!x) return o; OV.forEach(k => { if (x[k] != null && isFinite(x[k])) o[k] = +x[k]; }); return o; };
@@ -2514,6 +2514,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     A.types(cfg).forEach(t => { o[t] = (pr[t] || []).map(x => Object.assign({ e: x[0], n: x[1] }, ovOf(x[2]))); });
     return o;
   }
+  /* Séries de départ d'un exercice selon la technique programmée (1 top set + back-off, 2 dégressive, 3 les deux). */
+  const setsDe = (n, tech) => { const t = +tech || 0, a = Array.from({ length: Math.max(1, n || 1) }, (_, k) => (t & 1 ? { t: k ? 'bo' : 'top' } : {})); if (t & 2) a.push({ t: 'd' }); return a; };
   const majExo = (items, type, i, patch) => { const o = Object.assign({}, items); o[type] = (items[type] || []).map((x, k) => (k === i ? Object.assign({}, x, patch) : x)); return o; };
   const retirerExo = (items, type, i) => { const o = Object.assign({}, items); o[type] = (items[type] || []).filter((_, k) => k !== i); return o; };
   /* Déplace l'exercice i à la position k (les autres glissent d'un cran) : un cran en haut ou en bas, ou glisser-déposer. */
@@ -2595,7 +2597,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return lignes.join('\n');
   }
 
-  Object.assign(A, { restDefaut, restDe, restTxt, ovOf, rirDefaut, paramsDe, progItems, majExo, retirerExo, deplacerExo, ajouterExo, bibliotheque, volumeSemaine, resumeProgramme, promptProgramme, limiterExos, trouverExo });
+  Object.assign(A, { restDefaut, restDe, restTxt, ovOf, rirDefaut, paramsDe, progItems, majExo, setsDe, retirerExo, deplacerExo, ajouterExo, bibliotheque, volumeSemaine, resumeProgramme, promptProgramme, limiterExos, trouverExo });
 })();
 
 /* ---- 15-store.js ---- */
@@ -4621,7 +4623,7 @@ function SeanceCard({ date }) {
   const j = S.journal[date] || {}, statut = Apex.statutDuJour(cfg, j, date), type = Apex.seanceDuJour(cfg, j, date), se = S.seances[date];
   const [sheet, setSheet] = useState(null);
   const putExos = ex => Store.patch('seances', date, { date, exos: ex });
-  const start = () => { Store.patch('seances', date, { date, type: type || Apex.types(cfg)[0], debut: new Date().toISOString(), exos: (prog[type] || []).map(x => Object.assign({ e: x[0], sets: Array.from({ length: x[1] }, () => ({})) }, Apex.ovOf(x[2]))) }); toast('Séance ' + type + ' ouverte'); };
+  const start = () => { Store.patch('seances', date, { date, type: type || Apex.types(cfg)[0], debut: new Date().toISOString(), exos: (prog[type] || []).map(x => Object.assign({ e: x[0], sets: Apex.setsDe(x[1], (x[2] || {}).tech) }, Apex.ovOf(x[2]))) }); toast('Séance ' + type + ' ouverte'); };
   if (!se && statut === 'repos') return html`<${Card} cls="c7" title="Repos" sub=${dMid(date)}>
     <div className="empty"><span><b>Pas de séance prévue.</b> Objectif du jour : ${f0(cfg.cibles.pasMin)}–${f0(cfg.cibles.pasMax)} pas, ${f0(cfg.cibles.repos.kcal)} kcal, sommeil ≥ ${cfg.cibles.sommeil} h.</span>
       <button type="button" className="btn" onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: Apex.prochaineSeance(S.seances, cfg, date) })}><${Icon} n="dumbbell" s=${18} />Passer en jour de salle</button></div>
@@ -4976,7 +4978,7 @@ function Workout({ date }) {
 function demarrerSeance(type, date) {
   const cfg = Store.cfg(), liste = Apex.progItems(cfg)[type] || [];
   Store.patch('journal', date, { date, statut: 'salle', seance: type, plan: null, planNote: null });
-  Store.patch('seances', date, { date, type, debut: new Date().toISOString(), exos: liste.map(x => Object.assign({ e: x.e, sets: Array.from({ length: x.n }, () => ({})) }, Apex.ovOf(x))) });
+  Store.patch('seances', date, { date, type, debut: new Date().toISOString(), exos: liste.map(x => Object.assign({ e: x.e, sets: Apex.setsDe(x.n, x.tech) }, Apex.ovOf(x))) });
   toast('Séance ' + type + ' ouverte');
   try { window.dispatchEvent(new CustomEvent('train:view', { detail: 'seance' })); } catch (e) { /* sans effet */ }
 }
@@ -5020,6 +5022,8 @@ function ExoParams({ type, i, onClose }) {
   if (!it) return null;
   const e = exos[it.e] || { n: it.e, m: '', lo: 8, hi: 12, inc: 2.5 }, p = Apex.paramsDe(e, it);
   const put = patch => saveProg(Apex.majExo(items, type, i, patch));
+  const [swap, setSwap] = useState(false), tech = +(it.tech || 0);
+  const TECH = [[0, 'Normal'], [1, 'Top set + back-off'], [2, 'Dégressive'], [3, 'Top set + dégressive']];
   return html`<${Sheet} title=${e.n} onClose=${onClose}>
     <div className="mfig-lg"><${MuscleFig} m=${e.m} s=${e.s} h=${230} both /><span><i style=${{ background: 'var(--acc-hi)' }}></i>${Apex.MUSCLES[e.m] || ''}${(e.s || []).length ? html` · <i style=${{ background: 'color-mix(in oklab, var(--acc-hi) 42%, #52625e)' }}></i>aide : ${e.s.map(m => Apex.MUSCLES[m]).join(', ')}` : ''}${e.uni ? ' · un côté à la fois' : ''}</span></div>
     <p className="sec" style=${{ fontSize: 13 }}>Réglages pour la séance « ${type} ».${p.perso ? '' : ' Valeurs par défaut de l’exercice.'}</p>
@@ -5031,9 +5035,12 @@ function ExoParams({ type, i, onClose }) {
     </div>
     ${p.n >= 5 && html`<div className="note"><${Icon} n="info" /><div><span>${p.n} séries sur un seul exercice, c’est beaucoup : à partir de 5 séries la qualité baisse. Mieux vaut ajouter un autre exercice pour ce muscle.</span></div></div>`}
     <${RirChips} value=${p.rir} onChange=${v => put({ rir: v })} />
+    <div className="stack"><span className="fld-l">Technique</span><div className="chips" role="radiogroup" aria-label="Technique d’intensification">${TECH.map(t => html`<button key=${t[0]} type="button" className="chip" role="radio" aria-checked=${tech === t[0]} aria-pressed=${tech === t[0]} onClick=${() => put({ tech: t[0] || undefined })}>${t[1]}</button>`)}</div>
+      ${tech > 0 && html`<span className="mut" style=${{ fontSize: 12 }}>${tech & 1 ? '1re série lourde (top set), les suivantes à −10 % (back-off). ' : ''}${tech & 2 ? 'Une série dégressive à −20 % sans repos après la dernière.' : ''} Préparé à chaque séance.</span>`}</div>
     <p className="mut" style=${{ fontSize: 12 }}>Double progression : quand toutes les séries atteignent ${p.hi} répétitions, l’objectif suivant ajoute ${fq(e.inc)} kg.</p>
-    <div className="row"><${Confirm} label="Retirer de la séance" sure="Retirer ?" cls="ghost" icon="trash" onYes=${() => { saveProg(Apex.retirerExo(items, type, i)); onClose(); }} /></div>
-    <div className="row sb"><button type="button" className="btn ghost" disabled=${!p.perso} onClick=${() => put({ lo: undefined, hi: undefined, rir: undefined, rest: undefined })}>Valeurs par défaut</button><button type="button" className="btn pri" onClick=${onClose}><${Icon} n="check" s=${18} />Terminé</button></div>
+    <div className="row"><button type="button" className="btn" onClick=${() => setSwap(true)}><${Icon} n="swap" s=${17} />Remplacer</button><${Confirm} label="Retirer de la séance" sure="Retirer ?" cls="ghost" icon="trash" onYes=${() => { saveProg(Apex.retirerExo(items, type, i)); onClose(); }} /></div>
+    ${swap && html`<${ExoSheet} exos=${exos} title=${'Remplacer ' + e.n} muscle=${e.m} onClose=${() => setSwap(false)} onPick=${id => { put({ e: id, lo: undefined, hi: undefined, rest: undefined }); toast('Exercice remplacé'); }} />`}
+    <div className="row sb"><button type="button" className="btn ghost" disabled=${!p.perso} onClick=${() => put({ lo: undefined, hi: undefined, rir: undefined, rest: undefined, tech: undefined })}>Valeurs par défaut</button><button type="button" className="btn pri" onClick=${onClose}><${Icon} n="check" s=${18} />Terminé</button></div>
   <//>`;
 }
 
@@ -5707,7 +5714,7 @@ function DayPlan({ date }) {
   const [adapt, setAdapt] = useState(false);
   const setType = t => Store.patch('journal', date, { date, statut: 'salle', seance: t, plan: null, planNote: null });
   const start = () => {
-    const f = { date, type: libre ? 'Séance libre' : type, debut: new Date().toISOString(), exos: plan.map(x => Object.assign({ e: x.e, sets: Array.from({ length: x.n }, () => ({})) }, Apex.ovOf(x))) };
+    const f = { date, type: libre ? 'Séance libre' : type, debut: new Date().toISOString(), exos: plan.map(x => Object.assign({ e: x.e, sets: Apex.setsDe(x.n, x.tech) }, Apex.ovOf(x))) };
     if (nb && nb.notes && nb.notes.length) f.note = nb.notes.join(' ');
     Store.patch('seances', date, f); toast('Séance ' + (libre ? 'libre' : type) + ' ouverte');
   };
