@@ -2828,7 +2828,7 @@ const AI = (() => {
   const getKey = () => ls.get(K_ANTH), setKey = k => ls.set(K_ANTH, k), ownG = () => ls.get(K_GEM);
   const getGKey = () => ls.get(K_GEM) || (embedded() && consent() === '1' ? (window.APEX_GKEY || RELAY) : ''), setGKey = k => { ls.set(K_GEM, k); ls.set(K_GMODEL, ''); };
   const fail = (code, message, text) => { const e = new Error(message); e.code = code; e.text = text; return e; };
-  const NO_FALLBACK = ['cancelled', 'invalid_json', 'refused', 'empty_completion', 'invalid_request', 'prompt_too_large'];
+  const NO_FALLBACK = ['quota', 'cancelled', 'invalid_json', 'refused', 'empty_completion', 'invalid_request', 'prompt_too_large'];
   let last = '';
 
   const parseJson = (t, mk) => { try { return JSON.parse(t); } catch (e) { const m = String(t).match(/\{[\s\S]*\}|\[[\s\S]*\]/); if (m) { try { return JSON.parse(m[0]); } catch (e2) { /* erreur ci-dessous */ } } throw fail('invalid_json', 'Réponse illisible', t); } };
@@ -2889,10 +2889,14 @@ const AI = (() => {
   };
   /* Relais Google (Apps Script) : la clé reste secrète côté Google, l'app n'envoie que son identifiant et la demande. */
   const cid = () => { let c = ls.get('apexhq:cid'); if (!c) { c = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(36).padStart(2, '0')).join('').slice(0, 24); ls.set('apexhq:cid', c); } return c; };
-  async function relayCall(body, signal) {
-    let r;
+  /* Quota du jour renvoyé par le relais : {u utilisés, l limite, pro date de fin Pro/VIP}. */
+  let quota = (() => { try { return JSON.parse(ls.get('apexhq:iaq') || 'null'); } catch (e) { return null; } })();
+  const noterQuota = q => { if (!q || !(q.l > 0)) return; quota = q; ls.set('apexhq:iaq', JSON.stringify(q)); try { window.dispatchEvent(new CustomEvent('ia:quota', { detail: q })); } catch (e) { /* sans effet */ } };
+  const jeton = async () => { try { return typeof Cloud !== 'undefined' && Cloud.jeton ? await Cloud.jeton() : null; } catch (e) { return null; } };
+  async function relayCall(body, signal, compte) {
+    let r; const tok = await jeton();
     for (let essai = 0; essai < 2; essai++) { // un second essai si le réseau mobile a flanché
-      try { r = await fetch(window.APEX_RELAY, { method: 'POST', signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ cid: cid(), body }) }); break; }
+      try { r = await fetch(window.APEX_RELAY, { method: 'POST', signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ cid: cid(), tok, compte: compte !== false, body }) }); break; }
       catch (e) {
         if (e && e.name === 'AbortError') throw fail('cancelled', 'Annulé');
         if (essai === 1) throw fail('upstream_error', 'Relais injoignable');
@@ -2901,11 +2905,22 @@ const AI = (() => {
     }
     const j = await r.json().catch(() => null);
     if (!j) throw fail('upstream_error', 'Réponse du relais illisible');
+    if (j.q || j._q) noterQuota(j.q || j._q);
+    if (j.error && j.error.status === 'QUOTA') { try { window.dispatchEvent(new CustomEvent('pro:open')); } catch (e) { /* sans effet */ } throw fail('quota', j.error.message || 'Quota IA du jour atteint'); }
     if (j.error) { const st = j.error.status; throw fail(st === 'RELAY_LIMIT' || st === 'RESOURCE_EXHAUSTED' || j.error.code === 429 ? 'rate_limited' : 'upstream_error', j.error.message || 'Erreur du relais'); }
     return j;
   }
-  async function gcall(model, body, signal) {
-    if (getGKey() === RELAY) return relayCall(body, signal);
+  /* Action du relais sans IA : statut du quota, code cadeau. */
+  async function relais(action, extra) {
+    if (!window.APEX_RELAY) throw fail('capability_disabled', 'Relais absent');
+    const tok = await jeton(); let r;
+    try { r = await fetch(window.APEX_RELAY, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ cid: cid(), tok, action }, extra || {})) }); } catch (e) { throw fail('upstream_error', 'Relais injoignable'); }
+    const j = await r.json().catch(() => null); if (!j) throw fail('upstream_error', 'Réponse du relais illisible');
+    if (j.q) noterQuota(j.q); if (j.error) throw fail(j.error.status === 'BAD_CODE' || j.error.status === 'NO_ACCOUNT' ? 'bad_code' : 'upstream_error', j.error.message || 'Erreur du relais');
+    return j.q || null;
+  }
+  async function gcall(model, body, signal, compte) {
+    if (getGKey() === RELAY) return relayCall(body, signal, compte);
     let r;
     try { r = await fetch(GBASE + 'models/' + model + ':generateContent?key=' + encodeURIComponent(getGKey()), { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); }
     catch (e) { throw (e && e.name === 'AbortError') ? fail('cancelled', 'Annulé') : fail('upstream_error', 'Réseau indisponible'); }
@@ -2925,7 +2940,7 @@ const AI = (() => {
         const body = { contents, generationConfig: { temperature: o.temp != null ? o.temp : o._json ? 0.1 : 0.4, maxOutputTokens: o.maxTokens || 2048 } };
         if (o.think && getGKey() === RELAY) body.generationConfig.thinkingConfig = { thinkingLevel: o.think };
         if (tools.length) body.tools = [{ functionDeclarations: tools }]; else if (o._json) body.generationConfig.responseMimeType = 'application/json';
-        const j = await gcall(model, body, o.signal), cand = (j.candidates || [])[0];
+        const j = await gcall(model, body, o.signal, round === 0), cand = (j.candidates || [])[0];
         if (!cand || !cand.content) { if (text) return { text, truncated: false }; throw fail(j.promptFeedback && j.promptFeedback.blockReason ? 'refused' : 'empty_completion', 'Réponse vide'); }
         const parts = cand.content.parts || [], tx = parts.filter(p => typeof p.text === 'string').map(p => p.text).join(''), calls = parts.filter(p => p.functionCall);
         if (tx) { text += (text ? '\n\n' : '') + tx; if (o.onText) o.onText({ text, delta: tx }); }
@@ -2965,7 +2980,7 @@ const AI = (() => {
     if (!r || r.ok !== true) throw fail('invalid_json', 'Réponse inattendue'); return true;
   }
   const hasAny = () => !!(getGKey() || getKey());
-  return { getKey, setKey, getGKey, setGKey, ownG, embedded, consent, setConsent, chain, test, hasAny, last: () => last };
+  return { relais, quota: () => quota, getKey, setKey, getGKey, setGKey, ownG, embedded, consent, setConsent, chain, test, hasAny, last: () => last };
 })();
 
 /* Règle commune aux estimations : le plat tel qu'il est servi, jamais une portion diététique. */
@@ -2987,6 +3002,7 @@ const aiMsg = e => {
   const c = e && e.code;
   if (['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].indexOf(c) >= 0) return AI.hasAny() ? 'Clé refusée ou IA indisponible. Vérifie tes clés dans Paramètres › Intelligence artificielle.' : 'Aucune IA connectée. Ajoute-en une dans Paramètres › Intelligence artificielle.';
   if (c === 'rate_limited') return window.APEX_STANDALONE ? 'Quota gratuit atteint pour le moment. Réessaie dans un moment : le reste de l’app fonctionne normalement.' : 'Ton quota Claude est atteint. L’IA revient quand il se réinitialise ; le reste de l’app fonctionne normalement.';
+  if (c === 'quota' || c === 'bad_code') return (e && e.message) || 'Quota IA du jour atteint.';
   if (c === 'session_expired') return 'Session expirée : reconnecte-toi à Claude.';
   if (c === 'refused' || c === 'empty_completion' || c === 'invalid_json') return 'Réponse inexploitable. Reformule avec aliments et quantités.';
   if (c === 'cancelled') return '';
@@ -3119,6 +3135,7 @@ const Cloud = (() => {
 
   return {
     on, put, del, pull, signUp, signIn, signOut, reset, deleteAccount,
+    jeton: () => (ses ? token().catch(() => null) : Promise.resolve(null)),
     user: () => (on() && ses ? { uid: ses.uid, email: ses.email, name: ses.name || '', dead: !!ses.dead } : null),
     sub: f => { subs.add(f); return () => subs.delete(f); },
   };
@@ -6802,6 +6819,7 @@ function SanteDiag({ d, ios }) {
    passer actif à true : les zones marquées Pro se verrouillent pour les comptes sans abonnement (cfg.pro.fin). */
 const PRO = { actif: false, prix: 'environ 3,99 € par mois' };
 const PRO_LISTE = [
+  ['sparkles', '150 messages IA par jour', 'Au lieu de 10 en gratuit : coach, bilans, menus et estimations'],
   ['chart', 'Analyse avancée', 'Projection du poids, progression de force, adhérence, volume par muscle'],
   ['sparkles', 'Bilan du coach IA', 'Verdict, constats chiffrés et ajustements sur tes 14 derniers jours'],
   ['clock', 'Menus de la semaine par l’IA', 'Sept jours calés sur tes macros, tes goûts et tes contraintes'],
@@ -6817,9 +6835,25 @@ function ProLock({ titre }) {
 /* Zone Pro : rend son contenu si l'utilisateur y a droit, sinon un seul encart verrouillé. */
 function ProZone({ titre, children }) { return estPro() ? children : html`<${ProLock} titre=${titre} />`; }
 function ProBody() {
+  const [q, setQ] = useState(() => AI.quota()), [code, setCode] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
+  useEffect(() => { const f = e => setQ(e.detail); window.addEventListener('ia:quota', f); AI.relais('statut').then(x => { if (x) setQ(x); }).catch(() => {}); return () => window.removeEventListener('ia:quota', f); }, []);
+  const vip = q && q.pro, aVie = !!vip && vip >= '2999';
+  const activer = async () => {
+    if (!code.trim() || busy) return; setBusy(true); setMsg('');
+    try {
+      const r = await AI.relais('code', { code: code.trim() }); if (r) setQ(r); setCode('');
+      if (r && r.pro) Store.patch('cfg', null, { pro: { fin: r.pro, vip: 1 } });
+      setMsg(r && r.pro >= '2999' ? 'Code activé : Pro à vie 🎉' : 'Code activé : Pro jusqu’au ' + dMid(r && r.pro) + ' 🎉');
+    } catch (e) { setMsg(aiMsg(e) || 'Code refusé.'); }
+    setBusy(false);
+  };
   return html`<div className="stack">
-    <div className="pro-hero"><${ProTag} /><b>Macrolya Pro</b><span>${PRO.actif ? (estPro() ? 'Ton abonnement est actif.' : 'Débloque les outils avancés pour ' + PRO.prix + '.') : 'Offert à tout le monde pendant le lancement. Profites-en.'}</span></div>
+    <div className="pro-hero"><${ProTag} /><b>${vip ? 'Macrolya Pro · VIP' : 'Macrolya Pro'}</b><span>${vip ? (aVie ? 'Actif à vie. Merci 🙏' : 'Actif jusqu’au ' + dMid(vip) + '.') : PRO.actif ? (estPro() ? 'Ton abonnement est actif.' : 'Débloque les outils avancés pour ' + PRO.prix + '.') : 'Fonctions Pro offertes pendant le lancement. L’IA : 10 messages par jour en gratuit, 150 en Pro.'}</span></div>
+    ${q && q.l > 0 && html`<div className="pro-q"><span>IA aujourd’hui</span><b>${q.u} / ${q.l}</b><i style=${{ width: Math.min(100, Math.round(q.u / q.l * 100)) + '%' }}></i></div>`}
     <div className="pro-l">${PRO_LISTE.map(x => html`<div key=${x[1]} className="pro-r"><i><${Icon} n=${x[0]} s=${18} /></i><span><b>${x[1]}</b><small>${x[2]}</small></span></div>`)}</div>
+    <div className="pro-code"><label className="fld" htmlFor="pro-code"><span className="fld-l">Code cadeau</span><input id="pro-code" className="inp" type="text" autoComplete="off" autoCapitalize="characters" maxLength="30" placeholder="VIP-XXXX-XXXX" value=${code} onChange=${e => setCode(e.target.value.toUpperCase())} /></label>
+      <button type="button" className="btn" disabled=${busy || !code.trim()} onClick=${activer}>${busy ? 'Vérification…' : 'Activer'}</button></div>
+    ${msg && html`<p className="mut" role="status" style=${{ fontSize: 13 }}>${msg}</p>`}
     <p className="mut" style=${{ fontSize: 12 }}>Le suivi des repas, le scan, les séances, le poids, les photos, les mensurations et l’export de tes données restent gratuits.</p>
   </div>`;
 }
@@ -7005,7 +7039,7 @@ function SettingsSheet({ onClose }) {
     ['Entraînement', [['seances', 'Séances', 'dumbbell', 'Types de séances et exercices'], ['focus', 'Points faibles', 'trend', 'Muscles à prioriser']]],
     ['Nutrition', [['repas', 'Repas et aliments', 'utensils', 'Compléments, aliments perso, étiquettes']]],
     ['Connexions', [].concat(STANDALONE ? [['sante', 'Santé et montres', 'heart', se && se.on ? 'Connecté' : 'Apple Santé, Health Connect']] : [], [['claude', 'Intelligence artificielle', 'sparkles', st.caps().sample ? 'Activée' : 'Coach, menus et séances par l’IA']])],
-    ['Application', [['pro', 'Macrolya Pro', 'sparkles', PRO.actif ? (estPro() ? 'Actif' : 'Outils avancés') : 'Offert pendant le lancement'], ['rappels', 'Rappels', 'clock', 'Pesée, repas, bilan du soir'], ['partage', 'Partager l’app', 'send', 'Lien, QR code, installation'], ['data', 'Données', 'download', 'Export CSV, bilan PDF, sauvegarde']]],
+    ['Application', [['pro', 'Macrolya Pro', 'sparkles', PRO.actif ? (estPro() ? 'Actif' : 'Outils avancés') : 'Quota IA, code cadeau'], ['rappels', 'Rappels', 'clock', 'Pesée, repas, bilan du soir'], ['partage', 'Partager l’app', 'send', 'Lien, QR code, installation'], ['data', 'Données', 'download', 'Export CSV, bilan PDF, sauvegarde']]],
   ].filter(g => g[1].length);
   const cur = sec ? [].concat.apply([], GR.map(g => g[1])).find(x => x[0] === sec) : null;
   return html`<${Sheet} title=${cur ? cur[1] : 'Paramètres'} onClose=${onClose}>
