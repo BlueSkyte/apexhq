@@ -3630,6 +3630,13 @@ function ChartCard({ title, sub, cls, legend, table, children }) {
   <//>`;
 }
 
+/* Mention sous les réponses de l'IA : d'où viennent les conseils, et ce qu'ils ne sont pas. */
+function IaNote({ court }) {
+  return html`<p className="ia-note"><${Icon} n="info" s=${14} /><span>${court
+    ? 'Réponses générées par l’IA de Macrolya à partir de tes données et de la littérature scientifique. Ce n’est pas un avis médical.'
+    : 'Analyse générée par l’IA de Macrolya à partir de tes données. Elle s’appuie sur la littérature scientifique en nutrition et en entraînement (études, méta-analyses, recommandations officielles comme celles de l’ANSES) et sur les méthodes de coachs reconnus. Ce n’est ni l’avis d’un coach ou d’un diététicien en personne, ni un avis médical : en cas de doute sur ta santé, parle à un professionnel.'}</span></p>`;
+}
+
 /* ---- 30-ui-dashboard.js ---- */
 /* Macrolya — onglet 1 : statut du jour, check-in matinal à jeun, lecture, poids, mensurations. */
 
@@ -3789,7 +3796,7 @@ function DebriefCard({ date, go, onEdit, photos }) {
       <div className="row" style=${{ gap: 8 }}><button type="button" className="btn sm" onClick=${() => go('repas')}><${Icon} n="utensils" s=${16} />Repas</button>${c.statut === 'salle' && html`<button type="button" className="btn sm" onClick=${() => go('training')}><${Icon} n="dumbbell" s=${16} />Séance</button>`}</div>
     </div>
     ${sample && html`<button type="button" className="btn wide" disabled=${busy} onClick=${run}><${Icon} n="sparkles" s=${18} />${busy ? 'L’IA analyse…' : ia ? 'Refaire le debrief IA' : 'Debrief personnalisé par l’IA'}</button>`}
-    ${ia && html`<div className="note acc"><${Icon} n="sparkles" /><div><span className="pre" style=${{ color: 'var(--ink)' }}>${ia}</span></div></div>`}
+    ${ia && html`<div className="note acc"><${Icon} n="sparkles" /><div><span className="pre" style=${{ color: 'var(--ink)' }}>${ia}</span></div></div><${IaNote} />`}
     ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
   <//>`;
 }
@@ -5514,7 +5521,7 @@ function CoachCard({ date }) {
     setBusy(false);
   };
   return html`<${Card} cls="c5" title=${html`Bilan coach <${ProTag} />`} sub="Analyse des 14 derniers jours par l’IA">
-    ${out ? html`<div className="pre" aria-live="polite">${out}</div>` : html`<div className="empty"><span>Verdict, constats chiffrés et ajustements à partir de tes données. Utilise ton quota d’IA gratuit.</span></div>`}
+    ${out ? html`<div className="pre" aria-live="polite">${out}</div><${IaNote} />` : html`<div className="empty"><span>Verdict, constats chiffrés et ajustements à partir de tes données. Utilise ton quota d’IA gratuit.</span></div>`}
     ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
     <div className="row">
       <button type="button" className="btn pri grow" disabled=${busy} onClick=${run}><${Icon} n="sparkles" s=${18} />${busy ? 'Analyse…' : out ? 'Relancer le bilan' : 'Générer le bilan'}</button>
@@ -6084,6 +6091,7 @@ function Coach({ date }) {
         <${Seg} neutral label="Vitesse du coach" value=${tier} onChange=${pickTier} options=${[['quick', 'Rapide'], ['default', 'Précis']]} />
         ${msgs.length > 0 && html`<${Confirm} label="Effacer" sure="Effacer la discussion ?" cls="ghost" onYes=${() => setMsgs([])} />`}
       </div></div>
+    <${IaNote} court />
     <div className="chat" aria-live="polite">
       ${!msgs.length && html`<div className="note acc"><${Icon} n="sparkles" /><div>
         <span><b>Dis-lui ce que tu fais, il remplit l’app.</b> Repas, écart, poids, pas, séries : chaque enregistrement s’affiche et s’annule d’un geste. ${lim && !lim.tools ? 'Dans cette vue il conseille mais ne peut pas écrire.' : ''}</span>
