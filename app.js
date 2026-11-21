@@ -1284,7 +1284,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ['kfc_zinger', 'Zinger burger (KFC)', 'kfc poulet burger', 25, 42, 23, 2, 'burger'], ['kfc_twister', 'Twister (KFC)', 'kfc wrap poulet', 21, 44, 24, 3, 'wrap'],
     ['kfc_pilon', 'Pilon de poulet frit (KFC)', 'kfc poulet frit', 14, 7, 12, 0, 'pilon'], ['kfc_coleslaw', 'Coleslaw (KFC)', 'kfc salade chou', 1, 13, 9, 2, 'portion'],
     ['crousty_chicken', 'Sandwich poulet pané (format classique)', 'poulet pane sandwich burger', 25, 47, 26, 3, 'sandwich'],
-    ['crousty_game', 'Crousty (Crousty Game, ≈ 1100 kcal)', 'crousty game enseigne restaurant sandwich crousty de crousty game', 45, 95, 62, 5, 'sandwich'], ['quick_giant', 'Giant (Quick)', 'quick burger', 28, 41, 36, 3, 'burger'],
+    ['crousty_game', 'Crousty (riz, poulet frit, sauce · ≈ 1 200 kcal)', 'crousty game box enseigne restaurant snack riz poulet frit sauce fromagere crousty de crousty game', 52, 110, 65, 4, 'box'], ['quick_giant', 'Giant (Quick)', 'quick burger', 28, 41, 36, 3, 'burger'],
     ['quick_long_chicken', 'Long Chicken (Quick)', 'quick poulet', 21, 46, 26, 3, 'burger'],
     ['subway_15_teriyaki', 'Sub 15 cm poulet teriyaki (Subway)', 'subway sandwich', 26, 55, 6, 4, 'sub'], ['subway_15_thon', 'Sub 15 cm thon (Subway)', 'subway sandwich', 22, 47, 17, 4, 'sub'],
     ['subway_30_teriyaki', 'Sub 30 cm poulet teriyaki (Subway)', 'subway sandwich', 52, 110, 12, 8, 'sub'], ['subway_cookie', 'Cookie (Subway)', 'subway biscuit', 2, 30, 10, 1, 'cookie'],
@@ -1471,6 +1471,48 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   /* ---------- catégories (chips de l'écran d'ajout) ---------- */
   const i = A.CATS.findIndex(c => c[0] === 'ecart');
   A.CATS.splice(i < 0 ? A.CATS.length : i, 0, ['fast', 'Fast-food'], ['plat', 'Plats du monde'], ['dessert', 'Desserts'], ['boisson', 'Boissons'], ['snack', 'Snacks']);
+
+  /* ---------- snacks, menus et cheat meals : portions réellement servies (sauce, friture et accompagnements compris) ---------- */
+  W('fast', [
+    ['crousty_box_xl', 'Crousty XL grand format (riz, poulet frit, sauce)', 'crousty xl grande box snack riz poulet frit sauce', 70, 145, 88, 5, 'box'],
+    ['box_tenders_frites', 'Box tenders + frites + sauce (snack)', 'box tenders frites sauce snack poulet pane', 45, 95, 60, 6, 'box'],
+    ['box_wings_frites', 'Box wings ×10 + frites', 'box wings ailes poulet frites snack', 55, 70, 70, 5, 'box'],
+    ['chicken_box', 'Chicken box (nuggets, frites, sauce)', 'chicken box nuggets frites sauce snack', 35, 90, 55, 6, 'box'],
+    ['tacos_m_1viande', 'Tacos M 1 viande', 'o tacos tacos francais m 1 viande frites sauce fromagere', 40, 85, 48, 5, 'tacos'],
+    ['tacos_giga', 'Tacos Giga 4 viandes', 'o tacos tacos francais giga xxl 4 viandes', 95, 165, 98, 9, 'tacos'],
+    ['naan_sandwich', 'Naan sandwich (snack, poulet ou viande)', 'naan sandwich poulet snack fromage', 40, 80, 40, 4, 'naan'],
+    ['americain', 'Américain (baguette, steaks, frites, sauce)', 'americain baguette steak frites sauce snack', 40, 120, 55, 7, 'sandwich'],
+    ['smash_burger', 'Smash burger double (restaurant)', 'smash burger double cheddar restaurant', 40, 45, 45, 2, 'burger'],
+    ['burger_resto_frites', 'Burger de restaurant + frites', 'burger restaurant frites brasserie', 45, 110, 70, 7, 'assiette'],
+    ['pizza_kebab_entiere', 'Pizza kebab entière (33 cm)', 'pizza kebab entiere', 70, 175, 70, 8, 'pizza'],
+    ['pizza_4fromages_entiere', 'Pizza 4 fromages entière (33 cm)', 'pizza 4 fromages quatre fromages entiere', 60, 180, 65, 8, 'pizza'],
+    ['pizza_reine_entiere', 'Pizza reine entière (33 cm)', 'pizza reine jambon champignons entiere', 55, 175, 45, 9, 'pizza'],
+    ['mcdo_bigmac', 'Big Mac (McDonald’s)', 'mcdo macdo big mac', 26, 44, 25, 3, 'burger'],
+    ['mcdo_mcchicken', 'McChicken (McDonald’s)', 'mcdo macdo mc chicken poulet', 23, 48, 20, 3, 'burger'],
+    ['mcdo_cbo', 'CBO (McDonald’s)', 'mcdo macdo cbo chicken bacon onion', 34, 58, 30, 4, 'burger'],
+    ['mcdo_menu_bigmac', 'Menu Big Mac (frites moyennes + soda 40 cl)', 'mcdo macdo menu big mac frites coca', 31, 128, 40, 6, 'menu'],
+    ['mcdo_menu_maxi_bestof', 'Menu Maxi Best Of (burger, grande frite, soda 50 cl)', 'mcdo macdo menu maxi best of', 32, 150, 50, 7, 'menu'],
+    ['bk_steakhouse', 'Steakhouse (Burger King)', 'bk burger king steakhouse', 38, 55, 52, 3, 'burger'],
+    ['bk_big_king', 'Big King (Burger King)', 'bk burger king big king', 27, 40, 30, 2, 'burger'],
+    ['kfc_bucket6', 'Bucket 6 pièces de poulet (KFC)', 'kfc bucket poulet frit 6 pieces', 105, 45, 90, 2, 'bucket'],
+    ['kfc_boxmaster', 'Boxmaster (KFC)', 'kfc boxmaster wrap', 34, 62, 38, 4, 'wrap'],
+    ['general_tao_riz', 'Poulet général Tao + riz', 'poulet general tao riz chinois traiteur', 40, 130, 35, 3, 'assiette'],
+    ['sushi_plateau24', 'Plateau sushi 24 pièces', 'sushi maki california plateau 24', 46, 165, 22, 6, 'plateau'],
+  ]);
+  W('dessert', [
+    ['pot_glace_465', 'Pot de glace entier (465 ml, type Ben & Jerry’s)', 'glace pot ben jerry haagen dazs entier', 18, 105, 60, 2, 'pot'],
+    ['tablette_choco_lait', 'Tablette de chocolat au lait entière (100 g)', 'chocolat lait tablette entiere', 7, 57, 31, 2, 'tablette'],
+    ['cookie_geant', 'Cookie géant (boulangerie)', 'cookie geant boulangerie', 6, 55, 22, 2, 'cookie'],
+    ['donut_glace', 'Donut glacé', 'donut beignet glace', 4, 30, 13, 1, 'donut'],
+    ['mms_peanut', 'M&M’s peanut (sachet 45 g)', 'm&m mms cacahuete', 4, 27, 11, 1, 'sachet'],
+  ]);
+  W('snack', [
+    ['chips_paquet150', 'Paquet de chips (150 g)', 'chips paquet entier', 9, 78, 52, 6, 'paquet'],
+    ['pringles_tube', 'Tube Pringles (165 g)', 'pringles tube chips', 7, 85, 55, 4, 'tube'],
+  ]);
+  W('boisson', [
+    ['biere_pinte', 'Bière blonde (pinte 50 cl)', 'biere blonde pinte demi', 2, 18, 0, 0, 'pinte', 215],
+  ]);
 
   /* ---------- recherche dans la base : sert à l'écran d'ajout et au coach (qui ne reçoit que les correspondances) ---------- */
   const norm = s => String(s || '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -2872,6 +2914,9 @@ const AI = (() => {
   return { getKey, setKey, getGKey, setGKey, ownG, embedded, consent, setConsent, chain, test, hasAny, last: () => last };
 })();
 
+/* Règle commune aux estimations : le plat tel qu'il est servi, jamais une portion diététique. */
+const IA_PORTIONS = 'Compte TOUT ce qui compose le plat tel qu’il est servi : féculents, viande, friture et huile absorbée, sauces (une sauce de snack ou de kebab = 150 à 250 kcal), fromage, pain, accompagnements. Snack, fast-food ou restaurant : portion réelle servie, généreuse, jamais une portion diététique. En cas de doute, prends la valeur haute : ne sous-estime jamais. Repères : box crousty (riz, poulet frit, sauce) ≈ 1 200 kcal ; tacos L 2 viandes ≈ 1 150 ; assiette kebab-frites ≈ 1 200 ; burger de restaurant + frites ≈ 1 250 ; pizza entière 33 cm ≈ 1 300 à 1 600 ; menu fast-food complet ≈ 1 000 à 1 200.';
+
 /* Mémoire des estimations nutritionnelles : même texte = même réponse, instantanée et sans quota.
    shortcut: entrées jamais purgées avant 30 jours, à purger si le stockage local sature. */
 const iaMemo = async (fn, prompt, o) => {
@@ -3961,7 +4006,7 @@ const roleMacros = x => { const k = x.p * 4 + x.g * 4 + x.l * 9 || 1; return x.p
 const garderAliment = f => { const id = 'u_' + Apex.uid(); Store.patch('cfg', null, { aliments: Object.assign({}, Store.cfg().aliments, { [id]: Object.assign({ id, c: 'perso', etq: 0 }, f) }) }); return id; };
 /* Valeurs pour 100 g et poids d'une portion, estimés par l'IA à partir d'un nom ou d'une description. */
 async function estimerAliment(sample, txt) {
-  const r = await iaMemo(sample.json, 'Tu es diététicien. Donne les valeurs nutritionnelles moyennes de cet aliment ou de ce plat (table Ciqual ; valeurs officielles pour une enseigne ou un produit de marque ; si c’est un plat préparé, estime d’après sa composition). Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": kcal pour 100 g, "p": protéines en g pour 100 g, "g": glucides en g pour 100 g, "l": lipides en g pour 100 g, "f": fibres en g pour 100 g, "portion_g": poids en grammes d’une portion ou d’une pièce usuelle, "unite": "nom de l’unité (portion, tranche, pièce, barre…)"}.\n\nAliment : """' + txt.slice(0, 200) + '"""', { modelTier: 'quick', cache: false });
+  const r = await iaMemo(sample.json, 'Tu es diététicien. Donne les valeurs nutritionnelles moyennes de cet aliment ou de ce plat (table Ciqual ; valeurs officielles pour une enseigne ou un produit de marque ; si c’est un plat préparé, estime d’après sa composition). ' + IA_PORTIONS + ' Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": kcal pour 100 g, "p": protéines en g pour 100 g, "g": glucides en g pour 100 g, "l": lipides en g pour 100 g, "f": fibres en g pour 100 g, "portion_g": poids en grammes d’une portion ou d’une pièce usuelle, "unite": "nom de l’unité (portion, tranche, pièce, barre…)"}.\n\nAliment : """' + txt.slice(0, 200) + '"""', { modelTier: 'quick', cache: false });
   const k = Number(r && r.kcal); if (!(k >= 0 && k <= 950)) throw { code: 'invalid_json' };
   const pg = Math.round(+r.portion_g), ok = pg >= 10 && pg <= 800;
   return { n: String(r.nom || txt).slice(0, 60), k: Math.round(k), p: r1(+r.p || 0), g: r1(+r.g || 0), l: r1(+r.l || 0), f: r1(+r.f || 0), pg: ok ? pg : 0, unite: String(r.unite || 'portion').slice(0, 20) };
@@ -4025,7 +4070,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     const txt = ai.txt.trim(); if (!txt || !sample) return;
     setAi(s => Object.assign({}, s, { busy: true, err: '', res: null }));
     try {
-      const r = await iaMemo(sample.json, 'Tu es diététicien. Estime les valeurs nutritionnelles TOTALES de ce qui est décrit (table Ciqual ; valeurs officielles pour les enseignes de restauration). Sans quantité précisée, prends une portion standard adulte. Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": nombre, "p": grammes de protéines, "g": grammes de glucides, "l": grammes de lipides, "f": grammes de fibres, "detail": "hypothèses de portions en une ligne"}.\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false });
+      const r = await iaMemo(sample.json, 'Tu es diététicien. Estime les valeurs nutritionnelles TOTALES de ce qui est décrit (table Ciqual ; valeurs officielles pour les enseignes de restauration). Sans quantité précisée, prends la portion réellement servie à un adulte. ' + IA_PORTIONS + ' Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": nombre, "p": grammes de protéines, "g": grammes de glucides, "l": grammes de lipides, "f": grammes de fibres, "detail": "hypothèses de portions en une ligne"}.\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false });
       const k = r && +r.kcal; if (!Apex.num(k) || k <= 0) throw { code: 'invalid_json' };
       setAi(s => Object.assign({}, s, { busy: false, res: { n: String(r.nom || 'Repas estimé').slice(0, 60), k, p: +r.p || 0, g: +r.g || 0, l: +r.l || 0, f: +r.f || 0, detail: String(r.detail || '').slice(0, 260) } }));
     } catch (e) { setAi(s => Object.assign({}, s, { busy: false, err: aiErr(e) })); }
@@ -5709,7 +5754,7 @@ function coachRegles(cfg) {
     'Style : français, phrases courtes, chiffres, aucune motivation, aucune formule de politesse. Texte brut, sans Markdown ni tableau. 6 lignes maximum sauf demande de détail.' + (ip.prenom ? ' L’utilisateur s’appelle ' + ip.prenom + ' : appelle-le par son prénom de temps en temps, naturellement, sans en abuser.' : ''),
     'Dès que l’utilisateur rapporte un repas, un écart, son poids, son sommeil, ses pas, son eau, des séries ou des mensurations : enregistre avec l’outil adapté, sans demander confirmation. N’invente jamais une donnée qu’il n’a pas donnée. Quantité floue : prends une portion standard et dis l’hypothèse en une ligne.',
     'Valeurs nutritionnelles : prends la base de l’app ci-dessous quand l’aliment y figure (poids cru), sinon Ciqual ou les valeurs officielles de l’enseigne. Donne des totaux pour la quantité réellement mangée. Si cru ou cuit n’est pas précisé pour un féculent ou une viande, suppose le poids cuit pour une assiette et dis-le.',
-    'Plat, produit ou enseigne : utilise les valeurs de la liste « correspondant à la demande » quand elle contient le plat. S’il n’y est pas, ne dis jamais « aliment non reconnu » et ne refuse pas : si tu connais bien ce plat (plat classique, enseigne connue), estime-le directement ; sinon demande en UNE question courte ce qu’il y a dedans (ingrédients, quantités approximatives, taille de la portion), sans rien enregistrer avant sa réponse. Dès qu’il répond, estime les calories et les macros à partir des ingrédients (valeurs Ciqual), enregistre avec l’outil et dis en une ligne que c’est une estimation. S’il ne sait pas, estime une portion standard.',
+    'Plat, produit ou enseigne : utilise les valeurs de la liste « correspondant à la demande » quand elle contient le plat. S’il n’y est pas, ne dis jamais « aliment non reconnu » et ne refuse pas : si tu connais bien ce plat (plat classique, enseigne connue), estime-le directement ; sinon demande en UNE question courte ce qu’il y a dedans (ingrédients, quantités approximatives, taille de la portion), sans rien enregistrer avant sa réponse. Dès qu’il répond, estime les calories et les macros à partir des ingrédients (valeurs Ciqual), enregistre avec l’outil et dis en une ligne que c’est une estimation. ' + IA_PORTIONS + ' S’il ne sait pas, estime une portion standard.',
     'Outil ajouter_repas : remplace=true si ce qu’il a mangé REMPLACE le contenu prévu de ce repas, false s’il s’ajoute. mange=false seulement pour un repas à venir.',
     'Après un repas enregistré : total du jour face à la cible, puis le reste à manger en aliments concrets avec grammes. ' + ecart,
     'Jamais sous les planchers. Ni brûleur de graisse ni diurétique. Si l’utilisateur montre restriction extrême, culpabilité, compulsions ou obsession de la balance : arrête les chiffres, réponds avec bienveillance et oriente vers un professionnel de santé. Tu ne remplaces pas un médecin : pour un symptôme, une maladie ou un médicament, renvoie vers un professionnel de santé.',
