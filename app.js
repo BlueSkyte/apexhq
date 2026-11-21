@@ -442,20 +442,20 @@ const Apex = (() => {
   const EXOS = {};
   const X = (id, n, m, s, lo, hi, inc) => { EXOS[id] = { id, n, m, s: s || [], lo, hi, inc }; };
   X('di_halt', 'Développé incliné haltères 30°', 'pecH', ['dAnt', 'tri'], 6, 10, 2);
-  X('dc', 'Développé couché (barre ou machine)', 'pec', ['dAnt', 'tri'], 6, 10, 2.5);
+  X('dc', 'Développé couché barre', 'pec', ['dAnt', 'tri'], 6, 10, 2.5);
   X('ec_bh', 'Écarté poulie bas → haut', 'pecH', [], 12, 15, 2.5);
   X('el_halt', 'Élévations latérales haltères', 'dLat', [], 10, 15, 1);
   X('dm_halt', 'Développé militaire haltères', 'dAnt', ['tri', 'dLat'], 8, 12, 2);
   X('tri_corde', 'Extension triceps corde', 'tri', [], 10, 15, 2.5);
   X('tri_oh', 'Extension triceps au-dessus de la tête', 'tri', [], 10, 15, 2.5);
   X('tractions', 'Tractions', 'lats', ['bic', 'avb'], 6, 10, 2.5);
-  X('row_barre', 'Rowing barre / T-bar', 'dosH', ['bic', 'dPost', 'lats'], 8, 12, 2.5);
+  X('row_barre', 'Rowing barre', 'dosH', ['bic', 'dPost', 'lats'], 8, 12, 2.5);
   X('tir_horiz', 'Tirage horizontal poulie', 'dosH', ['bic', 'lats'], 10, 12, 2.5);
   X('curl_inc', 'Curl incliné haltères', 'bic', [], 8, 12, 1);
-  X('curl_pup', 'Curl pupitre (EZ ou machine)', 'bic', [], 10, 12, 2.5);
+  X('curl_pup', 'Curl pupitre barre EZ', 'bic', [], 10, 12, 2.5);
   X('el_poulie', 'Élévations latérales poulie', 'dLat', [], 12, 15, 1.25);
   X('face_pull', 'Face pull', 'dPost', [], 12, 15, 2.5);
-  X('squat', 'Squat (barre ou hack)', 'quad', ['fess'], 5, 8, 5);
+  X('squat', 'Squat barre', 'quad', ['fess'], 5, 8, 5);
   X('presse', 'Presse à cuisses', 'quad', ['fess'], 8, 12, 10);
   X('rdl', 'Soulevé de terre roumain', 'isch', ['fess'], 8, 10, 5);
   X('leg_curl', 'Leg curl allongé', 'isch', [], 10, 12, 2.5);
@@ -464,7 +464,7 @@ const Apex = (() => {
   X('crunch', 'Crunch poulie', 'abd', [], 12, 15, 2.5);
   X('di_smith', 'Développé incliné Smith 30°', 'pecH', ['dAnt', 'tri'], 6, 10, 2.5);
   X('tir_neutre', 'Tirage vertical prise neutre', 'lats', ['bic'], 8, 12, 2.5);
-  X('pec_deck', 'Pec deck / écarté machine', 'pec', [], 10, 15, 2.5);
+  X('pec_deck', 'Pec deck (butterfly)', 'pec', [], 10, 15, 2.5);
   X('row_uni', 'Rowing unilatéral', 'dosH', ['bic', 'dPost', 'lats'], 8, 12, 2);
   X('el_mach', 'Élévations latérales machine', 'dLat', [], 12, 20, 2.5);
   X('curl_bay', 'Curl bayésien poulie', 'bic', [], 10, 15, 1.25);
@@ -1066,7 +1066,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   X('pompes_pieds', 'Pompes pieds surélevés', 'pecH', ['dAnt', 'tri'], 8, 15, 2.5);
   X('pompes_pike', 'Pompes en V (épaules)', 'dAnt', ['tri'], 6, 15, 2.5);
   X('pompes_diamant', 'Pompes diamant', 'tri', ['pec'], 8, 15, 2.5);
-  X('rowing_inv', 'Rowing inversé (table ou barre basse)', 'dosH', ['bic', 'lats'], 8, 15, 2.5);
+  X('rowing_inv', 'Rowing inversé barre basse', 'dosH', ['bic', 'lats'], 8, 15, 2.5);
   X('squat_pdc', 'Squat poids du corps', 'quad', ['fess'], 15, 30, 2.5);
   X('fentes_pdc', 'Fentes marchées', 'quad', ['fess'], 12, 24, 2.5);
   X('pont_fessier', 'Pont fessier', 'fess', ['isch'], 12, 25, 2.5);
@@ -1111,7 +1111,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ['row_halt_unil', 'Rowing haltère un bras (banc)', 'dosH', ['lats', 'bic'], 8, 12, 2, 'halteres'], ['row_poulie_large', 'Tirage horizontal prise large', 'dosH', ['dPost', 'bic'], 10, 15, 2.5, 'poulie'],
     ['row_appui', 'Rowing buste appuyé machine', 'dosH', ['bic', 'dPost'], 8, 12, 2.5, 'machine'], ['row_pendlay', 'Rowing Pendlay', 'dosH', ['lats', 'bic'], 5, 8, 2.5, 'barre'],
     // trapèzes
-    ['shrug', 'Haussements d’épaules haltères', 'trap', ['avb'], 10, 15, 2.5, 'halteres'], ['shrug_barre', 'Haussements d’épaules barre ou Smith', 'trap', ['avb'], 8, 12, 5, 'barre'],
+    ['shrug', 'Haussements d’épaules haltères', 'trap', ['avb'], 10, 15, 2.5, 'halteres'], ['shrug_barre', 'Haussements d’épaules barre', 'trap', ['avb'], 8, 12, 5, 'barre'],
     ['shrug_machine', 'Haussements d’épaules machine', 'trap', [], 10, 15, 5, 'machine'], ['shrug_poulie', 'Haussements poulie basse', 'trap', [], 10, 15, 2.5, 'poulie'],
     // lombaires
     ['souleve', 'Soulevé de terre', 'lomb', ['isch', 'fess', 'trap'], 4, 6, 5, 'barre'], ['lombaires', 'Extension lombaires machine', 'lomb', ['isch', 'fess'], 10, 15, 2.5, 'machine'],
@@ -1178,7 +1178,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     // à la maison / sans matériel : de quoi travailler chaque muscle avec haltères, sac à dos, serviette, table ou chaise
     ['pullover_lats', 'Pull-over haltère (dorsaux)', 'lats', ['pec', 'tri'], 10, 15, 2, 'halteres'], ['row_halt_coude', 'Rowing haltère coude collé', 'lats', ['bic', 'dosH'], 8, 12, 2, 'halteres'],
     ['rowing_table_sup', 'Rowing inversé sous une table (prise supination)', 'lats', ['bic', 'dosH'], 6, 15, 2.5, 'corps'], ['row_sac', 'Rowing sac à dos chargé', 'lats', ['bic', 'dosH'], 10, 20, 2.5, 'corps'],
-    ['el_lat_sac', 'Élévations latérales avec sacs ou bouteilles', 'dLat', [], 12, 25, 1, 'corps'], ['oiseau_sol', 'Oiseau au sol (Y-T-W)', 'dPost', ['dosH'], 10, 20, 1, 'corps'],
+    ['el_lat_sac', 'Élévations latérales lestées (sacs, bouteilles)', 'dLat', [], 12, 25, 1, 'corps'], ['oiseau_sol', 'Oiseau au sol (Y-T-W)', 'dPost', ['dosH'], 10, 20, 1, 'corps'],
     ['curl_serviette', 'Curl avec serviette (résistance isométrique)', 'bic', ['avb'], 10, 20, 1, 'corps'], ['curl_sac', 'Curl avec sac à dos chargé', 'bic', ['avb'], 10, 20, 2.5, 'corps'],
     ['dips_chaise', 'Dips entre deux chaises', 'tri', ['pec', 'dAnt'], 8, 20, 2.5, 'corps'], ['ext_tri_sac', 'Extension triceps au-dessus de la tête avec sac', 'tri', [], 10, 20, 2.5, 'corps'],
     ['poignets_sac', 'Curl de poignets avec sac à dos', 'avb', [], 12, 25, 2.5, 'corps'], ['shrug_sac', 'Haussements d’épaules avec sacs chargés', 'trap', [], 12, 25, 2.5, 'corps'],
@@ -1188,6 +1188,58 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     ['releve_jambes', 'Relevé de jambes suspendu', 'abd', [], 8, 15, 2.5, 'barrefixe'], ['crunch_sol', 'Crunch au sol', 'abd', [], 12, 25, 2.5, 'corps'],
     ['roue_abdo', 'Roue abdominale', 'abd', [], 6, 15, 2.5, 'corps'], ['woodchop', 'Bûcheron à la poulie', 'abd', [], 10, 15, 2.5, 'poulie'],
     ['crunch_machine', 'Crunch machine', 'abd', [], 10, 15, 2.5, 'machine'],
+    // ajouts : un mouvement par exercice
+    ['tbar_row', 'Rowing T-bar', 'dosH', ['bic', 'dPost', 'lats'], 8, 12, 2.5, 'barre'],
+    ['dc_mach_assis', 'Développé couché machine', 'pec', ['dAnt', 'tri'], 8, 12, 2.5, 'machine'],
+    ['curl_pup_mach', 'Curl pupitre machine', 'bic', [], 10, 12, 2.5, 'machine'],
+    ['shrug_smith', 'Haussements d’épaules Smith', 'trap', [], 10, 15, 2.5, 'machine'],
+    ['presse_inc_poulie', 'Développé incliné à la poulie', 'pecH', ['dAnt', 'tri'], 10, 12, 2.5, 'poulie'],
+    ['landmine_pecs', 'Landmine press deux mains', 'pecH', ['dAnt', 'tri'], 8, 12, 2.5, 'barre'],
+    ['dc_smith', 'Développé couché Smith', 'pec', ['dAnt', 'tri'], 6, 10, 2.5, 'machine'],
+    ['dc_decl_barre', 'Développé décliné barre', 'pec', ['tri'], 6, 10, 2.5, 'barre'],
+    ['el_lat_y', 'Élévations latérales poulie en Y', 'dLat', [], 12, 15, 1.25, 'poulie'],
+    ['tir_menton_poulie', 'Tirage menton poulie', 'dLat', ['trap'], 10, 15, 2.5, 'poulie'],
+    ['el_front_poulie', 'Élévations frontales poulie', 'dAnt', [], 12, 15, 2.5, 'poulie'],
+    ['el_front_disque', 'Élévation frontale disque', 'dAnt', [], 10, 15, 2.5, 'barre'],
+    ['tri_v', 'Extension triceps poulie barre en V', 'tri', [], 10, 15, 2.5, 'poulie'],
+    ['tri_tate', 'Tate press haltères', 'tri', [], 10, 12, 1, 'halteres'],
+    ['tri_katana', 'Extension triceps poulie croisée (katana)', 'tri', [], 12, 15, 1.25, 'poulie'],
+    ['tir_vert_supi', 'Tirage vertical prise supination', 'lats', ['bic'], 8, 12, 2.5, 'poulie'],
+    ['tir_vert_mach', 'Tirage vertical machine convergente', 'lats', ['bic'], 8, 12, 2.5, 'machine'],
+    ['pullover_mach', 'Pull-over machine', 'lats', [], 10, 15, 2.5, 'machine'],
+    ['tractions_larges', 'Tractions prise large', 'lats', ['bic', 'dosH'], 5, 10, 2.5, 'barrefixe'],
+    ['seal_row', 'Seal row (allongé sur banc)', 'dosH', ['bic', 'dPost'], 8, 12, 2.5, 'barre'],
+    ['kroc_row', 'Kroc row (haltère lourd)', 'dosH', ['lats', 'bic', 'avb'], 10, 20, 2, 'halteres'],
+    ['row_smith', 'Rowing Smith', 'dosH', ['bic', 'lats'], 8, 12, 2.5, 'machine'],
+    ['tbar_appui', 'Rowing T-bar appui poitrine', 'dosH', ['bic', 'dPost'], 8, 12, 2.5, 'machine'],
+    ['row_yates', 'Rowing Yates (prise supination)', 'dosH', ['lats', 'bic'], 8, 12, 2.5, 'barre'],
+    ['curl_drag', 'Drag curl barre', 'bic', [], 8, 12, 2.5, 'barre'],
+    ['curl_zottman', 'Curl Zottman', 'bic', ['avb'], 10, 12, 1, 'halteres'],
+    ['curl_mach', 'Curl biceps machine', 'bic', [], 10, 15, 2.5, 'machine'],
+    ['curl_corde', 'Curl marteau à la corde', 'bic', ['avb'], 10, 15, 2.5, 'poulie'],
+    ['rev_pec_uni', 'Reverse pec deck unilatéral', 'dPost', [], 12, 20, 2.5, 'machine'],
+    ['row_arriere_ep', 'Rowing arrière d’épaule poulie (coudes hauts)', 'dPost', ['dosH'], 12, 15, 2.5, 'poulie'],
+    ['belt_squat', 'Belt squat', 'quad', ['fess'], 8, 12, 5, 'machine'],
+    ['pendulum', 'Pendulum squat', 'quad', ['fess'], 8, 12, 5, 'machine'],
+    ['fentes_avant', 'Fentes avant haltères', 'quad', ['fess'], 8, 12, 2, 'halteres'],
+    ['box_squat', 'Box squat barre', 'quad', ['fess'], 5, 8, 5, 'barre'],
+    ['v_squat', 'V-squat machine', 'quad', ['fess'], 8, 12, 5, 'machine'],
+    ['sdt_sumo', 'Soulevé de terre sumo', 'isch', ['fess', 'quad', 'lomb'], 4, 8, 5, 'barre'],
+    ['rdl_smith', 'Soulevé de terre roumain Smith', 'isch', ['fess'], 8, 10, 5, 'machine'],
+    ['leg_curl_ballon', 'Leg curl sur swiss ball', 'isch', [], 10, 15, 1, 'corps'],
+    ['glute_bridge', 'Pont fessier barre (glute bridge)', 'fess', ['isch'], 8, 12, 5, 'barre'],
+    ['kickback_mach', 'Kickback fessier machine', 'fess', [], 10, 15, 2.5, 'machine'],
+    ['frog_pump', 'Frog pump', 'fess', [], 15, 25, 1, 'corps'],
+    ['mollets_hack', 'Mollets au hack squat', 'mol', [], 10, 15, 5, 'machine'],
+    ['tibial', 'Relevé tibial', 'mol', [], 15, 20, 1, 'corps'],
+    ['dragon_flag', 'Dragon flag', 'abd', [], 5, 10, 1, 'corps'],
+    ['crunch_decl', 'Crunch décliné lesté', 'abd', [], 10, 15, 2.5, 'halteres'],
+    ['russian_twist', 'Russian twist lesté', 'abd', [], 12, 20, 2, 'halteres'],
+    ['mountain', 'Mountain climbers', 'abd', [], 20, 40, 1, 'corps'],
+    ['shrug_trapbar', 'Haussements d’épaules trap bar', 'trap', ['avb'], 10, 15, 5, 'barre'],
+    ['rack_pull', 'Rack pull', 'lomb', ['dosH', 'trap', 'fess'], 4, 8, 5, 'barre'],
+    ['curl_inv_poulie', 'Curl inversé poulie', 'avb', ['bic'], 12, 15, 2.5, 'poulie'],
+    ['adduc_ballon', 'Adduction ballon serré', 'adduc', [], 10, 20, 1, 'corps'],
   ];
   NEW.forEach(x => { X(x[0], x[1], x[2], x[3], x[4], x[5], x[6]); A.EXOS[x[0]].eq = x[7]; });
   /* Exercices unilatéraux (un côté après l'autre) : case « Unilatéral » dans la recherche d'exercices. */
@@ -4539,15 +4591,16 @@ function ExoEditSheet({ e0, x, onPatch, onSwap, onRemove, onClose }) {
 }
 
 function ExoSheet({ exos, title, muscle, onPick, onClose }) {
-  const [q, setQ] = useState(''); const [uni, setUni] = useState(false); const [cu, setCu] = useState({ n: '', m: muscle || 'pecH', lo: 8, hi: 12, inc: 2.5, uni: false });
-  const list = Object.keys(exos).map(k => exos[k]).filter(e => (!q || norm(e.n).indexOf(norm(q)) >= 0) && (!uni || e.uni)).sort((a, b) => (a.m === muscle ? 0 : 1) - (b.m === muscle ? 0 : 1) || a.m.localeCompare(b.m));
+  const [q, setQ] = useState(''); const [uni, setUni] = useState(false); const [mu, setMu] = useState(muscle || ''); const [cu, setCu] = useState({ n: '', m: muscle || 'pecH', lo: 8, hi: 12, inc: 2.5, uni: false });
+  const list = Object.keys(exos).map(k => exos[k]).filter(e => (!mu || e.m === mu) && (!q || norm(e.n + ' ' + (Apex.MUSCLES[e.m] || '')).indexOf(norm(q)) >= 0) && (!uni || e.uni)).sort((a, b) => (a.m === muscle ? 0 : 1) - (b.m === muscle ? 0 : 1) || a.m.localeCompare(b.m));
   const create = () => { const n = cu.n.trim(); if (!n) return; const id = 'c_' + Apex.uid(), all = Object.assign({}, Store.cfg().exos || {}); const lo = Math.max(1, Math.round(cu.lo || 8)), hi = Math.max(lo, Math.round(cu.hi || 12)); all[id] = { id, n: n.slice(0, 60), m: cu.m, s: [], lo, hi, inc: cu.inc > 0 ? cu.inc : 2.5 }; if (cu.uni) all[id].uni = 1; Store.patch('cfg', null, { exos: all }); onPick(id); onClose(); };
   return html`<${Sheet} title=${title} onClose=${onClose}>
-    <input id="ex-q" className="inp" type="search" placeholder="Chercher un exercice" value=${q} onChange=${e => setQ(e.target.value)} aria-label="Chercher un exercice" />
+    <div className="chips mu-chips" role="group" aria-label="Filtrer par muscle"><button type="button" className="chip" aria-pressed=${!mu} onClick=${() => setMu('')}>Tous</button>${Object.keys(Apex.MUSCLES).map(k => html`<button key=${k} type="button" className="chip" aria-pressed=${mu === k} onClick=${() => setMu(mu === k ? '' : k)}>${Apex.MUSCLES[k]}</button>`)}</div>
+    <input id="ex-q" className="inp" type="search" placeholder="Chercher un exercice ou un muscle" value=${q} onChange=${e => setQ(e.target.value)} aria-label="Chercher un exercice" />
     <label className="chk-l" htmlFor="ex-uni"><input id="ex-uni" type="checkbox" checked=${uni} onChange=${e => setUni(e.target.checked)} /><span>Unilatéral <small>(un côté à la fois)</small></span></label>
     <div className="lst">${list.map(e => html`<button key=${e.id} type="button" className="lst-fig" onClick=${() => { onPick(e.id); onClose(); }}>
       <span className="mfig-box"><${MuscleFig} m=${e.m} s=${e.s} h=${40} /></span><div><b>${e.n}${e.uni && html`<span className="badge uni">1 côté</span>`}</b><span>${Apex.MUSCLES[e.m] || e.m} · ${e.lo}–${e.hi} rép.</span></div><em></em></button>`)}</div>
-    ${uni && !list.length && html`<p className="mut" style=${{ fontSize: 12 }}>Aucun exercice unilatéral ne correspond.</p>`}
+    ${!list.length && html`<p className="mut" style=${{ fontSize: 12 }}>Aucun exercice ne correspond.</p>`}
     <h3>Exercice perso</h3>
     <div className="form">
       <label className="fld" htmlFor="ex-n"><span className="fld-l">Nom</span><input id="ex-n" className="inp" type="text" maxLength="60" value=${cu.n} onChange=${e => setCu(Object.assign({}, cu, { n: e.target.value }))} /></label>
@@ -6307,7 +6360,7 @@ function ExoAdmin({ onClose }) {
     tp.forEach(t => { o[t] = (pr[t] || []).filter(x => x[0] !== e.id).map(x => Object.assign({ e: x[0], n: x[1] }, Apex.ovOf(x[2]))); });
     Store.patch('cfg', null, { exos: all, programme: o, seanceTypes: tp }); setSel(''); toast('Exercice supprimé');
   };
-  const list = Object.keys(exos).map(k => exos[k]).filter(x => !q || norm(x.n).indexOf(norm(q)) >= 0).sort((a, b) => a.n.localeCompare(b.n, 'fr'));
+  const list = Object.keys(exos).map(k => exos[k]).filter(x => !q || norm(x.n + ' ' + (Apex.MUSCLES[x.m] || '')).indexOf(norm(q)) >= 0).sort((a, b) => a.n.localeCompare(b.n, 'fr'));
   return html`<${Sheet} title=${e ? e.n : 'Mes exercices'} onClose=${onClose}>
     ${e ? html`<div className="stack">
       <${Txt} id="xe-n" label="Nom" value=${e.n} max=${60} onCommit=${v => put({ n: v })} />
@@ -6320,7 +6373,7 @@ function ExoAdmin({ onClose }) {
       <p className="mut" style=${{ fontSize: 12 }}>Double progression : quand toutes les séries atteignent le max de répétitions, l’objectif suivant ajoute le pas de charge.</p>
       <div className="row sb"><button type="button" className="btn" onClick=${() => setSel('')}>Retour</button>${custom && html`<${Confirm} label="Supprimer" sure="Supprimer ?" icon="trash" onYes=${del} />`}</div>
     </div>` : html`<${React.Fragment}>
-      <input id="xa-q" className="inp" type="search" placeholder="Chercher un exercice" value=${q} onChange=${ev => setQ(ev.target.value)} aria-label="Chercher un exercice" />
+      <input id="xa-q" className="inp" type="search" placeholder="Chercher un exercice ou un muscle" value=${q} onChange=${ev => setQ(ev.target.value)} aria-label="Chercher un exercice ou un muscle" />
       <button type="button" className="btn" onClick=${() => setMk(true)}><${Icon} n="plus" s=${18} />Nouvel exercice</button>
       <div className="lst">${list.map(x => html`<button key=${x.id} type="button" onClick=${() => setSel(x.id)}><div><b>${x.n}</b><span>${Apex.MUSCLES[x.m] || x.m} · ${x.lo}–${x.hi} rép. · +${fq(x.inc)} kg${String(x.id).indexOf('c_') === 0 ? ' · perso' : ''}</span></div><em></em></button>`)}</div>
     <//>`}
