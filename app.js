@@ -176,7 +176,7 @@ const Apex = (() => {
   const Z = () => ({ k: 0, p: 0, g: 0, l: 0, f: 0 });
   const add = (a, b) => { a.k += b.k; a.p += b.p; a.g += b.g; a.l += b.l; a.f += (b.f || 0); return a; };
   function foodOf(it, foods) {
-    if (it.x) return { id: null, n: it.x.n, c: 'libre', r: '', k: it.x.k || 0, p: it.x.p || 0, g: it.x.g || 0, l: it.x.l || 0, f: it.x.f || 0, d: 1, u: ['portion', 100] };
+    if (it.x) return { id: null, n: it.x.n, c: 'libre', r: '', k: it.x.k || 0, p: it.x.p || 0, g: it.x.g || 0, l: it.x.l || 0, f: it.x.f || 0, d: it.x.g100 ? 100 : 1, u: it.x.g100 ? null : ['portion', 100] };
     return (foods || FOODS)[it.a] || null;
   }
   const grams = (it, f) => (f.u ? it.q * f.u[1] : it.q);
@@ -2924,7 +2924,7 @@ const iaMemo = async (fn, prompt, o) => {
   const K = 'apexhq:ia:' + (h >>> 0).toString(36) + prompt.length;
   try { const c = JSON.parse(localStorage.getItem(K) || 'null'); if (c && Date.now() - c.t < 2592e6) return c.v; } catch (e) { /* mémoire illisible */ }
   const v = await fn(prompt, o);
-  if (v && +v.kcal > 0) try { localStorage.setItem(K, JSON.stringify({ t: Date.now(), v })); } catch (e) { /* stockage plein : pas de mémoire */ }
+  if (v && (+v.kcal > 0 || (Array.isArray(v.items) && v.items.length))) try { localStorage.setItem(K, JSON.stringify({ t: Date.now(), v })); } catch (e) { /* stockage plein : pas de mémoire */ }
   return v;
 };
 
@@ -3922,7 +3922,7 @@ function Qty({ it, f, onChange, pesee }) {
 }
 
 /* Détail d'un repas : chaque aliment avec sa quantité, ses kcal et ses macros, puis le total. */
-const qteTxt = (it, f) => (it.x ? '1 portion' : f.u ? fq(it.q) + ' ' + (it.q > 1 && !/[sx]$/.test(String(f.u[0]).split(' ')[0]) ? String(f.u[0]).replace(/^(\S+)/, '$1s') : f.u[0]) : f0(it.q) + ' g');
+const qteTxt = (it, f) => (it.x && !it.x.g100 ? fq(it.q) + ' portion' + (it.q > 1 ? 's' : '') : f.u ? fq(it.q) + ' ' + (it.q > 1 && !/[sx]$/.test(String(f.u[0]).split(' ')[0]) ? String(f.u[0]).replace(/^(\S+)/, '$1s') : f.u[0]) : f0(it.q) + ' g');
 function MealDetail({ m, foods, onClose, onSwap, onQty, pesee }) {
   const t = Apex.totMeal(m, foods), rows = m.items.map(it => ({ it, f: Apex.foodOf(it, foods), x: Apex.mac(it, foods) })).filter(r => r.f);
   const bar = x => { const k = x.p * 4 + x.g * 4 + x.l * 9 || 1; return html`<div className="md-bar" aria-hidden="true"><i style=${{ width: x.p * 4 / k * 100 + '%', background: 'var(--p)' }}></i><i style=${{ width: x.g * 4 / k * 100 + '%', background: 'var(--g)' }}></i><i style=${{ width: x.l * 9 / k * 100 + '%', background: 'var(--l)' }}></i></div>`; };
@@ -3939,7 +3939,7 @@ function MealDetail({ m, foods, onClose, onSwap, onQty, pesee }) {
       <div className="md-n"><b>${r.f.n}</b><span>${qteTxt(r.it, r.f)} · ${f0(r.x.k)} kcal${r.x.f ? ' · fibres ' + fq(Math.round(r.x.f * 10) / 10) + ' g' : ''}</span></div>
       <div className="md-m">${cel(r.x.p, 'P', 'var(--p)')}${cel(r.x.g, 'G', 'var(--g)')}${cel(r.x.l, 'L', 'var(--l)')}</div>
       ${bar(r.x)}
-      <div className="md-q">${onQty && !r.it.x ? html`<${Qty} it=${r.it} f=${r.f} pesee=${pesee} onChange=${q => onQty(r.it, q)} />` : html`<span></span>`}<button type="button" className="btn sm ghost md-sw" onClick=${() => { onClose(); onSwap(r.it); }}><${Icon} n="swap" s=${15} />Remplacer</button></div>
+      <div className="md-q">${onQty ? html`<${Qty} it=${r.it} f=${r.f} pesee=${pesee} onChange=${q => onQty(r.it, q)} />` : html`<span></span>`}<button type="button" className="btn sm ghost md-sw" onClick=${() => { onClose(); onSwap(r.it); }}><${Icon} n="swap" s=${15} />Remplacer</button></div>
     </div>`)}</div>` : html`<div className="empty"><span>Aucun aliment dans ce repas.</span></div>`}
     <p className="mut" style=${{ fontSize: 12 }}>${m.ok ? 'Repas coché comme mangé.' : 'Repas prévu, pas encore coché.'} Valeurs calculées pour la quantité indiquée.</p>
   <//>`;
@@ -4066,21 +4066,32 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     else onAdd({ q: 1, x });
     onClose();
   };
+  /* « Décris ce que tu manges » : un aliment par composant, valeurs de la base quand le plat y est, sinon valeurs pour 100 g en grammes (modifiable). */
   const estimate = async () => {
     const txt = ai.txt.trim(); if (!txt || !sample) return;
     setAi(s => Object.assign({}, s, { busy: true, err: '', res: null }));
     try {
-      const r = await iaMemo(sample.json, 'Tu es diététicien. Estime les valeurs nutritionnelles TOTALES de ce qui est décrit (table Ciqual ; valeurs officielles pour les enseignes de restauration). Sans quantité précisée, prends la portion réellement servie à un adulte. ' + IA_PORTIONS + ' Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": nombre, "p": grammes de protéines, "g": grammes de glucides, "l": grammes de lipides, "f": grammes de fibres, "detail": "hypothèses de portions en une ligne"}.\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false });
-      const k = r && +r.kcal; if (!Apex.num(k) || k <= 0) throw { code: 'invalid_json' };
-      setAi(s => Object.assign({}, s, { busy: false, res: { n: String(r.nom || 'Repas estimé').slice(0, 60), k, p: +r.p || 0, g: +r.g || 0, l: +r.l || 0, f: +r.f || 0, detail: String(r.detail || '').slice(0, 260) } }));
+      const cands = Apex.chercherAliments(foods, txt, 25).map(f => f.id + ' | ' + f.n + ' | ' + (f.u ? 'unité ' + f.u[0] + ', 1 = ' + Math.round(f.k * f.u[1] / 100) + ' kcal' : 'grammes, 100 g = ' + Math.round(f.k) + ' kcal')).join('\n');
+      const r = await iaMemo(sample.json, 'Tu es diététicien. Découpe ce repas en aliments séparés, un par composant (ex. « box crousty, frites de patate douce, chips » = 3 aliments). Sans quantité précisée, prends la portion réellement servie à un adulte. ' + IA_PORTIONS + ' Pour chaque aliment : si un élément de la BASE ci-dessous est le même aliment ou plat ET la même préparation (frit, en frites, cuit, en sauce, cru : un aliment cru ne vaut jamais pour des frites ou une friture), donne son "id" et la quantité "q" dans son unité (nombre d’unités, ou grammes) ; sinon "id": null, "q" en grammes et les valeurs POUR 100 g (table Ciqual, valeurs officielles des enseignes). Réponds uniquement par un objet JSON : {"items": [{"id": "id de la base ou null", "nom": "libellé court", "q": nombre, "kcal100": nombre, "p100": nombre, "g100": nombre, "l100": nombre, "f100": nombre}], "detail": "hypothèses de portions en une ligne"}.\n\nBASE (id | nom | unité) :\n' + (cands || 'aucun élément') + '\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false, maxTokens: 3072 });
+      const items = (r && Array.isArray(r.items) ? r.items : []).slice(0, 12).map(it => {
+        const q = +it.q, f = it.id && foods[it.id];
+        if (f && q > 0 && q <= (f.u ? 20 : 3000)) return { a: f.id, q: f.u ? Math.round(q * 4) / 4 : Math.round(q) };
+        const k = +it.kcal100; if (!(k >= 0 && k <= 950) || !(q > 0 && q <= 3000)) return null;
+        return { q: Math.round(q), x: { n: String(it.nom || 'Aliment').slice(0, 60), k, p: +it.p100 || 0, g: +it.g100 || 0, l: +it.l100 || 0, f: +it.f100 || 0, g100: 1 } };
+      }).filter(Boolean);
+      if (!items.length) throw { code: 'invalid_json' };
+      setAi(s => Object.assign({}, s, { busy: false, res: { items, detail: String((r && r.detail) || '').slice(0, 260) } }));
     } catch (e) { setAi(s => Object.assign({}, s, { busy: false, err: aiErr(e) })); }
   };
   const addAi = () => {
-    const r = ai.res, x = { n: r.n, k: Math.round(r.k), p: Math.round(r.p), g: Math.round(r.g), l: Math.round(r.l), f: Math.round(r.f) };
-    if (ai.keep) { const id = garderAliment({ n: x.n, r: '', k: x.k, p: x.p, g: x.g, l: x.l, f: x.f, d: 1, u: ['portion', 100] }); onAdd({ a: id, q: 1 }); toast('« ' + x.n + ' » gardé dans ta bibliothèque'); }
-    else onAdd({ q: 1, x });
-    onClose();
+    const its = ai.res.items.map(it => {
+      if (!it.x || !ai.keep) return it;
+      const x = it.x, id = garderAliment({ n: x.n, r: '', k: Math.round(x.k), p: x.p, g: x.g, l: x.l, f: x.f, d: it.q, u: null }); return { a: id, q: it.q };
+    });
+    if (ai.keep && its.some((x, i) => ai.res.items[i].x)) toast('Aliments estimés gardés dans ta bibliothèque');
+    onAdd(its); onClose();
   };
+  const aiTot = ai.res ? ai.res.items.reduce((t, it) => Apex.add(t, Apex.mac(it, foods)), Apex.Z()) : null;
   return html`<${Sheet} title=${title} onClose=${onClose}>
     ${sample && html`<div className="ai-box">
       <label className="fld" htmlFor="ai-txt"><span className="fld-l"><${Icon} n="sparkles" s=${14} /> Décris ce que tu manges, l’IA calcule</span>
@@ -4088,9 +4099,10 @@ function AddSheet({ foods, title, onAdd, onClose }) {
       <button type="button" className="btn pri wide" disabled=${ai.busy || !ai.txt.trim()} onClick=${estimate}><${Icon} n="sparkles" s=${18} />${ai.busy ? 'Estimation…' : 'Estimer les macros'}</button>
       ${ai.err && html`<div className="note"><${Icon} n="alert" /><div><span>${ai.err}</span></div></div>`}
       ${ai.res && html`<div className="note acc"><${Icon} n="sparkles" /><div>
-        <span><b>${ai.res.n}</b> · ${f0(ai.res.k)} kcal · ${macTxt(ai.res)}</span>
+        <span><b>${f0(aiTot.k)} kcal</b> · ${macTxt(aiTot)} · ${ai.res.items.length} aliment${ai.res.items.length > 1 ? 's' : ''}</span>
+        <span className="ai-its">${ai.res.items.map((it, i) => { const fo = Apex.foodOf(it, foods); return html`<span key=${i}>· ${fo ? fo.n : '?'} · ${qteTxt(it, fo)} · ${f0(Apex.mac(it, foods).k)} kcal</span>`; })}</span>
         ${ai.res.detail && html`<span>${ai.res.detail}</span>`}
-        <label className="chk-l" htmlFor="ai-keep"><input id="ai-keep" type="checkbox" checked=${ai.keep} onChange=${e => setAi(Object.assign({}, ai, { keep: e.target.checked }))} /><span>Garder dans ma bibliothèque <small>(l’IA l’utilisera dans mes menus)</small></span></label>
+        <label className="chk-l" htmlFor="ai-keep"><input id="ai-keep" type="checkbox" checked=${ai.keep} onChange=${e => setAi(Object.assign({}, ai, { keep: e.target.checked }))} /><span>Garder les aliments estimés dans ma bibliothèque</span></label>
         <button type="button" className="btn sm pri" onClick=${addAi}>Ajouter au repas</button>
       </div></div>`}
     </div>`}
@@ -4484,7 +4496,7 @@ function Repas({ date }) {
     ${imp && html`<${ImportMenuSheet} onClose=${() => setImp(false)} />`}
     ${lib && html`<${FoodLibSheet} onClose=${() => setLib(false)} />`}
     ${wk && html`<${MealWeekSheet} cfg=${cfg} progId=${wk} onClose=${() => setWk('')} />`}
-    ${sheet && sheet.t === 'add' && sh && html`<${AddSheet} foods=${foods} title=${'Ajouter · ' + sh.nom} onClose=${() => setSheet(null)} onAdd=${it => addItems(sh.id, [it])} />`}
+    ${sheet && sheet.t === 'add' && sh && html`<${AddSheet} foods=${foods} title=${'Ajouter · ' + sh.nom} onClose=${() => setSheet(null)} onAdd=${it => addItems(sh.id, [].concat(it))} />`}
     ${shIt && html`<${SwapSheet} it=${shIt} foods=${foods} onClose=${() => setSheet(null)}
       onPick=${(a, q) => mapItem(sh.id, shIt.id, i => { const o = { id: i.id, a, q }; if (i.adj) o.adj = 1; return o; })}
       onDel=${() => mapItem(sh.id, shIt.id, () => null)} />`}
