@@ -448,7 +448,7 @@ const Apex = (() => {
   X('dm_halt', 'Développé militaire haltères', 'dAnt', ['tri', 'dLat'], 8, 12, 2);
   X('tri_corde', 'Extension triceps corde', 'tri', [], 10, 15, 2.5);
   X('tri_oh', 'Extension triceps au-dessus de la tête', 'tri', [], 10, 15, 2.5);
-  X('tractions', 'Tractions / tirage vertical', 'lats', ['bic', 'avb'], 6, 10, 2.5);
+  X('tractions', 'Tractions', 'lats', ['bic', 'avb'], 6, 10, 2.5);
   X('row_barre', 'Rowing barre / T-bar', 'dosH', ['bic', 'dPost', 'lats'], 8, 12, 2.5);
   X('tir_horiz', 'Tirage horizontal poulie', 'dosH', ['bic', 'lats'], 10, 12, 2.5);
   X('curl_inc', 'Curl incliné haltères', 'bic', [], 8, 12, 1);
@@ -677,8 +677,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   /* ---------- objectifs ---------- */
   const OBJECTIFS = [['seche', 'Sèche', 'Perdre du gras en gardant le muscle'], ['neutre', 'Maintien', 'Poids stable, recomposition'], ['masse', 'Prise de masse', 'Prendre du muscle avec peu de gras']];
   const INTENSITES = {
-    seche: [['leger', 'Léger', 0.12, 'Environ −0,3 à −0,5 % du poids par semaine. Facile à tenir, faim modérée.'], ['normal', 'Normal', 0.2, 'Environ −0,5 à −0,7 % par semaine. Le meilleur compromis.'], ['agressif', 'Agressif', 0.28, 'Environ −0,8 à −1 % par semaine. Court terme : faim, fatigue, risque de perdre du muscle.']],
-    masse: [['leger', 'Lean', 0.05, 'Prise lente, très peu de gras.'], ['normal', 'Normal', 0.1, 'Prise régulière, un peu de gras.'], ['agressif', 'Rapide', 0.15, 'Prise rapide, plus de gras à reperdre ensuite.']],
+    seche: [['leger', 'Léger', 0.1, 'Environ −0,3 à −0,5 % du poids par semaine. Facile à tenir, muscle préservé.'], ['normal', 'Normal', 0.15, 'Environ −0,5 à −0,7 % par semaine. Le meilleur compromis.'], ['agressif', 'Soutenu', 0.2, 'Environ −0,7 à −1 % par semaine. Plus de faim, à tenir sur quelques semaines.']],
+    masse: [['leger', 'Lean', 0.05, 'Prise lente, très peu de gras.'], ['normal', 'Normal', 0.08, 'Prise régulière, peu de gras.'], ['agressif', 'Soutenu', 0.1, 'Prise plus rapide, un peu plus de gras.']],
     neutre: [['normal', 'Maintien', 0, 'Calories égales à ta dépense.']],
   };
   const intensites = obj => INTENSITES[obj] || INTENSITES.neutre;
@@ -3912,6 +3912,7 @@ function FoodDetail({ it, foods, onClose, onSwap, onDel, onQty, pesee }) {
 
 function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDelIt, onItems }) {
   const t = Apex.totMeal(m, foods); const [det, setDet] = useState(false); const [fd, setFd] = useState(null); const [edit, setEdit] = useState(false); const [undo, setUndo] = useState(null);
+  const [plie, setPlie] = useState(() => lsGet('repas:plie:' + m.id, '') === '1'); const plier = () => { lsSet('repas:plie:' + m.id, plie ? '' : '1'); setPlie(!plie); };
   useEffect(() => { if (!undo) return undefined; const k = setTimeout(() => setUndo(null), 6000); return () => clearTimeout(k); }, [undo]);
   const retirer = it => { const f = Apex.foodOf(it, foods); setUndo({ items: m.items, nom: f ? f.n : 'Aliment' }); if (onItems) onItems(m.items.filter(x => x.id !== it.id)); else if (onDelIt) onDelIt(it); };
   const fdIt = fd && m.items.find(i => i.id === fd.id);
@@ -3920,10 +3921,11 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDe
       <button type="button" className="chk" aria-pressed=${!!m.ok} aria-label=${(m.ok ? 'Marquer non mangé : ' : 'Marquer mangé : ') + m.nom} onClick=${onToggle}><${Icon} n="check" s=${18} w=${2.5} /></button>
       <button type="button" className="meal-t meal-open" onClick=${() => setDet(true)} aria-label=${'Détail du repas ' + m.nom}><b>${m.nom}${m.items.length > 0 && html`<${Icon} n="chevR" s=${14} />`}</b><span>${m.h || ''}${m.ok ? ' · mangé' : ''}${m.items.length ? ' · détail' : ''}</span></button>
       <button type="button" className="meal-k meal-open" onClick=${() => setDet(true)} tabIndex="-1" aria-hidden="true"><b>${f0(t.k)}</b><span>kcal · ${macTxt(t)}</span></button>
+      <button type="button" className="ib meal-fold" aria-expanded=${!plie} aria-label=${(plie ? 'Déplier ' : 'Replier ') + m.nom} onClick=${plier}><${Icon} n=${plie ? 'down' : 'up'} s=${18} /></button>
     </div>
     ${det && html`<${MealDetail} m=${m} foods=${foods} pesee=${pesee} onQty=${onQty} onSwap=${onSwap} onClose=${() => setDet(false)} />`}
     ${fdIt && html`<${FoodDetail} it=${fdIt} foods=${foods} pesee=${pesee} onQty=${onQty} onSwap=${onSwap} onDel=${onDelIt} onClose=${() => setFd(null)} />`}
-    ${m.items.length > 0 && html`<div className="its">${m.items.map(it => {
+    ${!plie && m.items.length > 0 && html`<div className="its">${m.items.map(it => {
       const f = Apex.foodOf(it, foods); if (!f) return null; const x = Apex.mac(it, foods);
       return html`<div key=${it.id} className=${cx('it', !(it.q > 0) && 'zero')}>
         ${edit && html`<button type="button" className="it-del" onClick=${() => retirer(it)} aria-label=${'Retirer ' + f.n}><${Icon} n="minus" s=${16} w=${2.6} /></button>`}
@@ -3931,13 +3933,13 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDe
         <${Qty} it=${it} f=${f} pesee=${pesee} onChange=${q => onQty(it, q)} />
       </div>`;
     })}</div>`}
-    ${undo && html`<div className="undo" role="status"><span>« ${undo.nom} » retiré</span><button type="button" onClick=${() => { if (onItems) onItems(undo.items); setUndo(null); }}>Annuler</button></div>`}
-    <div className="meal-f">
+    ${!plie && undo && html`<div className="undo" role="status"><span>« ${undo.nom} » retiré</span><button type="button" onClick=${() => { if (onItems) onItems(undo.items); setUndo(null); }}>Annuler</button></div>`}
+    ${!plie && html`<div className="meal-f">
       <button type="button" className=${cx('mf', !m.items.length && 'pri')} onClick=${onAdd}><${Icon} n="plus" s=${17} />Ajouter</button>
       ${m.items.length > 0 && !edit && html`<button type="button" className="mf" onClick=${() => setEdit(true)}><${Icon} n="note" s=${16} />Modifier</button>`}
       <${Confirm} cls="mf dan-t" icon="trash" label="Supprimer" sure="Confirmer" onYes=${() => { setEdit(false); onDel(); }} />
       ${edit && html`<button type="button" className="mf ok" onClick=${() => setEdit(false)}><${Icon} n="check" s=${16} />Terminé</button>`}
-    </div>
+    </div>`}
   </article>`;
 }
 
@@ -4662,7 +4664,7 @@ function Training({ date, setDate, go }) {
 /* ---- 51-ui-workout.js ---- */
 /* Macrolya — la séance en cours, façon Lyfta / Hevy / Strong :
    barre du haut (durée, séries faites, tonnage), un bloc par exercice avec son tableau de séries
-   (série · précédent · kg · reps · RPE · ✓), repos lancé tout seul quand on coche une série, fin d'exercice automatique,
+   (série · précédent · kg · reps · RPE · ✓), repos lancé tout seul quand on coche une série, l'utilisateur clôt lui-même chaque exercice,
    résumé de fin de séance avec les records. Les données restent celles de Apex.seances (sets {kg, r, rpe, ok, w}). */
 
 const useTick = ms => { const [, f] = useState(0); useEffect(() => { const t = setInterval(() => f(x => x + 1), ms); return () => clearInterval(t); }, [ms]); };
@@ -4689,24 +4691,29 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
   const e0 = exos[ex.e] || { n: ex.e, m: '', s: [], lo: 8, hi: 12, inc: 2.5 }, e = Object.assign({}, e0, { rir: Apex.rirDefaut(e0) }, Apex.ovOf(ex));
   const h = Apex.histoExo(seances, ex.e).filter(x => x.date < date), last = h.length ? h[h.length - 1] : null, obj = Apex.objectif(e, last), ph = String(obj.reps).split('·');
   const rest = Apex.restDe(e0, ex), sets = ex.sets || [], normales = sets.filter(s => !s.w), faites = sets.filter(Apex.setFait);
-  const [ouvert, setOuvert] = useState(false), [note, setNote] = useState(!!ex.note);
+  const [ouvert, setOuvert] = useState(() => !ex.ok), [note, setNote] = useState(!!ex.note);
   const best = h.reduce((b, x) => Math.max(b, x.e1), 0), cur = sets.reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0), record = cur > best + 0.05 && best > 0;
   let num = 0; const toutCoche = normales.length > 0 && normales.every(s => Apex.setCoche(s)), nCoche = normales.filter(s => Apex.setCoche(s)).length, replie = toutCoche && !ouvert;
+  const arr = v => Math.round(v / (e.inc || 2.5)) * (e.inc || 2.5);
+  const kgInt = k => { const s = sets[k]; if (s.t === 'bo') { const t = sets.find(x => x.t === 'top'); return t && t.kg > 0 ? arr(t.kg * 0.9) : null; } if (s.t === 'd') { const p = sets[k - 1]; return p && p.kg > 0 ? arr(p.kg * 0.8) : null; } return null; };
+  const repos = s => (s.t === 'd' ? 0 : s.w ? 45 : rest);
+  const topOn = sets.some(x => x.t === 'top');
+  const basculeTop = () => { let first = true; onSets(sets.map(x => { if (x.w || x.t === 'd') return x; const o = Object.assign({}, x); if (topOn) delete o.t; else { o.t = first ? 'top' : 'bo'; first = false; } return o; })); };
   const maj = (k, patch) => onSets(sets.map((s, n) => (n === k ? Object.assign({}, s, patch) : s)));
   const champ = (k, f, v) => {
-    const s = sets[k]; if (f === 'r' && v > 0 && !Apex.setCoche(s)) chronoApresSerie(s.w ? 45 : rest);
+    const s = sets[k]; if (f === 'r' && v > 0 && !Apex.setCoche(s) && repos(s)) chronoApresSerie(repos(s));
     const o = Object.assign({}, s, { [f]: v }); if (f === 'kg' || f === 'r') delete o.ok; // saisir une valeur re-coche la série
     onSets(sets.map((x, n) => (n === k ? o : x)));
   };
   const cocher = k => {
     const s = sets[k];
-    if (Apex.setCoche(s)) { onPatch({ sets: sets.map((x, n) => (n === k ? Object.assign({}, x, { ok: false }) : x)), ok: null }); setOuvert(false); return; }
+    if (Apex.setCoche(s)) { onPatch({ sets: sets.map((x, n) => (n === k ? Object.assign({}, x, { ok: false }) : x)), ok: null }); setOuvert(true); return; }
     const prev = last && last.sets[sets.slice(0, k).filter(x => !x.w).length], o = Object.assign({}, s, { ok: true });
-    if (!s.w) { if (!(o.r > 0)) { const r = +ph[k] || +ph[ph.length - 1] || (prev && prev.r) || e.hi; if (r > 0) o.r = Math.round(r); } if (o.kg == null) { const kg = prev && prev.kg > 0 ? prev.kg : obj.kg; if (kg > 0) o.kg = kg; } }
+    if (!s.w) { if (!(o.r > 0)) { const r = +ph[k] || +ph[ph.length - 1] || (prev && prev.r) || e.hi; if (r > 0) o.r = Math.round(r); } if (o.kg == null) { const kg = kgInt(k) || (prev && prev.kg > 0 ? prev.kg : obj.kg); if (kg > 0) o.kg = kg; } }
     const nv = sets.map((x, n) => (n === k ? o : x)); onSets(nv);
-    chronoApresSerie(s.w ? 45 : rest);
-    if (nv.filter(x => !x.w).every(x => Apex.setCoche(x))) { setOuvert(false); setTimeout(() => { onOk(true); if (onSuite) onSuite(i); }, 350); }
+    if (repos(s)) chronoApresSerie(repos(s));
   };
+  const terminer = () => { setOuvert(false); onOk(true); if (onSuite) onSuite(i); }; // seul l’utilisateur clôt l’exercice
   const prevDe = k => last && last.sets[sets.slice(0, k).filter(x => !x.w).length];
   if (replie) return html`<div className="wo-x fini" data-sort="1">
     <div className="wo-xh" data-sort-zone="1">
@@ -4718,9 +4725,9 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
     <div className="wo-xh" data-sort-zone="1">
       <span className="mfig-box" onClick=${onEdit}><${MuscleFig} m=${e.m} s=${e.s} h=${46} /></span>
       <button type="button" className="wo-xt" onClick=${onEdit} aria-label=${'Modifier ' + e.n}><b>${e.n}</b><span><i className="badge">${Apex.MUSCLES[e.m] || ''}</i>${e.uni ? html` <i className="badge uni">1 côté</i>` : ''}${record ? html` <i className="badge rec">Record</i>` : ''}</span></button>
-      ${toutCoche ? html`<button type="button" className="wo-ok on" aria-label=${'Replier ' + e.n + ' (toutes les séries validées)'} onClick=${() => setOuvert(false)}><${Icon} n="check" s=${20} w=${2.8} /></button>`
+      ${toutCoche ? html`<button type="button" className="wo-ok on" aria-label=${'Terminer l’exercice : ' + e.n} onClick=${terminer}><${Icon} n="check" s=${20} w=${2.8} /></button>`
         : html`<span className="wo-ok" role="img" aria-label=${nCoche + ' séries validées sur ' + normales.length}><span className="wo-okn"><b>${nCoche}</b><small>/${normales.length}</small></span></span>`}
-      ${toutCoche ? html`<button type="button" className="ib wo-fold" aria-label=${'Replier ' + e.n} onClick=${() => setOuvert(false)}><${Icon} n="up" s=${22} /></button>` : html`<button type="button" className="ib" aria-label=${'Options : ' + e.n} onClick=${onEdit}><${Icon} n="more" s=${22} /></button>`}
+      ${html`<button type="button" className="ib" aria-label=${'Options : ' + e.n} onClick=${onEdit}><${Icon} n="more" s=${22} /></button>`}
     </div>
     <div className="wo-meta">
       <div className="wo-rest" role="group" aria-label="Temps de repos de cet exercice">
@@ -4734,15 +4741,18 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
     <div className="wo-sets">
       <div className="wo-s wo-sh"><span>Série</span><span>Précédent</span><span>kg</span><span>Reps</span><span>RIR</span><span></span></div>
       ${sets.map((s, k) => { if (!s.w) num++; const prev = prevDe(k);
-        return html`<${WkSet} key=${k} s=${s} label=${s.w ? 'W' : num} prev=${prev} nom=${e.n}
-          phKg=${prev && prev.kg > 0 ? prev.kg : obj.kg} phR=${+ph[k] || +ph[ph.length - 1] || (e.lo + '-' + e.hi)} rpePh=${String(e.rir)}
-          onField=${(f, v) => champ(k, f, v)} onCheck=${() => cocher(k)} onWarm=${() => maj(k, { w: s.w ? null : true })}
+        return html`<${WkSet} key=${k} s=${s} label=${s.w ? 'W' : s.t === 'top' ? 'Top' : s.t === 'bo' ? 'B' : s.t === 'd' ? 'D' : num} prev=${prev} nom=${e.n}
+          phKg=${kgInt(k) || (prev && prev.kg > 0 ? prev.kg : obj.kg)} phR=${+ph[k] || +ph[ph.length - 1] || (e.lo + '-' + e.hi)} rpePh=${String(e.rir)}
+          onField=${(f, v) => champ(k, f, v)} onCheck=${() => cocher(k)} onWarm=${() => maj(k, { w: s.w ? null : true, t: null })}
           onFillPrev=${() => { if (!prev) return; const o = Object.assign({}, s, { kg: prev.kg, r: prev.r }); delete o.ok; onSets(sets.map((x, n) => (n === k ? o : x))); }} />`; })}
     </div>
     <div className="wo-add">
       <button type="button" className="btn sm" onClick=${() => onSets(sets.concat({}))}><${Icon} n="plus" s=${16} />Série</button>
       <button type="button" className="btn sm ghost" disabled=${sets.length <= 1} onClick=${() => onSets(sets.slice(0, -1))}><${Icon} n="minus" s=${16} />Série</button>
+      <button type="button" className="btn sm ghost" aria-pressed=${topOn} onClick=${basculeTop}><${Icon} n="bolt" s=${16} />Top set</button>
+      <button type="button" className="btn sm ghost" onClick=${() => onSets(sets.concat({ t: 'd' }))}><${Icon} n="down" s=${16} />Dégressive</button>
       <button type="button" className="btn sm ghost" aria-pressed=${note} onClick=${() => setNote(!note)}><${Icon} n="note" s=${16} />Note</button>
+      ${toutCoche && html`<button type="button" className="btn sm pri" onClick=${terminer}><${Icon} n="check" s=${16} />Exercice terminé</button>`}
     </div>
   </div>`;
 }
