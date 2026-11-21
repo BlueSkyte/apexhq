@@ -6828,12 +6828,25 @@ function SanteDiag({ d, ios }) {
    PRO.actif = false : tout est débloqué pour tout le monde (lancement). Le jour où l'abonnement existe,
    passer actif à true : les zones marquées Pro se verrouillent pour les comptes sans abonnement (cfg.pro.fin). */
 const PRO = { actif: false, prix: 'environ 3,99 € par mois' };
+/* Avantages Pro, par thème (« § » = titre de section). */
 const PRO_LISTE = [
-  ['sparkles', '150 messages IA par jour', 'Au lieu de 10 en gratuit : coach, bilans, menus et estimations'],
-  ['chart', 'Analyse avancée', 'Projection du poids, progression de force, adhérence, volume par muscle'],
-  ['sparkles', 'Bilan du coach IA', 'Verdict, constats chiffrés et ajustements sur tes 14 derniers jours'],
-  ['clock', 'Menus de la semaine par l’IA', 'Sept jours calés sur tes macros, tes goûts et tes contraintes'],
-  ['download', 'Bilan PDF', 'Un rapport propre de tes 30 derniers jours à garder ou à montrer'],
+  ['§', 'Ton coach IA, sans compter'],
+  ['sparkles', '150 messages IA par jour', 'Au lieu de 10 en gratuit : pose toutes tes questions, autant de fois que tu veux'],
+  ['sparkles', 'Analyses de coach complètes', 'Des réponses détaillées et chiffrées avec tes vraies données, pas des résumés de 3 lignes'],
+  ['chart', 'Bilan coach approfondi sur 14 jours', 'Verdict, poids et rythme, nutrition, entraînement, récupération, ajustements justifiés et plan des 7 prochains jours'],
+  ['bolt', 'Debrief du matin détaillé', 'Ce que disent ton poids, ton sommeil et ta forme, et quoi manger et soulever aujourd’hui'],
+  ['§', 'Nutrition sur pilote automatique'],
+  ['clock', 'Ta semaine de repas par l’IA', 'Sept jours calés sur tes macros, tes goûts, ton budget et tes contraintes'],
+  ['utensils', 'Estimations IA illimitées au quotidien', 'Décris ton plat, l’IA le découpe aliment par aliment avec les vraies portions'],
+  ['§', 'Analyse avancée de ta progression'],
+  ['target', 'Date d’arrivée à ton objectif', 'Projection de ton poids au rythme actuel, mise à jour chaque jour'],
+  ['trend', 'Progression de force', 'Ton e1RM exercice par exercice, pour voir ce qui avance et ce qui stagne'],
+  ['check', 'Adhérence à tes cibles', 'Calories, protéines, pas et sommeil : jours tenus sur jours renseignés'],
+  ['dumbbell', 'Volume par muscle', 'Séries par semaine face à la cible, points faibles en priorité'],
+  ['§', 'Et aussi'],
+  ['download', 'Bilan PDF de 30 jours', 'Un rapport propre à garder, à montrer à ton coach ou à ton diététicien'],
+  ['sparkles', 'Nouvelles fonctions en avant-première', 'Tu testes les nouveautés avant tout le monde'],
+  ['heart', 'Une app sans pub et sans revente de données', 'Tu soutiens un étudiant en diététique qui la développe seul'],
 ];
 const estPro = () => { if (!PRO.actif) return true; const p = Store.cfg().pro; return !!(p && p.fin && p.fin >= Apex.today()); };
 const ouvrirPro = () => { try { window.dispatchEvent(new CustomEvent('pro:open')); } catch (e) { /* sans effet */ } };
@@ -6860,7 +6873,7 @@ function ProBody() {
   return html`<div className="stack">
     <div className="pro-hero"><${ProTag} /><b>${vip ? 'Macrolya Pro · VIP' : 'Macrolya Pro'}</b><span>${vip ? (aVie ? 'Actif à vie. Merci 🙏' : 'Actif jusqu’au ' + dMid(vip) + '.') : PRO.actif ? (estPro() ? 'Ton abonnement est actif.' : 'Débloque les outils avancés pour ' + PRO.prix + '.') : 'Fonctions Pro offertes pendant le lancement. L’IA : 10 messages par jour en gratuit, 150 en Pro.'}</span></div>
     ${q && q.l > 0 && html`<div className="pro-q"><span>IA aujourd’hui</span><b>${q.u} / ${q.l}</b><i style=${{ width: Math.min(100, Math.round(q.u / q.l * 100)) + '%' }}></i></div>`}
-    <div className="pro-l">${PRO_LISTE.map(x => html`<div key=${x[1]} className="pro-r"><i><${Icon} n=${x[0]} s=${18} /></i><span><b>${x[1]}</b><small>${x[2]}</small></span></div>`)}</div>
+    <div className="pro-l">${PRO_LISTE.map(x => x[0] === '§' ? html`<h4 key=${x[1]} className="pro-sec">${x[1]}</h4>` : html`<div key=${x[1]} className="pro-r"><i><${Icon} n=${x[0]} s=${18} /></i><span><b>${x[1]}</b><small>${x[2]}</small></span></div>`)}</div>
     <div className="pro-code"><label className="fld" htmlFor="pro-code"><span className="fld-l">Code cadeau</span><input id="pro-code" className="inp" type="text" autoComplete="off" autoCapitalize="characters" maxLength="30" placeholder="VIP-XXXX-XXXX" value=${code} onChange=${e => setCode(e.target.value.toUpperCase())} /></label>
       <button type="button" className="btn" disabled=${busy || !code.trim()} onClick=${activer}>${busy ? 'Vérification…' : 'Activer'}</button></div>
     ${msg && html`<p className="mut" role="status" style=${{ fontSize: 13 }}>${msg}</p>`}
