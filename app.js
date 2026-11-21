@@ -7013,6 +7013,42 @@ const BIENV = [
   ['dumbbell', 'Un entraînement qui s’adapte', 'Ton programme selon ton niveau et tes points faibles, la récupération muscle par muscle et le chrono de repos.'],
   ['chart', 'Tes progrès, sans te prendre la tête', 'Routine du matin, photos, mensurations, courbes et coach IA : tu vois ce qui marche et quoi ajuster.'],
 ];
+/* ---------- Demande d'avis ----------
+   Après une semaine et au moins 5 jours d'utilisation : 4-5 étoiles → Google Play ; 1-3 → suggestion privée envoyée au relais. */
+const AVIS_K = 'apexhq:avis', PLAY_URL = 'https://play.google.com/store/apps/details?id=com.macrolya.app';
+const lireAvis = () => { try { return JSON.parse(localStorage.getItem(AVIS_K) || '{}'); } catch (e) { return {}; } };
+const noterAvis = o => { try { localStorage.setItem(AVIS_K, JSON.stringify(Object.assign(lireAvis(), o))); } catch (e) { /* sans effet */ } };
+function avisDu(S) {
+  const a = lireAvis(), auj = Apex.today(); if (a.fait || (a.plus && a.plus > auj)) return false;
+  const jours = Object.keys(S.journal || {}).filter(d => { const j = S.journal[d]; return j && (j.poids != null || (j.repas || []).some(m => m.ok && (m.items || []).length)); }).sort();
+  return jours.length >= 5 && Apex.addDays(jours[0], 7) <= auj;
+}
+function AvisDemande() {
+  const S = useStore().get(), [open, setOpen] = useState(false), [note, setNote] = useState(0), [txt, setTxt] = useState(''), [fini, setFini] = useState(false);
+  useEffect(() => { if (!avisDu(S)) return undefined; const t = setTimeout(() => setOpen(true), 4000); return () => clearTimeout(t); }, []);
+  if (!open) return null;
+  const android = /Android/i.test(navigator.userAgent || '');
+  const plusTard = () => { noterAvis({ plus: Apex.addDays(Apex.today(), 7) }); setOpen(false); };
+  const envoyer = () => {
+    AI.relais('avis', { note, texte: txt.trim() }).catch(() => { /* avis perdu si hors ligne : sans gravité */ });
+    noterAvis({ fait: 1, note }); setFini(true);
+    if (note >= 4 && android) { try { window.open(PLAY_URL, '_blank'); } catch (e) { /* sans effet */ } }
+  };
+  return html`<${Sheet} title=${fini ? 'Merci 🙏' : 'Tu aimes Macrolya ?'} onClose=${fini ? () => setOpen(false) : plusTard}>
+    ${fini ? html`<div className="stack">
+      <p>${note >= 4 ? (android ? 'Merci ! Un avis sur Google Play aide énormément l’app à se faire connaître.' : 'Merci ! Ça fait vraiment plaisir.') : 'Merci, ta suggestion est bien arrivée : elle sera lue et prise en compte.'}</p>
+      ${note >= 4 && android && html`<a className="btn pri wide" href=${PLAY_URL} target="_blank" rel="noopener">Noter sur Google Play</a>`}
+      <button type="button" className="btn wide" onClick=${() => setOpen(false)}>Fermer</button></div>`
+    : html`<div className="stack">
+      <p className="mut">Tu utilises l’app depuis une semaine : ton avis compte.</p>
+      <div className="avis-et" role="radiogroup" aria-label="Note de 1 à 5 étoiles">${[1, 2, 3, 4, 5].map(n => html`<button key=${n} type="button" role="radio" aria-checked=${note === n} aria-label=${n + ' étoile' + (n > 1 ? 's' : '')} className=${cx('avis-s', n <= note && 'on')} onClick=${() => setNote(n)}>★</button>`)}</div>
+      ${note > 0 && html`<label className="fld" htmlFor="avis-t"><span className="fld-l">${note <= 3 ? 'Qu’est-ce qu’on pourrait améliorer ?' : 'Un truc à améliorer ? (facultatif)'}</span>
+        <textarea id="avis-t" className="inp" rows="3" maxLength="1500" placeholder=${note <= 3 ? 'Ce qui t’a manqué, ce qui t’a gêné…' : 'Une idée, une fonction qui manque…'} value=${txt} onChange=${e => setTxt(e.target.value)}></textarea></label>`}
+      <button type="button" className="btn pri wide" disabled=${!note} onClick=${envoyer}>Envoyer</button>
+      <button type="button" className="btn ghost wide" onClick=${plusTard}>Plus tard</button></div>`}
+  <//>`;
+}
+
 function Bienvenue({ onDone }) {
   const [i, setI] = useState(0), x = BIENV[i], der = i === BIENV.length - 1;
   return html`<div className="bv" role="dialog" aria-modal="true" aria-label="Bienvenue dans Macrolya">
@@ -7147,7 +7183,7 @@ const refreshApp = async () => { toast('Actualisation…'); try { if (STANDALONE
 
 function App() {
   const st = useStore(), S = st.get(), cfg = st.cfg(), sy = st.sync();
-  const [tab, setTab] = useState(tabOf); const [date, setDate] = useState(Apex.today); const [open, setOpen] = useState(false);
+  const [tab, setTabV] = useState(tabOf), [nav, setNav] = useState(tabOf); const setTab = t => { setNav(t); (React.startTransition || (fn => fn()))(() => setTabV(t)); }; const [date, setDate] = useState(Apex.today); const [open, setOpen] = useState(false);
   useEffect(() => { const f = () => setTab(tabOf()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f); }, []);
   useEffect(() => { if (!STANDALONE) return undefined; const t = setTimeout(() => checkUpdate(false), 3000), f = () => { if (!document.hidden) checkUpdate(false); }; document.addEventListener('visibilitychange', f); return () => { clearTimeout(t); document.removeEventListener('visibilitychange', f); }; }, []);
   const j = S.journal[date] || {}, statut = Apex.statutDuJour(cfg, j, date), today = Apex.today();
@@ -7183,9 +7219,9 @@ function App() {
         <${Seg} label="Statut du jour" value=${statut} onChange=${setStatut} options=${[['repos', 'Repos'], ['salle', 'Salle']]} />
       </div>`}
     </div></header>
-    <main className="wrap"><${RappelBanner} go=${go} /><${InstallBanner} /><${IABanner} /><${Boundary} key=${tab}><${View} date=${tab === 'coach' ? today : date} setDate=${setDate} go=${go} /><//></main>
+    <main className="wrap"><${RappelBanner} go=${go} /><${AvisDemande} /><${InstallBanner} /><${IABanner} /><${Boundary} key=${tab}><${View} date=${tab === 'coach' ? today : date} setDate=${setDate} go=${go} /><//></main>
     <div className="dock"><${SessionPill} tab=${tab} go=${go} /><${Chrono} /></div>
-    <nav className="tabs" aria-label="Sections" style=${{ gridTemplateColumns: 'repeat(' + tabs.length + ', 1fr)' }}>${tabs.map(t => html`<button key=${t[0]} type="button" aria-current=${tab === t[0] ? 'page' : undefined} onClick=${() => go(t[0])}><${Icon} n=${t[2]} s=${22} />${t[1]}</button>`)}</nav>
+    <nav className="tabs" aria-label="Sections" style=${{ gridTemplateColumns: 'repeat(' + tabs.length + ', 1fr)' }}>${tabs.map(t => html`<button key=${t[0]} type="button" aria-current=${nav === t[0] ? 'page' : undefined} onClick=${() => go(t[0])}><${Icon} n=${t[2]} s=${22} />${t[1]}</button>`)}</nav>
     ${open && html`<${SettingsSheet} onClose=${() => setOpen(false)} />`}
     ${wiz && html`<${Wizard} redo=${cfg.onboarded === false} onClose=${() => {}} />`}
     ${fetching && html`<div className="boot-wait" role="status"><i></i>Récupération de tes données…</div>`}
