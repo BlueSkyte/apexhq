@@ -2826,7 +2826,8 @@ const AI = (() => {
       const contents = norm(input).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: String(m.content) }] }));
       let text = '';
       for (let round = 0; round < 6; round++) {
-        const body = { contents, generationConfig: { temperature: 0.4, maxOutputTokens: o.maxTokens || 2048 } };
+        const body = { contents, generationConfig: { temperature: o.temp != null ? o.temp : o._json ? 0.1 : 0.4, maxOutputTokens: o.maxTokens || 2048 } };
+        if (o.think && getGKey() === RELAY) body.generationConfig.thinkingConfig = { thinkingLevel: o.think };
         if (tools.length) body.tools = [{ functionDeclarations: tools }]; else if (o._json) body.generationConfig.responseMimeType = 'application/json';
         const j = await gcall(model, body, o.signal), cand = (j.candidates || [])[0];
         if (!cand || !cand.content) { if (text) return { text, truncated: false }; throw fail(j.promptFeedback && j.promptFeedback.blockReason ? 'refused' : 'empty_completion', 'Réponse vide'); }
@@ -2870,6 +2871,17 @@ const AI = (() => {
   const hasAny = () => !!(getGKey() || getKey());
   return { getKey, setKey, getGKey, setGKey, ownG, embedded, consent, setConsent, chain, test, hasAny, last: () => last };
 })();
+
+/* Mémoire des estimations nutritionnelles : même texte = même réponse, instantanée et sans quota.
+   shortcut: entrées jamais purgées avant 30 jours, à purger si le stockage local sature. */
+const iaMemo = async (fn, prompt, o) => {
+  let h = 5381; for (let i = 0; i < prompt.length; i++) h = ((h << 5) + h + prompt.charCodeAt(i)) | 0;
+  const K = 'apexhq:ia:' + (h >>> 0).toString(36) + prompt.length;
+  try { const c = JSON.parse(localStorage.getItem(K) || 'null'); if (c && Date.now() - c.t < 2592e6) return c.v; } catch (e) { /* mémoire illisible */ }
+  const v = await fn(prompt, o);
+  if (v && +v.kcal > 0) try { localStorage.setItem(K, JSON.stringify({ t: Date.now(), v })); } catch (e) { /* stockage plein : pas de mémoire */ }
+  return v;
+};
 
 /* Messages d'erreur communs (coach, assistant, estimations). */
 const aiMsg = e => {
@@ -3341,10 +3353,10 @@ const Toast = (() => { let list = [], id = 0; const subs = new Set(); const emit
 const toast = m => Toast.push(m);
 function Toasts() { const l = useSyncExternalStore(Toast.sub, Toast.get); return html`<div className="toasts" role="status" aria-live="polite">${l.map(t => html`<div key=${t.id} className="toast">${t.msg}</div>`)}</div>`; }
 /* Bouton à confirmation en deux temps (confirm() est inerte dans la visionneuse). */
-function Confirm({ label, sure, onYes, cls, icon }) {
+function Confirm({ label, sure, onYes, cls, icon, aria }) {
   const [arm, setArm] = useState(false);
   useEffect(() => { if (!arm) return; const t = setTimeout(() => setArm(false), 3500); return () => clearTimeout(t); }, [arm]);
-  return html`<button type="button" className=${cx('btn sm', cls, arm && 'dan')} onClick=${() => { if (arm) { setArm(false); onYes(); } else setArm(true); }}>${icon && html`<${Icon} n=${icon} s=${16} />`}${arm ? (sure || 'Confirmer ?') : label}</button>`;
+  return html`<button type="button" className=${cx('btn sm', cls, arm && 'dan')} aria-label=${aria} onClick=${() => { if (arm) { setArm(false); onYes(); } else setArm(true); }}>${icon && html`<${Icon} n=${icon} s=${16} />`}${arm ? (sure || 'Confirmer ?') : label}</button>`;
 }
 
 /* ---------- jauges ---------- */
@@ -3640,7 +3652,7 @@ function DebriefCard({ date, go, onEdit, photos }) {
     if (!sample || busy) return; setBusy(true); setErr(''); setIa('');
     try {
       const prompt = coachRegles(Store.cfg()) +'\n\nDONNÉES ACTUELLES DE L’APP\n' + coachContexte(date) + '\n\nFais le debrief matinal de cette personne : une phrase de verdict, trois constats chiffrés, puis deux actions concrètes pour aujourd’hui (repas, et séance selon ses points faibles). 8 lignes maximum, texte brut.';
-      const r = await sample(prompt, { cache: false, onText: u => setIa(u.text) }); setIa(r.text);
+      const r = await sample(prompt, { cache: false, think: 'medium', onText: u => setIa(u.text) }); setIa(r.text);
     } catch (e) { const m2 = aiMsg(e); if (m2) setErr(m2); if (e && e.text) setIa(e.text); }
     setBusy(false);
   };
@@ -3920,8 +3932,8 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDe
     <div className="meal-h">
       <button type="button" className="chk" aria-pressed=${!!m.ok} aria-label=${(m.ok ? 'Marquer non mangé : ' : 'Marquer mangé : ') + m.nom} onClick=${onToggle}><${Icon} n="check" s=${18} w=${2.5} /></button>
       <button type="button" className="meal-t meal-open" onClick=${() => setDet(true)} aria-label=${'Détail du repas ' + m.nom}><b>${m.nom}${m.items.length > 0 && html`<${Icon} n="chevR" s=${14} />`}</b><span>${m.h || ''}${m.ok ? ' · mangé' : ''}${m.items.length ? ' · détail' : ''}</span></button>
-      <button type="button" className="meal-k meal-open" onClick=${() => setDet(true)} tabIndex="-1" aria-hidden="true"><b>${f0(t.k)}</b><span>kcal · ${macTxt(t)}</span></button>
-      <button type="button" className="ib meal-fold" aria-expanded=${!plie} aria-label=${(plie ? 'Déplier ' : 'Replier ') + m.nom} onClick=${plier}><${Icon} n=${plie ? 'down' : 'up'} s=${18} /></button>
+      ${m.items.length > 0 && html`<button type="button" className="meal-k meal-open" onClick=${() => setDet(true)} tabIndex="-1" aria-hidden="true"><b>${f0(t.k)}</b><span>kcal · ${macTxt(t)}</span></button>`}
+      ${m.items.length > 0 && html`<button type="button" className="ib meal-fold" aria-expanded=${!plie} aria-label=${(plie ? 'Déplier ' : 'Replier ') + m.nom} onClick=${plier}><${Icon} n=${plie ? 'down' : 'up'} s=${18} /></button>`}
     </div>
     ${det && html`<${MealDetail} m=${m} foods=${foods} pesee=${pesee} onQty=${onQty} onSwap=${onSwap} onClose=${() => setDet(false)} />`}
     ${fdIt && html`<${FoodDetail} it=${fdIt} foods=${foods} pesee=${pesee} onQty=${onQty} onSwap=${onSwap} onDel=${onDelIt} onClose=${() => setFd(null)} />`}
@@ -3934,7 +3946,8 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDe
       </div>`;
     })}</div>`}
     ${!plie && undo && html`<div className="undo" role="status"><span>« ${undo.nom} » retiré</span><button type="button" onClick=${() => { if (onItems) onItems(undo.items); setUndo(null); }}>Annuler</button></div>`}
-    ${!plie && html`<div className="meal-f">
+    ${!m.items.length && html`<div className="meal-vide"><button type="button" className="mv-add" onClick=${onAdd}><${Icon} n="plus" s=${18} />Ajouter un aliment</button><${Confirm} cls="mv-del" icon="trash" label="" aria=${'Supprimer le repas ' + m.nom} sure="Supprimer ?" onYes=${onDel} /></div>`}
+    ${!plie && m.items.length > 0 && html`<div className="meal-f">
       <button type="button" className=${cx('mf', !m.items.length && 'pri')} onClick=${onAdd}><${Icon} n="plus" s=${17} />Ajouter</button>
       ${m.items.length > 0 && !edit && html`<button type="button" className="mf" onClick=${() => setEdit(true)}><${Icon} n="note" s=${16} />Modifier</button>`}
       <${Confirm} cls="mf dan-t" icon="trash" label="Supprimer" sure="Confirmer" onYes=${() => { setEdit(false); onDel(); }} />
@@ -3948,7 +3961,7 @@ const roleMacros = x => { const k = x.p * 4 + x.g * 4 + x.l * 9 || 1; return x.p
 const garderAliment = f => { const id = 'u_' + Apex.uid(); Store.patch('cfg', null, { aliments: Object.assign({}, Store.cfg().aliments, { [id]: Object.assign({ id, c: 'perso', etq: 0 }, f) }) }); return id; };
 /* Valeurs pour 100 g et poids d'une portion, estimés par l'IA à partir d'un nom ou d'une description. */
 async function estimerAliment(sample, txt) {
-  const r = await sample.json('Tu es diététicien. Donne les valeurs nutritionnelles moyennes de cet aliment ou de ce plat (table Ciqual ; valeurs officielles pour une enseigne ou un produit de marque ; si c’est un plat préparé, estime d’après sa composition). Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": kcal pour 100 g, "p": protéines en g pour 100 g, "g": glucides en g pour 100 g, "l": lipides en g pour 100 g, "f": fibres en g pour 100 g, "portion_g": poids en grammes d’une portion ou d’une pièce usuelle, "unite": "nom de l’unité (portion, tranche, pièce, barre…)"}.\n\nAliment : """' + txt.slice(0, 200) + '"""', { modelTier: 'quick', cache: false });
+  const r = await iaMemo(sample.json, 'Tu es diététicien. Donne les valeurs nutritionnelles moyennes de cet aliment ou de ce plat (table Ciqual ; valeurs officielles pour une enseigne ou un produit de marque ; si c’est un plat préparé, estime d’après sa composition). Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": kcal pour 100 g, "p": protéines en g pour 100 g, "g": glucides en g pour 100 g, "l": lipides en g pour 100 g, "f": fibres en g pour 100 g, "portion_g": poids en grammes d’une portion ou d’une pièce usuelle, "unite": "nom de l’unité (portion, tranche, pièce, barre…)"}.\n\nAliment : """' + txt.slice(0, 200) + '"""', { modelTier: 'quick', cache: false });
   const k = Number(r && r.kcal); if (!(k >= 0 && k <= 950)) throw { code: 'invalid_json' };
   const pg = Math.round(+r.portion_g), ok = pg >= 10 && pg <= 800;
   return { n: String(r.nom || txt).slice(0, 60), k: Math.round(k), p: r1(+r.p || 0), g: r1(+r.g || 0), l: r1(+r.l || 0), f: r1(+r.f || 0), pg: ok ? pg : 0, unite: String(r.unite || 'portion').slice(0, 20) };
@@ -4012,7 +4025,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     const txt = ai.txt.trim(); if (!txt || !sample) return;
     setAi(s => Object.assign({}, s, { busy: true, err: '', res: null }));
     try {
-      const r = await sample.json('Tu es diététicien. Estime les valeurs nutritionnelles TOTALES de ce qui est décrit (table Ciqual ; valeurs officielles pour les enseignes de restauration). Sans quantité précisée, prends une portion standard adulte. Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": nombre, "p": grammes de protéines, "g": grammes de glucides, "l": grammes de lipides, "f": grammes de fibres, "detail": "hypothèses de portions en une ligne"}.\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false });
+      const r = await iaMemo(sample.json, 'Tu es diététicien. Estime les valeurs nutritionnelles TOTALES de ce qui est décrit (table Ciqual ; valeurs officielles pour les enseignes de restauration). Sans quantité précisée, prends une portion standard adulte. Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": nombre, "p": grammes de protéines, "g": grammes de glucides, "l": grammes de lipides, "f": grammes de fibres, "detail": "hypothèses de portions en une ligne"}.\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false });
       const k = r && +r.kcal; if (!Apex.num(k) || k <= 0) throw { code: 'invalid_json' };
       setAi(s => Object.assign({}, s, { busy: false, res: { n: String(r.nom || 'Repas estimé').slice(0, 60), k, p: +r.p || 0, g: +r.g || 0, l: +r.l || 0, f: +r.f || 0, detail: String(r.detail || '').slice(0, 260) } }));
     } catch (e) { setAi(s => Object.assign({}, s, { busy: false, err: aiErr(e) })); }
@@ -5352,7 +5365,7 @@ function CoachCard({ date }) {
       + '14 derniers jours :\n' + (jours.join('\n') || 'aucune donnée') + '\n\n'
       + 'Réponds en français, texte brut sans Markdown, 8 lignes maximum : 1) Verdict : vert, orange ou rouge + raison. 2) Trois constats chiffrés. 3) Un à trois ajustements chiffrés, jamais sous les planchers. Si les données sont insuffisantes, dis lesquelles manquent.';
     if (ctl.current) ctl.current.abort(); ctl.current = new AbortController(); setBusy(true); setErr(''); setOut('');
-    try { const r = await sample(prompt, { signal: ctl.current.signal, cache: false, onText: u => setOut(u.text) }); setOut(r.text); }
+    try { const r = await sample(prompt, { signal: ctl.current.signal, cache: false, think: 'medium', onText: u => setOut(u.text) }); setOut(r.text); }
     catch (e) { if (e && e.code === 'cancelled') { setOut(e.text || ''); } else { setErr(aiErr(e)); if (!e || e.code === 'refused') setOut(''); else if (e.text) setOut(e.text); } }
     setBusy(false);
   };
