@@ -4820,7 +4820,7 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
   const best = h.reduce((b, x) => Math.max(b, x.e1), 0), cur = sets.reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0), record = cur > best + 0.05 && best > 0;
   let num = 0; const toutCoche = normales.length > 0 && normales.every(s => Apex.setCoche(s)), nCoche = normales.filter(s => Apex.setCoche(s)).length, replie = toutCoche && !ouvert;
   const arr = v => Math.round(v / (e.inc || 2.5)) * (e.inc || 2.5);
-  const kgInt = k => { const s = sets[k]; if (s.t === 'bo') { const t = sets.find(x => x.t === 'top'); return t && t.kg > 0 ? arr(t.kg * 0.9) : null; } if (s.t === 'd') { const p = sets[k - 1]; return p && p.kg > 0 ? arr(p.kg * 0.8) : null; } return null; };
+  const kgInt = k => { const s = sets[k]; if (s.t === 'bo') { const t = sets.find(x => x.t === 'top'); return t && t.kg > 0 ? arr(t.kg * 0.85) : null; } if (s.t === 'd') { const p = sets[k - 1]; return p && p.kg > 0 ? arr(p.kg * 0.75) : null; } return null; };
   const repos = s => (s.t === 'd' ? 0 : s.w ? 45 : rest);
   const topOn = sets.some(x => x.t === 'top');
   const basculeTop = () => { let first = true; onSets(sets.map(x => { if (x.w || x.t === 'd') return x; const o = Object.assign({}, x); if (topOn) delete o.t; else { o.t = first ? 'top' : 'bo'; first = false; } return o; })); };
@@ -5036,7 +5036,7 @@ function ExoParams({ type, i, onClose }) {
     ${p.n >= 5 && html`<div className="note"><${Icon} n="info" /><div><span>${p.n} séries sur un seul exercice, c’est beaucoup : à partir de 5 séries la qualité baisse. Mieux vaut ajouter un autre exercice pour ce muscle.</span></div></div>`}
     <${RirChips} value=${p.rir} onChange=${v => put({ rir: v })} />
     <div className="stack"><span className="fld-l">Technique</span><div className="chips" role="radiogroup" aria-label="Technique d’intensification">${TECH.map(t => html`<button key=${t[0]} type="button" className="chip" role="radio" aria-checked=${tech === t[0]} aria-pressed=${tech === t[0]} onClick=${() => put({ tech: t[0] || undefined })}>${t[1]}</button>`)}</div>
-      ${tech > 0 && html`<span className="mut" style=${{ fontSize: 12 }}>${tech & 1 ? '1re série lourde (top set), les suivantes à −10 % (back-off). ' : ''}${tech & 2 ? 'Une série dégressive à −20 % sans repos après la dernière.' : ''} Préparé à chaque séance.</span>`}</div>
+      ${tech > 0 && html`<span className="mut" style=${{ fontSize: 12 }}>${tech & 1 ? '1re série lourde (top set), les suivantes à −15 % (back-off). ' : ''}${tech & 2 ? 'Une série dégressive à −25 % sans repos après la dernière.' : ''} Préparé à chaque séance.</span>`}</div>
     <p className="mut" style=${{ fontSize: 12 }}>Double progression : quand toutes les séries atteignent ${p.hi} répétitions, l’objectif suivant ajoute ${fq(e.inc)} kg.</p>
     <div className="row"><button type="button" className="btn" onClick=${() => setSwap(true)}><${Icon} n="swap" s=${17} />Remplacer</button><${Confirm} label="Retirer de la séance" sure="Retirer ?" cls="ghost" icon="trash" onYes=${() => { saveProg(Apex.retirerExo(items, type, i)); onClose(); }} /></div>
     ${swap && html`<${ExoSheet} exos=${exos} title=${'Remplacer ' + e.n} muscle=${e.m} onClose=${() => setSwap(false)} onPick=${id => { put({ e: id, lo: undefined, hi: undefined, rest: undefined }); toast('Exercice remplacé'); }} />`}
@@ -5837,7 +5837,7 @@ function coachRegles(cfg) {
     'Repas : modifie toujours aliment par aliment (ex. viande 180 g, riz 250 g), jamais un coefficient global sur tout le repas ; recalcule kcal, P, G, L à partir de chaque ingrédient.',
     'Séance : ne valide et ne ferme jamais un exercice ni la séance toi-même ; l’utilisateur note ses séries une par une et dit lui-même quand il a fini.',
     'Exercices : chacun est distinct, ne les fusionne jamais (traction ≠ tirage vertical poulie). Varie angles, prises, machines et poids libres, isolation et polyarticulaires.',
-    'Intensification quand c’est pertinent (pas pour un débutant), 1 à 2 exercices par séance maximum : top set lourd RPE 8-9 après échauffement puis 1 à 3 back-off sets à −10 % ; drop set ou rest-pause sur la dernière série d’un exercice d’isolation ou machine ; isométrie en fin de mouvement.',
+    'Intensification quand c’est pertinent (pas pour un débutant), 1 à 2 exercices par séance maximum : top set lourd RPE 8-9 après échauffement puis 1 à 3 back-off sets à −15 % ; drop set à −25 % ou rest-pause sur la dernière série d’un exercice d’isolation ou machine ; isométrie en fin de mouvement.',
     'Calories : ne sous-estime jamais. Base = dépense réelle (métabolisme de base + pas et activité + séances, de 1 à 7 par semaine). Sèche : déficit modéré de 10 à 20 % (−0,5 à −1 % du poids par semaine), jamais agressif ; maintien : à l’équilibre ; masse : surplus de 5 à 10 % (+0,25 à 0,5 % par semaine). Toujours au-dessus des planchers.',
     'Timing : concentre les glucides autour de la séance. Pré-séance 1 h à 1 h 30 avant, glucides digestes, peu de fibres et de graisses ; après la séance, glucides et 25 à 40 g de protéines. Si l’heure de la séance compte pour la réponse et n’est pas connue, demande-la en une question.',
     'Chaque conseil s’appuie sur les études et le consensus scientifique, jamais sur des croyances populaires.',
