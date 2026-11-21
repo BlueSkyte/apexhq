@@ -3767,8 +3767,8 @@ function DebriefCard({ date, go, onEdit, photos }) {
   const run = async () => {
     if (!sample || busy) return; setBusy(true); setErr(''); setIa('');
     try {
-      const prompt = coachRegles(Store.cfg()) +'\n\nDONNÉES ACTUELLES DE L’APP\n' + coachContexte(date) + '\n\nFais le debrief matinal de cette personne : une phrase de verdict, trois constats chiffrés, puis deux actions concrètes pour aujourd’hui (repas, et séance selon ses points faibles). 8 lignes maximum, texte brut.';
-      const r = await sample(prompt, { cache: false, think: 'medium', onText: u => setIa(u.text) }); setIa(r.text);
+      const prompt = coachRegles(Store.cfg()) +'\n\nDONNÉES ACTUELLES DE L’APP\n' + coachContexte(date) + '\n\nFais le debrief matinal complet de cette personne, texte brut sans Markdown, titres en MAJUSCULES suivis de deux-points, 15 à 25 lignes. VERDICT : une phrase. CE MATIN : poids face à la moyenne 7 jours et à la tendance, sommeil, énergie, récupération, et ce que ça implique. HIER : bilan calories, protéines et pas face aux cibles. AUJOURD’HUI : calories et macros du jour, répartition des glucides autour de l’heure de séance, quoi manger concrètement (aliments et grammes) ; séance du jour, focus sur ses points faibles, charges ou répétitions à viser selon la dernière séance. À SURVEILLER : un ou deux points. Chaque phrase s’appuie sur un chiffre des données.';
+      const r = await sample(prompt, { cache: false, think: 'medium', maxTokens: 3500, onText: u => setIa(u.text) }); setIa(r.text);
     } catch (e) { const m2 = aiMsg(e); if (m2) setErr(m2); if (e && e.text) setIa(e.text); }
     setBusy(false);
   };
@@ -5497,9 +5497,19 @@ function CoachCard({ date }) {
       + 'Points faibles (séries directes semaine) : ' + fo.map(a => a.n + ' ' + a.o.fait + ' faites / ' + a.o.proj + ' projetées (cible ' + a.o.min + '-' + a.o.max + ')' + (a.lift && a.lift.t ? ', ' + a.lift.n + ' ' + a.lift.t.pct.toFixed(1) + ' %' : '')).join(' ; ') + '.\n'
       + 'Fatigue : ' + fa.niveau + (fa.why.length ? ' (' + fa.why.join(', ') + ')' : '') + '.\n'
       + '14 derniers jours :\n' + (jours.join('\n') || 'aucune donnée') + '\n\n'
-      + 'Réponds en français, texte brut sans Markdown, 8 lignes maximum : 1) Verdict : vert, orange ou rouge + raison. 2) Trois constats chiffrés. 3) Un à trois ajustements chiffrés, jamais sous les planchers. Si les données sont insuffisantes, dis lesquelles manquent.';
+      + 'DONNÉES DÉTAILLÉES DE L’APP\n' + coachContexte(date) + '\n\n'
+      + 'Rédige une VRAIE analyse de coach, complète et argumentée, en français, texte brut sans Markdown : titres en MAJUSCULES suivis de deux-points, tirets pour les listes, 35 à 60 lignes.\n'
+      + 'VERDICT : vert, orange ou rouge + la raison en une phrase.\n'
+      + 'POIDS ET RYTHME : moyenne 7 jours, tendance en kg et en % par semaine face au rythme visé, date d’arrivée projetée, lecture des fluctuations (eau, sel, glucides, sommeil).\n'
+      + 'NUTRITION : adhérence calories et protéines (jours conformes sur jours renseignés, écart moyen), jours salle face aux jours repos, répartition des macros, fibres, jours précis à corriger.\n'
+      + 'ENTRAÎNEMENT : séances faites face aux séances prévues, volume par muscle face à la cible (points faibles d’abord), progression de force des exercices repères, risque de stagnation.\n'
+      + 'RÉCUPÉRATION : sommeil, énergie, récupération, pas ; lien avec les performances et la faim.\n'
+      + 'CE QUI MARCHE : 2 ou 3 points.\n'
+      + 'AJUSTEMENTS : 3 à 5 actions chiffrées (kcal, grammes de protéines ou de glucides, séries, pas, heure de coucher), jamais sous les planchers, chacune avec sa justification physiologique.\n'
+      + 'PLAN DES 7 PROCHAINS JOURS : une ligne par jour (salle ou repos, calories, séance, point clé).\n'
+      + 'Chaque affirmation s’appuie sur un chiffre des données. S’il manque une donnée, dis laquelle et comment la saisir dans l’app.';
     if (ctl.current) ctl.current.abort(); ctl.current = new AbortController(); setBusy(true); setErr(''); setOut('');
-    try { const r = await sample(prompt, { signal: ctl.current.signal, cache: false, think: 'medium', onText: u => setOut(u.text) }); setOut(r.text); }
+    try { const r = await sample(prompt, { signal: ctl.current.signal, cache: false, think: 'medium', maxTokens: 6000, onText: u => setOut(u.text) }); setOut(r.text); }
     catch (e) { if (e && e.code === 'cancelled') { setOut(e.text || ''); } else { setErr(aiErr(e)); if (!e || e.code === 'refused') setOut(''); else if (e.text) setOut(e.text); } }
     setBusy(false);
   };
@@ -5840,7 +5850,7 @@ function coachRegles(cfg) {
       : 'En maintien on entretient la force et le volume actuels.';
   return [
     'Tu es le coach intégré à ' + APP_NAME + ', l’application de suivi de l’utilisateur (objectif : ' + ip.objTxt + ') : diététicien (tables Ciqual, densité nutritionnelle) et préparateur physique.',
-    'Style : français, phrases courtes, chiffres, aucune motivation, aucune formule de politesse. Texte brut, sans Markdown ni tableau. 6 lignes maximum sauf demande de détail.' + (ip.prenom ? ' L’utilisateur s’appelle ' + ip.prenom + ' : appelle-le par son prénom de temps en temps, naturellement, sans en abuser.' : ''),
+    'Style : français, phrases courtes, chiffres, aucune motivation, aucune formule de politesse. Texte brut, sans Markdown ni tableau. Saisie ou question simple : 2 à 6 lignes. Analyse, bilan, programme, plateau, « pourquoi » ou « comment » : réponse complète et structurée (titres en MAJUSCULES, tirets), chiffrée avec ses données, chaque conseil justifié, sans limite stricte de longueur.' + (ip.prenom ? ' L’utilisateur s’appelle ' + ip.prenom + ' : appelle-le par son prénom de temps en temps, naturellement, sans en abuser.' : ''),
     'Dès que l’utilisateur rapporte un repas, un écart, son poids, son sommeil, ses pas, son eau, des séries ou des mensurations : enregistre avec l’outil adapté, sans demander confirmation. N’invente jamais une donnée qu’il n’a pas donnée. Quantité floue : prends une portion standard et dis l’hypothèse en une ligne.',
     'Valeurs nutritionnelles : prends la base de l’app ci-dessous quand l’aliment y figure (poids cru), sinon Ciqual ou les valeurs officielles de l’enseigne. Donne des totaux pour la quantité réellement mangée. Si cru ou cuit n’est pas précisé pour un féculent ou une viande, suppose le poids cuit pour une assiette et dis-le.',
     'Plat, produit ou enseigne : utilise les valeurs de la liste « correspondant à la demande » quand elle contient le plat. S’il n’y est pas, ne dis jamais « aliment non reconnu » et ne refuse pas : si tu connais bien ce plat (plat classique, enseigne connue), estime-le directement ; sinon demande en UNE question courte ce qu’il y a dedans (ingrédients, quantités approximatives, taille de la portion), sans rien enregistrer avant sa réponse. Dès qu’il répond, estime les calories et les macros à partir des ingrédients (valeurs Ciqual), enregistre avec l’outil et dis en une ligne que c’est une estimation. ' + IA_PORTIONS + ' S’il ne sait pas, estime une portion standard.',
@@ -6047,7 +6057,7 @@ function Coach({ date }) {
     hist.forEach(m => turns.push({ role: m.r === 'u' ? 'user' : 'assistant', content: m.t + (m.a && m.a.length ? '\n[Actions enregistrées : ' + m.a.map(a => a.lab + (a.undone ? ' (annulée)' : '')).join(' ; ') + ']' : '') }));
     turns.push({ role: 'user', content: q.slice(0, 4000) });
     if (ctl.current) ctl.current.abort(); ctl.current = new AbortController();
-    const opts = { signal: ctl.current.signal, cache: false, onText: u => { cur = u.text; upd(false); } };
+    const opts = { signal: ctl.current.signal, cache: false, maxTokens: 4096, onText: u => { cur = u.text; upd(false); } };
     if (!lim || !lim.modelTiers || lim.modelTiers.indexOf(tier) >= 0) opts.modelTier = tier;
     if (toolsOk) opts.tools = coachTools(date, a => { acts.push(Object.assign({ id: Apex.uid() }, a)); upd(false); }).slice(0, (lim.tools && lim.tools.maxCount) || 8);
     try { const r = await sample(turns, opts); cur = r.text; upd(true); }
