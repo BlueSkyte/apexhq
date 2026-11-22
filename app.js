@@ -749,7 +749,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     let P = Math.round(gkg * kg); if (P * 4 > avg * 0.35) P = Math.round(avg * 0.35 / 4);
     const L = Math.max(Math.round(0.6 * kg), Math.min(Math.round(lkg * kg), Math.round((avg - P * 4) * 0.5 / 9)));
     let salleK = avg, reposK = avg;
-    if (actifs > 0 && actifs < 7) { salleK = avg * 1.05; reposK = (7 * avg - actifs * salleK) / (7 - actifs); if (reposK < floor) { reposK = floor; salleK = (7 * avg - (7 - actifs) * floor) / actifs; } }
+    /* Chaque jour a sa propre dépense : repos = métabolisme, quotidien, pas, cardio ; jour actif = la même chose + la séance du jour
+       (muscu et autres sports de la semaine répartis sur les jours actifs). Le même % d'objectif s'applique aux deux,
+       donc un jour de repos en prise de masse reste au-dessus de sa dépense (avant : il absorbait tout l'écart). */
+    if (actifs > 0 && actifs < 7) {
+      const r = avg / tdee, reposT = tdee - trainK - sportK, actifT = reposT + (trainK + sportK) * 7 / actifs;
+      salleK = actifT * r; reposK = reposT * r;
+      if (reposK < floor) { reposK = floor; salleK = (7 * avg - (7 - actifs) * floor) / actifs; }
+    }
     const mk = k => { const kk = rd(k); return { kcal: kk, p: P, g: Math.max(0, Math.round((kk - 4 * P - 9 * L) / 4)), l: L }; };
     const kgSem = delta * 7 / 7700;
     return {
@@ -2398,6 +2405,19 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     /* [nom, heure, priorité, fin de plage, rôle, fixe] ; un repas reste proposé tant que sa plage n'est pas finie (déjeuner jusqu'à 15 h) */
     let s = CRENEAUX.filter(c => now < c[2]).map(c => [c[0], Math.max(c[3], t0), c[4], c[2], undefined, 0, Math.max(c[1], t0)]);
     const S = seance && minutes(seance.h), dur = Math.max(20, Math.min(180, (seance && +seance.duree) || 60));
+    /* 2 repas (midi et soir) : on garde déjeuner et dîner, le plus proche de la séance devient le repas avant ou après */
+    if (n <= 2 && S != null) {
+      const v = s.filter(c => c[0] === 'Déjeuner' || c[0] === 'Dîner').slice(0, n);
+      if (v.length === n) {
+        const fin = S + dur, apr = Math.round((fin + 15) / 15) * 15;
+        /* repas pendant la séance (ou moins d'1 h avant) : décalé juste après si sa plage le permet, sinon avant */
+        v.forEach(c => { if (c[1] > S - 60 && c[1] < fin + 15) c[1] = apr <= c[3] - 15 ? apr : Math.max(c[6], Math.round((S - 90) / 15) * 15); });
+        const apres = v.find(c => c[1] >= fin && c[1] - fin <= 360), avant = v.filter(c => c[1] <= S - 30 && S - c[1] <= 300).pop();
+        if (apres) { apres[1] = Math.min(apres[3] - 15, Math.max(apres[1], Math.round((fin + 15) / 15) * 15)); apres[4] = 'post'; apres[0] += ' (après séance)'; }
+        else if (avant) { avant[4] = 'pre'; avant[0] += ' (avant séance)'; }
+        return v.map(c => [c[0], hhmm(c[1]), c[4]]);
+      }
+    }
     if (S != null && S + dur + 90 >= now) {
       /* Repères (ISSN 2017 timing des nutriments, Aragon & Schoenfeld 2013, Kerksick 2017) :
          - vrai repas (glucides lents + protéines) 2 à 3 h 30 avant : il suffit, pas de collation en plus ;
@@ -4587,7 +4607,7 @@ function MenuIASheet({ onClose, jour }) {
       ${day ? html`<div className="ia-reste"><span>${manges.length ? 'Il te reste' : 'Objectif du ' + dMid(jour)}</span><b>${f0(Math.max(0, reste.kcal))} kcal</b><small>P ${reste.p} · G ${reste.g} · L ${reste.l}${manges.length ? ' · ' + manges.length + ' repas déjà mangé' + (manges.length > 1 ? 's' : '') + ', gardé' + (manges.length > 1 ? 's' : '') : ''}</small></div>`
       : html`<p className="sec" style=${{ fontSize: 13 }}>L’IA compose les 7 jours, l’app calcule les quantités sur tes macros.</p>`}
       ${day && reste.kcal < 150 && html`<div className="note"><${Icon} n="info" /><div><span>Ton objectif du jour est déjà atteint : l’IA proposera des idées très légères.</span></div></div>`}
-      <div className="stack"><span className="fld-l">${day ? 'Repas à composer' : 'Repas par jour'}<b>${repas}</b></span><div className="chips">${(day ? [1, 2, 3, 4, 5] : [3, 4, 5, 6]).map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repas === n} onClick=${() => setRepas(n)}>${n}</button>`)}</div></div>
+      <div className="stack"><span className="fld-l">${day ? 'Repas à composer' : 'Repas par jour'}<b>${repas}</b></span><div className="chips">${(day ? [1, 2, 3, 4, 5] : [2, 3, 4, 5, 6]).map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repas === n} onClick=${() => setRepas(n)}>${n}</button>`)}</div></div>
       ${salle && html`<div className="pf-c"><${HeureSeance} id="menu-hs" label="À quelle heure est ta séance aujourd’hui ?" aide="Pour aujourd’hui seulement. « Ça varie » : repas sans placement autour de la séance." value=${hS} onPick=${setHS} /></div>`}
       ${day && html`<p className="sec" style=${{ fontSize: 13 }} aria-live="polite"><b>Tes repas :</b> ${Apex.horairesJour(heure(), repas, seanceO).map(x => x[0] + ' ' + x[1].replace(':', ' h ').replace(/ h 00$/, ' h')).join(' · ')}</p>`}
       ${seanceO && html`<p className="mut" style=${{ fontSize: 12 }}>Hydratation : environ ${Math.round((cfg.profil.poidsDepart || 75) * 6 / 50) * 50} ml d’eau 2 à 4 h avant la séance (5 à 7 ml/kg), puis par petites gorgées pendant.</p>`}
@@ -4638,12 +4658,12 @@ function SuppCard({ supL, supp, date }) {
   </section>`;
 }
 
-/* Repas du jour vides, nommés selon le nombre choisi (cfg.repasNb, 3 à 6) et le type de journée. */
+/* Repas du jour vides, nommés selon le nombre choisi (cfg.repasNb, 2 à 6) et le type de journée. */
 const SLOTS_N = {
-  salle: { 3: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Dîner', '20:00']], 4: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Dîner', '20:30']], 5: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Post-séance', '19:00'], ['Dîner', '20:30']], 6: [['Petit-déj', '07:30'], ['Collation', '10:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Post-séance', '19:00'], ['Dîner', '20:30']] },
-  repos: { 3: [['Petit-déj', '08:00'], ['Déjeuner', '12:30'], ['Dîner', '20:00']], 4: [['Petit-déj', '08:00'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00']], 5: [['Petit-déj', '08:00'], ['Collation', '10:30'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00']], 6: [['Petit-déj', '08:00'], ['Collation', '10:30'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00'], ['Collation du soir', '22:00']] },
+  salle: { 2: [['Déjeuner', '12:30'], ['Dîner', '20:00']], 3: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Dîner', '20:00']], 4: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Dîner', '20:30']], 5: [['Petit-déj', '07:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Post-séance', '19:00'], ['Dîner', '20:30']], 6: [['Petit-déj', '07:30'], ['Collation', '10:30'], ['Déjeuner', '12:30'], ['Pré-séance', '16:30'], ['Post-séance', '19:00'], ['Dîner', '20:30']] },
+  repos: { 2: [['Déjeuner', '12:30'], ['Dîner', '20:00']], 3: [['Petit-déj', '08:00'], ['Déjeuner', '12:30'], ['Dîner', '20:00']], 4: [['Petit-déj', '08:00'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00']], 5: [['Petit-déj', '08:00'], ['Collation', '10:30'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00']], 6: [['Petit-déj', '08:00'], ['Collation', '10:30'], ['Déjeuner', '12:30'], ['Collation', '16:30'], ['Dîner', '20:00'], ['Collation du soir', '22:00']] },
 };
-const repasNb = cfg => { const n = +cfg.repasNb; return n >= 3 && n <= 6 ? n : 4; };
+const repasNb = cfg => { const n = +cfg.repasNb; return n >= 2 && n <= 6 ? n : 4; };
 /* jour de séance avec une heure connue : repas placés autour de la séance (pré, post), sinon horaires types */
 const slotsVides = (cfg, statut, date, j) => { const hs = statut === 'salle' && date ? Apex.heureSeanceJour(cfg, j, date) : null;
   return (hs ? Apex.horairesJour('05:00', repasNb(cfg), { h: hs, duree: (cfg.q && cfg.q.duree) || 60 }) : (SLOTS_N[statut] || SLOTS_N.repos)[repasNb(cfg)]).map(s => ({ id: Apex.uid(), nom: s[0], h: s[1], ok: false, items: [] })); };
@@ -4718,7 +4738,7 @@ function Repas({ date }) {
         <//>
         <${PlanCard} cfg=${cfg} onWeek=${setWk} onIA=${() => (estPro() ? setIa(true) : ouvrirPro())} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} onImp=${() => setImp(true)} />
         <${Card} title="Repas" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Ajouter</button>`}>
-          ${!man && vide && html`<div className="rp-nb"><span>Repas par jour</span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repasNb(cfg) === n} onClick=${() => setNb(n)}>${n}</button>`)}</div></div>`}
+          ${!man && vide && html`<div className="rp-nb"><span>Repas par jour</span><div className="chips">${[2, 3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repasNb(cfg) === n} onClick=${() => setNb(n)}>${n}</button>`)}</div></div>`}
           ${vide && mode !== 'libre' && !man && html`<div className="note acc"><${Icon} n="utensils" /><div><span>${mode === 'perso' && !semOk ? 'Remplis tes repas, ou charge le menu de base puis enregistre-le pour les ' + jourNom + 's.' : 'Remplis tes repas toi-même, ou charge le menu du ' + jourNom + ' calé sur ' + f0(c.kcal) + ' kcal.'}</span><button type="button" className="btn sm pri" onClick=${gen}><${Icon} n="utensils" s=${16} />${mode === 'perso' && semOk ? 'Charger mon menu du ' + jourNom : 'Charger le menu du ' + jourNom}</button></div></div>`}
           ${meals.length ? html`<div className="stack">${meals.map(m => html`<${MealCard} key=${m.id} m=${m} foods=${foods} pesee=${pesee}
             onToggle=${() => mapMeal(m.id, x => Object.assign({}, x, { ok: !x.ok }))}
@@ -6296,7 +6316,7 @@ function Coach({ date }) {
 /* ---- 66-ui-onboard.js ---- */
 /* Macrolya — assistant de démarrage : questions, calcul précis des calories, programme de séances, lien Claude.
    S'affiche à la première ouverture (profil vide) ou via Réglages › Refaire le questionnaire. */
-const REPAS_TXT = { 3: 'Petit-déj, déjeuner, dîner.', 4: 'Petit-déj, déjeuner, collation (pré-séance les jours de salle), dîner.', 5: 'Jours de salle : petit-déj, déjeuner, pré-séance, post-séance, dîner. Repos : 2 collations.', 6: 'Petit-déj, collation, déjeuner, pré et post-séance, dîner (collation du soir au repos).' };
+const REPAS_TXT = { 2: 'Déjeuner et dîner. Les jours actifs, le repas après la séance sert de post-séance, avec plus de glucides.', 3: 'Petit-déj, déjeuner, dîner.', 4: 'Petit-déj, déjeuner, collation (pré-séance les jours de salle), dîner.', 5: 'Jours de salle : petit-déj, déjeuner, pré-séance, post-séance, dîner. Repos : 2 collations.', 6: 'Petit-déj, collation, déjeuner, pré et post-séance, dîner (collation du soir au repos).' };
 const STEPS = ['bienvenue', 'prenom', 'objectif', 'intensite', 'profil', 'activite', 'sport', 'sports', 'training', 'focus', 'alim', 'supps', 'resultat', 'claude'];
 const METIERS = [['sedentaire', 'Sédentaire', 'Bureau, études, télétravail : peu de déplacements.', 'clock'], ['debout', 'Debout ou mobile', 'Commerce, enseignement, service : tu bouges dans la journée.', 'steps'], ['actif', 'Physique', 'Manutention, chantier, métier très actif.', 'bolt']];
 const NIVEAUX = [['debutant', 'Débutant', 'Moins d’un an de musculation régulière.', 'target'], ['intermediaire', 'Intermédiaire', '1 à 3 ans, tu connais les mouvements de base.', 'dumbbell'], ['avance', 'Avancé', 'Plus de 3 ans, progression lente.', 'trend']];
@@ -6469,7 +6489,7 @@ function Wizard({ redo, onClose }) {
       <${MultiChips} items=${Apex.FOCUS_CHOIX} value=${a.focus} onToggle=${v => toggle('focus', v)} />
       <p className="mut" style=${{ fontSize: 12 }}>${a.focus.length ? a.focus.length + ' choisi' + (a.focus.length > 1 ? 's' : '') + '. Conseil : 3 maximum pour que ça reste efficace.' : 'Aucun : programme équilibré.'}</p>`,
     alim: () => html`<h1>Ton alimentation</h1>
-      <div className="stack"><span className="fld-l">Combien de repas par jour ?<b>${a.repasNb || 4}</b></span><div className="chips">${[3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${(a.repasNb || 4) === n} onClick=${() => set({ repasNb: n })}>${n} repas</button>`)}</div>
+      <div className="stack"><span className="fld-l">Combien de repas par jour ?<b>${a.repasNb || 4}</b></span><div className="chips">${[2, 3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${(a.repasNb || 4) === n} onClick=${() => set({ repasNb: n })}>${n} repas</button>`)}</div>
         <span className="mut" style=${{ fontSize: 12 }}>${REPAS_TXT[a.repasNb || 4]}</span></div>
       <div className="stack"><span className="fld-l">Régime</span><${Opts} items=${REGIMES} value=${a.regime} onPick=${v => set({ regime: v })} /></div>
       <label className="fld" htmlFor="w-excl"><span className="fld-l">Allergies ou aliments à éviter</span><input id="w-excl" className="inp" type="text" maxLength="120" placeholder="ex. arachides, gluten, poisson" value=${a.exclus} onChange=${e => set({ exclus: e.target.value })} /></label>
