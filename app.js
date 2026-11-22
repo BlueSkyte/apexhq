@@ -3889,16 +3889,17 @@ function DebriefCard({ date, go, onEdit, photos }) {
     setBusy(false);
   };
   return html`<${Card} cls="c5 r2" title=${cfg.profil.prenom ? 'Bonjour ' + cfg.profil.prenom : 'Debrief matinal'} sub=${(cfg.profil.prenom ? 'Debrief matinal · ' : '') + dMid(date)} right=${html`<button type="button" className="btn sm" onClick=${onEdit}>Modifier</button>`}>
-    <div className=${cx('verdict', v[0])}><i><${Icon} n=${v[2]} s=${22} w=${2.2} /></i><div><b>${v[1]}</b><span>${todo.length ? todo[0].txt : 'Sommeil, pas et calories sont dans la cible. Garde le plan du jour.'}</span></div></div>
-    <div className="tiles t2">
-      <div className="tile"><span>Poids</span><b>${f1(j.poids)}<small>kg</small></b><em>moy. 7 j ${m ? f1(m.v) : '–'}</em></div>
-      <div className="tile"><span>Rythme</span><b>${t ? sgn(t.pct) : '–'}<small>%/sem</small></b><em>${t ? sgn(t.dk, f2) + ' kg' : 'dès 2 semaines'}</em></div>
-      <div className="tile"><span>Sommeil</span><b>${f1(j.sommeil)}<small>h</small></b><em>${j.sommeilQ != null ? 'qualité ' + j.sommeilQ + '/10' : ''}</em></div>
-      <div className="tile"><span>Forme</span><b>${j.energie == null ? '–' : j.energie}<small>/10</small></b><em>récup ${j.force == null ? '–' : j.force}/10</em></div>
+    ${(() => { const stOf = k => (rows.find(r => r.k === k) || {}).st, rt = rows.find(r => /rythme/i.test(r.lab || ''));
+      const T = [['Poids', f1(j.poids), 'kg', m ? 'moy. 7 j ' + f1(m.v) : '', null], ['Rythme', t ? sgn(t.pct) : '–', '%/sem', t ? sgn(t.dk, f2) + ' kg' : 'dès 2 sem.', rt && rt.st],
+        ['Sommeil', f1(j.sommeil), 'h', j.sommeilQ != null ? 'qualité ' + j.sommeilQ + '/10' : '', stOf('sommeil')], ['Forme', j.energie == null ? '–' : j.energie, '/10', 'récup ' + (j.force == null ? '–' : j.force) + '/10', stOf('forme')]];
+      return html`<div className="dbm">${T.map(x => html`<div key=${x[0]} className="dbm-i"><span>${x[4] && x[4] !== 'info' && html`<i className=${'dot ' + x[4]}></i>`}${x[0]}</span><b>${x[1]}${x[1] !== "–" && html`<small>${x[2]}</small>`}</b><em>${x[3]}</em></div>`)}</div>`; })()}
+    <div className="dbt">
+      <span className="dbt-h">${todo.length ? 'À ajuster aujourd’hui' : 'Tout est dans le vert'}</span>
+      ${todo.length ? todo.slice(0, 3).map((r, i) => html`<div key=${r.k} className="dbt-r"><i className=${'dot ' + r.st}></i><div><b>${r.lab}<small>${r.tag}</small></b>${i === 0 && r.txt && html`<p>${r.txt}</p>`}</div></div>`)
+        : html`<p className="sec" style=${{ fontSize: 13 }}>Sommeil, pas et calories sont dans la cible. Garde le plan du jour.</p>`}
     </div>
-    ${photos != null && (photos < POSES.length ? html`<div className="note acc"><${Icon} n="camera" /><div><span><b>Jour photos : ${photos} / ${POSES.length}.</b> Face, profil, dos avant de manger.</span><button type="button" className="btn sm pri" onClick=${onEdit}><${Icon} n="camera" s=${16} />Ajouter mes photos</button></div></div>`
-      : html`<div className="note good"><${Icon} n="check" /><div><span><b>Photos de la semaine faites.</b> Comparatif dans l’onglet Analyse.</span></div></div>`)}
-    ${todo.length > 1 && html`<div className="row" style=${{ flexWrap: 'wrap', gap: 6 }}>${todo.slice(1).map(r => html`<${Pill} key=${r.k} st=${r.st}>${r.lab} · ${r.tag}<//>`)}</div>`}
+    ${photos != null && (photos < POSES.length ? html`<button type="button" className="dbp" onClick=${onEdit}><${Icon} n="camera" s=${18} /><span><b>Jour photos · ${photos} / ${POSES.length}</b><small>Face, profil, dos, avant de manger</small></span><${Icon} n="chevR" s=${16} /></button>`
+      : html`<div className="dbp ok"><${Icon} n="check" s=${18} /><span><b>Photos de la semaine faites</b><small>Comparatif dans l’onglet Analyse</small></span></div>`)}
     ${j.coach && j.coach.correction && html`<div className="note acc"><${Icon} n="sparkles" /><div><span><b>Coach :</b> ${j.coach.correction}</span></div></div>`}
     ${sample && html`<button type="button" className="btn wide" disabled=${busy} onClick=${run}><${Icon} n="sparkles" s=${18} />${busy ? 'L’IA analyse…' : ia ? 'Refaire le debrief IA' : 'Debrief personnalisé par l’IA'}</button>`}
     ${ia && html`<div className="note acc"><${Icon} n="sparkles" /><div><span className="pre" style=${{ color: 'var(--ink)' }}>${ia}</span></div></div><${IaNote} />`}
@@ -7459,7 +7460,7 @@ function App() {
   return html`<div>
     <header className="top"><div className=${cx('wrap top-in', (proReel || dev || ser > 0) && 'has-pro')}>
       <div className="brand"><${Icon} n="apex" s=${22} w=${2.6} />Macrolya${dev ? html`<span className="pro-badge dev" title="Créateur de Macrolya">DEV</span>` : proReel && html`<span className="pro-badge" title="Macrolya Pro">PRO</span>`}${ser > 0 && html`<${Flamme} n=${ser} pro=${proReel || dev} />`}</div>
-      <span className=${cx('sync', sc[0])} role="status"><i></i>${sc[1]}</span>
+      <span className=${cx('sync', sc[0])} role="status" title=${sc[1]}><i></i><span className="sync-t">${sc[1]}</span></span>
       <span className="grow"></span>
       <button type="button" className="ib" aria-label="Actualiser l’app" onClick=${refreshApp}><${Icon} n="refresh" /></button>
       <button type="button" className="ib top-gear" aria-label="Paramètres" onClick=${() => setOpen(true)}><${Icon} n="sliders" /></button>

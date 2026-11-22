@@ -1213,7 +1213,7 @@ button.wo-ok { cursor: pointer; padding: 0; } button.wo-ok:active { transform: s
 .pro-badge.dev { color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .35); background-image: linear-gradient(110deg, #ff8a57 0%, #8b5cf6 25%, #38bdf8 50%, #8b5cf6 75%, #ff8a57 100%); box-shadow: 0 3px 14px rgba(139, 92, 246, .45); animation-duration: 7s; }
 @keyframes badge-flow { from { background-position: 0% 50%; } to { background-position: 300% 50%; } }
 @media (prefers-reduced-motion: reduce) { .pro-badge { animation: none; } }
-@media (max-width: 420px) { .has-pro .sync:not(.err):not(.pend) { display: none; } }
+
 /* ---------- onglet Jour épuré ---------- */
 .hj { display: grid; margin: 4px 0 2px; }
 .hj-m { display: grid; gap: 12px; min-width: 0; }
@@ -1254,10 +1254,38 @@ body[data-theme="rose"] { --acc: #e11d74; --acc-hi: #f9a8d4; --acc-ink: #1a0310;
   .has-pro .pro-badge { margin-left: 4px; padding: 3px 7px; font-size: 10px; letter-spacing: .1em; }
   .has-pro .flamme { margin-left: 4px; padding: 2px 7px 2px 4px; } .has-pro .flamme b { font-size: 14px; }
 }
+/* en-tête : logo, badge, flamme, synchro et boutons toujours sur une ligne sur téléphone */
+@media (max-width: 480px) {
+  .top-in { column-gap: 8px; }
+  .brand { flex: none; }
+  .sync:not(.err) .sync-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .top-in > .ib { width: 34px; height: 34px; }
+}
+@media (max-width: 360px) { .brand { font-size: 15px; letter-spacing: .03em; } .pro-badge { margin-left: 3px; } }
+/* ---------- carte « Bonjour » épurée ---------- */
+.dbm { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.dbm-i { display: grid; gap: 2px; padding: 10px 8px; text-align: center; border-left: 1px solid var(--line); min-width: 0; }
+.dbm-i:first-child { border-left: 0; }
+.dbm-i span { display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 11px; color: var(--ink-3); letter-spacing: .02em; }
+.dbm-i b { font: 700 22px/1.1 var(--f-num); } .dbm-i b small { font: 500 10px var(--f-ui); color: var(--ink-3); margin-left: 2px; }
+.dbm-i em { font-style: normal; font-size: 10px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--ink-3); }
+.dot.good { background: var(--good); } .dot.warn { background: var(--warn); } .dot.crit { background: var(--crit); }
+.dbt { display: grid; gap: 10px; }
+.dbt-h { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.dbt-r { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; }
+.dbt-r > .dot { margin-top: 6px; }
+.dbt-r b { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 14px; font-weight: 600; }
+.dbt-r b small { font-size: 12px; font-weight: 500; color: var(--ink-3); }
+.dbt-r p { margin-top: 3px; font-size: 13px; color: var(--ink-2); }
+.dbp { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; width: 100%; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, .035); color: var(--ink); text-align: left; }
+.dbp span { display: grid; } .dbp b { font-size: 14px; } .dbp small { font-size: 12px; color: var(--ink-3); }
+.dbp > .ic:first-child { color: var(--acc-hi); } .dbp.ok > .ic:first-child { color: var(--good); }
+@media (max-width: 360px) { .dbm { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dbm-i:nth-child(3) { border-left: 0; } .dbm-i:nth-child(n+3) { border-top: 1px solid var(--line); } }
 </style>
 </head><body>
 <div id="app" class="app"><p style="padding:48px 16px;color:#85847e;font-family:system-ui,sans-serif">Chargement de Macrolya…</p></div>
-<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261122144536'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_RELAY = "https://script.google.com/macros/s/AKfycbxO8jSVN56K2yio_DV3wzEUJuUFTh3Xd0xmj77j6CejCK5R26ftBlWnprUg3Xsv_PF-/exec";  window.APEX_FB = {"apiKey":"AIzaSyAAM7fLuA42_fmWuwLzI_O6c6oFC8wME-M","projectId":"macrovamacrova"}; window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
+<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261122145303'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_RELAY = "https://script.google.com/macros/s/AKfycbxO8jSVN56K2yio_DV3wzEUJuUFTh3Xd0xmj77j6CejCK5R26ftBlWnprUg3Xsv_PF-/exec";  window.APEX_FB = {"apiKey":"AIzaSyAAM7fLuA42_fmWuwLzI_O6c6oFC8wME-M","projectId":"macrovamacrova"}; window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
 window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__bip = e; window.dispatchEvent(new Event('apex-bip')); });
 window.addEventListener('appinstalled', function () { window.__bip = null; });</script>
 <script src="vendor/react.min.js"></script><script src="vendor/react-dom.min.js"></script><script src="vendor/htm.js"></script>
