@@ -3750,13 +3750,16 @@ function Hero({ date, go }) {
       ${salle ? html`<button type="button" className="hj-s" onClick=${() => setSh(true)} aria-label="Modifier la séance du jour"><${Icon} n="dumbbell" s=${15} />${seance || 'Séance'}${hS ? ' · ≈ ' + hLib(hS) : ' · heure ?'}<${Icon} n="chevR" s=${15} /></button>`
         : html`<button type="button" className="hj-s ghost" onClick=${() => { Store.patch('journal', date, { date, statut: 'salle' }); setSh(true); }}><${Icon} n="plus" s=${15} />Séance aujourd’hui</button>`}
     </div>
+    <div className="hero-main">
+      <div className="hero-l"><div className="hero-n">${f0(c.kcal)}<small>kcal</small></div><div className="hero-s">objectif du jour${reel.k > 0 ? ' · ' + f0(reel.k) + ' mangées' : ''}</div></div>
+      <${Ring} v=${reel.k} v2=${0} max=${c.kcal} size=${118} sw=${10}><b style=${{ fontSize: 24 }}>${trop ? '+' + f0(reel.k - c.kcal) : f0(c.kcal - reel.k)}</b><span>${trop ? 'en trop' : 'restantes'}</span><//>
+    </div>
     <div className="hj">
-      <${Ring} v=${reel.k} v2=${0} max=${c.kcal} size=${128} sw=${10}><b style=${{ fontSize: 26 }}>${trop ? '+' + f0(reel.k - c.kcal) : f0(c.kcal - reel.k)}</b><span>${trop ? 'kcal en trop' : reel.k > 0 ? 'restantes' : 'kcal à manger'}</span><//>
       <div className="hj-m">${M.map(m => html`<div key=${m[0]} className="hj-r"><div className="hj-l"><span>${m[0]}</span><b>${f0(m[1])}<small> / ${f0(m[2])} g</small></b></div>
         <div className="hj-b" role="img" aria-label=${m[0] + ' : ' + f0(m[1]) + ' sur ' + f0(m[2]) + ' g'}><i style=${{ width: Math.min(100, m[2] ? m[1] / m[2] * 100 : 0) + '%', background: m[3] }}></i></div></div>`)}</div>
     </div>
     <p className="hj-i">${[jour > 0 ? 'J' + jour + ' · semaine ' + Math.ceil(jour / 7) : 'Avant le départ', salle ? 'glucides autour de la séance' : 'glucides réduits, protéines hautes', f0(cfg.cibles.pasMin) + ' pas minimum'].join(' · ')}</p>
-    <button type="button" className="btn wide" onClick=${() => go('repas')}><${Icon} n="utensils" s=${18} />Mes repas du jour</button>
+    <div className="row" style=${{ gap: 8 }}><button type="button" className="btn grow" onClick=${() => go('repas')}><${Icon} n="utensils" s=${18} />Mes repas</button>${salle && html`<button type="button" className="btn grow" onClick=${() => go('training')}><${Icon} n="dumbbell" s=${18} />Ma séance</button>`}</div>
     ${sh && html`<${Sheet} title="Ta séance du jour" onClose=${() => setSh(false)}>
       <div className="stack"><span className="fld-l">Ce que tu entraînes</span><div className="chips">${Apex.types(cfg).map(tp => html`<button key=${tp} type="button" className="chip" aria-pressed=${seance === tp} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: tp })}>${tp}</button>`)}</div></div>
       <${HeureSeance} id="hj-h" label="À quelle heure, aujourd’hui ?" value=${hS} onPick=${v => Store.patch('journal', date, { date, hSeance: v || '' })} aide="Pour ce jour seulement : tes repas se placent autour de cette heure. Ton heure habituelle se règle dans Paramètres › Profil." />
@@ -3883,10 +3886,6 @@ function DebriefCard({ date, go, onEdit, photos }) {
       : html`<div className="note good"><${Icon} n="check" /><div><span><b>Photos de la semaine faites.</b> Comparatif dans l’onglet Analyse.</span></div></div>`)}
     ${todo.length > 1 && html`<div className="row" style=${{ flexWrap: 'wrap', gap: 6 }}>${todo.slice(1).map(r => html`<${Pill} key=${r.k} st=${r.st}>${r.lab} · ${r.tag}<//>`)}</div>`}
     ${j.coach && j.coach.correction && html`<div className="note acc"><${Icon} n="sparkles" /><div><span><b>Coach :</b> ${j.coach.correction}</span></div></div>`}
-    <div className="plan-j">
-      <div><span className="fld-l">Aujourd’hui</span><b>${c.statut === 'salle' ? 'Salle' + (type ? ' · ' + type : '') : 'Repos'}</b><span className="mut">${f0(c.kcal)} kcal · P ${c.p} g</span></div>
-      <div className="row" style=${{ gap: 8 }}><button type="button" className="btn sm" onClick=${() => go('repas')}><${Icon} n="utensils" s=${16} />Repas</button>${c.statut === 'salle' && html`<button type="button" className="btn sm" onClick=${() => go('training')}><${Icon} n="dumbbell" s=${16} />Séance</button>`}</div>
-    </div>
     ${sample && html`<button type="button" className="btn wide" disabled=${busy} onClick=${run}><${Icon} n="sparkles" s=${18} />${busy ? 'L’IA analyse…' : ia ? 'Refaire le debrief IA' : 'Debrief personnalisé par l’IA'}</button>`}
     ${ia && html`<div className="note acc"><${Icon} n="sparkles" /><div><span className="pre" style=${{ color: 'var(--ink)' }}>${ia}</span></div></div><${IaNote} />`}
     ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
@@ -7249,6 +7248,8 @@ const STANDALONE = !!window.APEX_STANDALONE;
 const TABS_ALL = [['dashboard', 'Jour', 'home'], ['repas', 'Repas', 'utensils'], ['training', 'Training', 'dumbbell'], ['coach', 'Coach', 'chat'], ['analytics', 'Analyse', 'chart']];
 const tabOf = () => { let h = ''; try { h = (location.hash || '').replace('#', ''); } catch (e) { h = ''; } return TABS_ALL.some(t => t[0] === h) ? h : 'dashboard'; };
 const SYNC = { boot: ['', 'Connexion…'], wait: ['pend', 'Connexion…'], local: ['', 'Sur cet appareil'], ok: ['ok', 'Synchronisé'], stale: ['pend', 'Hors ligne'], err: ['err', 'Synchro en erreur'] };
+/* comptes du créateur : badge DEV à la place de PRO (identifiant Firebase, pas un secret) */
+const DEV_UIDS = ['R22EpQ5y8KSm0PiUfpCVlapH2iw2'];
 const JOURS = [[1, 'Lundi'], [2, 'Mardi'], [3, 'Mercredi'], [4, 'Jeudi'], [5, 'Vendredi'], [6, 'Samedi'], [0, 'Dimanche']];
 
 /* Rubrique Profil : carte résumé, puis groupes façon iPhone (identité, corps, cibles, planning). */
@@ -7418,10 +7419,11 @@ function App() {
   const wiz = !needAuth && !auth && (cfg.onboarded === false || (cfg.onboarded == null && (sy.mode === 'ok' || sy.mode === 'local') && !Object.keys(S.journal).length && !Object.keys(S.seances).length));
   /* badge réservé aux vrais abonnés Pro ou VIP (code cadeau), même pendant le lancement où tout est offert */
   const proReel = !!(cfg.pro && cfg.pro.fin && cfg.pro.fin >= Apex.today());
+  const dev = !!(STANDALONE && Cloud.on() && u && DEV_UIDS.indexOf(u.uid) >= 0);
   const View = tab === 'repas' ? Repas : tab === 'training' ? Training : tab === 'analytics' ? Analytics : tab === 'coach' ? Coach : Dashboard;
   return html`<div>
-    <header className="top"><div className=${cx('wrap top-in', proReel && 'has-pro')}>
-      <div className="brand"><${Icon} n="apex" s=${22} w=${2.6} />Macrolya${proReel && html`<span className="pro-badge" title="Macrolya Pro">PRO</span>`}</div>
+    <header className="top"><div className=${cx('wrap top-in', (proReel || dev) && 'has-pro')}>
+      <div className="brand"><${Icon} n="apex" s=${22} w=${2.6} />Macrolya${dev ? html`<span className="pro-badge dev" title="Créateur de Macrolya">DEV</span>` : proReel && html`<span className="pro-badge" title="Macrolya Pro">PRO</span>`}</div>
       <span className=${cx('sync', sc[0])} role="status"><i></i>${sc[1]}</span>
       <span className="grow"></span>
       <button type="button" className="ib" aria-label="Actualiser l’app" onClick=${refreshApp}><${Icon} n="refresh" /></button>
