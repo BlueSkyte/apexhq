@@ -2321,6 +2321,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
      Sortie : [[nom, 'HH:MM', rôle 'pre' | 'post' | undefined], …] dans l'ordre. */
   /* Heure de séance d'un jour (0 = dimanche) : réglage du jour, sinon heure habituelle, sinon null. */
   function heureSeance(cfg, dow) { const h = (cfg && cfg.seanceH) || {}, v = h[dow] || h.def; return minutes(v) == null ? null : v; }
+  function heureSeanceJour(cfg, j, date) { if (j && j.hSeance != null) return minutes(j.hSeance) == null ? null : j.hSeance; return heureSeance(cfg, A.dow(date)); }
   function horairesJour(heure, n, seance) {
     const m0 = minutes(heure), now = m0 == null ? 420 : Math.min(23 * 60 + 45, m0), fin = 23 * 60 + 45, t0 = Math.ceil(now / 5) * 5;
     n = Math.max(1, Math.min(8, Math.round(n) || 1));
@@ -2430,7 +2431,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     } catch (e) { return null; }
   }
 
-  Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine, optimiserJour, promptMenuJour, menuJourIA, resteJour, horairesJour, repartirGlucides, heureSeance, validerJourIA, recentsRepas, inspiration });
+  Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine, optimiserJour, promptMenuJour, menuJourIA, resteJour, horairesJour, repartirGlucides, heureSeance, heureSeanceJour, validerJourIA, recentsRepas, inspiration });
 })();
 
 /* ---- 13b-import-menu.js ---- */
@@ -3736,36 +3737,31 @@ function IaNote({ court }) {
 /* ---- 30-ui-dashboard.js ---- */
 /* Macrolya — onglet 1 : statut du jour, check-in matinal à jeun, lecture, poids, mensurations. */
 
+/* Carte du jour, volontairement épurée : anneau des kcal restantes, 3 barres de macros, la séance du jour (type + heure modifiables). */
 function Hero({ date, go }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
   const j = S.journal[date] || {}, c = Apex.cibleDuJour(cfg, j, date), seance = Apex.seanceDuJour(cfg, j, date);
-  const t = Apex.totJour(j, foods), man = !!t.man, reel = t.man || t.eat, jour = Apex.diffDays(date, cfg.profil.dateDepart) + 1;
-  const pc = c.kcal ? Math.round(reel.k / c.kcal * 100) : 0;
+  const t = Apex.totJour(j, foods), reel = t.man || t.eat, trop = reel.k > c.kcal, salle = c.statut === 'salle', jour = Apex.diffDays(date, cfg.profil.dateDepart) + 1;
+  const hS = salle ? Apex.heureSeanceJour(cfg, j, date) : null, [sh, setSh] = useState(false);
+  const M = [['Protéines', reel.p, c.p, 'var(--p)'], ['Glucides', reel.g, c.g, 'var(--g)'], ['Lipides', reel.l, c.l, 'var(--l)']];
   return html`<section className="card hero c7">
     <div className="row sb">
-      <span className="eyebrow"><i></i>${c.statut === 'salle' ? 'Jour de salle' + (seance ? ' · ' + seance : '') : 'Jour de repos'}</span>
-      <span className="hero-s">${jour > 0 ? 'J' + jour + ' · semaine ' + Math.ceil(jour / 7) : 'Avant le départ'}</span>
+      <span className="eyebrow"><i></i>${salle ? 'Jour de salle' : 'Jour de repos'}</span>
+      ${salle ? html`<button type="button" className="hj-s" onClick=${() => setSh(true)} aria-label="Modifier la séance du jour"><${Icon} n="dumbbell" s=${15} />${seance || 'Séance'}${hS ? ' · ≈ ' + hLib(hS) : ' · heure ?'}<${Icon} n="chevR" s=${15} /></button>`
+        : html`<button type="button" className="hj-s ghost" onClick=${() => { Store.patch('journal', date, { date, statut: 'salle' }); setSh(true); }}><${Icon} n="plus" s=${15} />Séance aujourd’hui</button>`}
     </div>
-    <div className="hero-main">
-      <div className="hero-l">
-        <div className="hero-n">${f0(c.kcal)}<small>kcal</small></div>
-        <div className="hero-s">${c.ajust !== 0 ? 'dont ' + sgn(c.ajust, f0) + ' de lissage (base ' + f0(c.base) + ')' : 'objectif du jour'}</div>
-      </div>
-      <${Ring} v=${reel.k} v2=${0} max=${c.kcal} size=118 sw=10><b style=${{ fontSize: 28 }}>${reel.k > 0 ? pc + ' %' : '–'}</b><span>${reel.k > c.kcal ? 'dépassé' : 'mangé'}</span><//>
+    <div className="hj">
+      <${Ring} v=${reel.k} v2=${0} max=${c.kcal} size=${128} sw=${10}><b style=${{ fontSize: 26 }}>${trop ? '+' + f0(reel.k - c.kcal) : f0(c.kcal - reel.k)}</b><span>${trop ? 'kcal en trop' : reel.k > 0 ? 'restantes' : 'kcal à manger'}</span><//>
+      <div className="hj-m">${M.map(m => html`<div key=${m[0]} className="hj-r"><div className="hj-l"><span>${m[0]}</span><b>${f0(m[1])}<small> / ${f0(m[2])} g</small></b></div>
+        <div className="hj-b" role="img" aria-label=${m[0] + ' : ' + f0(m[1]) + ' sur ' + f0(m[2]) + ' g'}><i style=${{ width: Math.min(100, m[2] ? m[1] / m[2] * 100 : 0) + '%', background: m[3] }}></i></div></div>`)}</div>
     </div>
-    <div className="hero-bars">
-      ${(() => { const E = echelleMacros(c.p, c.g, c.l, reel.p, reel.g, reel.l, man ? 0 : t.plan.p, man ? 0 : t.plan.g, man ? 0 : t.plan.l); return html`<${React.Fragment}>
-      <${Meter} label="Protéines" v=${reel.p} v2=${man ? 0 : t.plan.p} max=${c.p} c="var(--p)" echelle=${E} />
-      <${Meter} label="Glucides" v=${reel.g} v2=${man ? 0 : t.plan.g} max=${c.g} c="var(--g)" echelle=${E} />
-      <${Meter} label="Lipides" v=${reel.l} v2=${man ? 0 : t.plan.l} max=${c.l} c="var(--l)" echelle=${E} /><//>`; })()}
-    </div>
-    ${c.statut === 'salle' && html`<div className="chips" role="group" aria-label="Séance du jour">
-      ${Apex.types(cfg).map(tp => html`<button key=${tp} className="chip" aria-pressed=${seance === tp} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: tp })}>${tp}</button>`)}
-    </div>`}
-    <div className="row sb">
-      ${reel.k > c.kcal ? html`<span className="sur-row"><span className="sur-pill"><${Icon} n="flame" s=${14} />+${f0(reel.k - c.kcal)} kcal</span>${reel.p < c.p ? html`<span className="sur-pill neu">encore ${f0(c.p - reel.p)} g de protéines</span>` : html`<span className="sur-pill neu">protéines OK</span>`}</span>` : html`<span className="hero-s">${reel.k > 0 ? 'Reste ' + f0(c.kcal - reel.k) + ' kcal · ' + f0(Math.max(0, c.p - reel.p)) + ' g de protéines' : c.statut === 'salle' ? 'Glucides autour de la séance, ' + f0(cfg.cibles.pasMin) + ' pas minimum.' : 'Glucides réduits, protéines hautes, ' + f0(cfg.cibles.pasMin) + ' pas minimum.'}</span>`}
-      <button className="btn sm" onClick=${() => go('repas')}>Plan repas<${Icon} n="chevR" s=${16} /></button>
-    </div>
+    <p className="hj-i">${[jour > 0 ? 'J' + jour + ' · semaine ' + Math.ceil(jour / 7) : 'Avant le départ', salle ? 'glucides autour de la séance' : 'glucides réduits, protéines hautes', f0(cfg.cibles.pasMin) + ' pas minimum'].join(' · ')}</p>
+    <button type="button" className="btn wide" onClick=${() => go('repas')}><${Icon} n="utensils" s=${18} />Mes repas du jour</button>
+    ${sh && html`<${Sheet} title="Ta séance du jour" onClose=${() => setSh(false)}>
+      <div className="stack"><span className="fld-l">Ce que tu entraînes</span><div className="chips">${Apex.types(cfg).map(tp => html`<button key=${tp} type="button" className="chip" aria-pressed=${seance === tp} onClick=${() => Store.patch('journal', date, { date, statut: 'salle', seance: tp })}>${tp}</button>`)}</div></div>
+      <${HeureSeance} id="hj-h" label="À quelle heure, aujourd’hui ?" value=${hS} onPick=${v => Store.patch('journal', date, { date, hSeance: v || '' })} aide="Pour ce jour seulement : tes repas se placent autour de cette heure. Ton heure habituelle se règle dans Paramètres › Profil." />
+      <div className="row"><button type="button" className="btn grow" onClick=${() => { Store.patch('journal', date, { date, statut: 'repos', seance: null }); setSh(false); }}>Pas de séance aujourd’hui</button><button type="button" className="btn pri grow" onClick=${() => setSh(false)}>OK</button></div>
+    <//>`}
   </section>`;
 }
 
@@ -3773,10 +3769,10 @@ function Activite({ date, cls }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), j = S.journal[date] || {};
   const set = k => v => Store.patch('journal', date, { date, [k]: v });
   const eau = j.eau || 0;
-  return html`<${Card} cls=${cls} title="Activité du jour" sub=${'Cibles : ' + f0(cfg.cibles.pasMin) + '–' + f0(cfg.cibles.pasMax) + ' pas · ' + fq(cfg.cibles.eau) + ' L'}>
+  return html`<${Card} cls=${cls} title="Pas et eau">
     <div className="form">
-      <${Num} id="act-pas" label="Pas" value=${j.pas == null ? null : j.pas} onChange=${set('pas')} dec=${0} min=${0} max=${80000} placeholder="0" />
-      <div className="fld"><span className="fld-l">Eau<b>${fq(eau)} L</b></span>
+      <${Num} id="act-pas" label=${'Pas · objectif ' + f0(cfg.cibles.pasMin)} value=${j.pas == null ? null : j.pas} onChange=${set('pas')} dec=${0} min=${0} max=${80000} placeholder="0" />
+      <div className="fld"><span className="fld-l">Eau<b>${fq(eau)} / ${fq(cfg.cibles.eau)} L</b></span>
         <div className="row"><button className="btn grow" aria-label="Retirer 25 cl" onClick=${() => set('eau')(Math.max(0, Math.round((eau - 0.25) * 100) / 100) || null)}><${Icon} n="minus" s=${18} /></button>
         <button className="btn grow" aria-label="Ajouter 25 cl" onClick=${() => set('eau')(Math.round((eau + 0.25) * 100) / 100)}><${Icon} n="plus" s=${18} /></button></div></div>
     </div>
@@ -3824,7 +3820,7 @@ function PoidsCard({ date, win }) {
 
 function Dashboard({ date, go, setDate }) {
   return html`<div>
-    <div className="view-h"><h1>${dLong(date)}</h1><p>Check-in à jeun, cibles du jour.</p></div>
+    <div className="view-h"><h1>${dLong(date)}</h1></div>
     <div className="grid">
       <div className="c12"><${WeekStrip} date=${date} setDate=${setDate} /></div>
       <${Hero} date=${date} go=${go} />
@@ -4470,7 +4466,7 @@ function MenuIASheet({ onClose, jour }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [res, setRes] = useState(null); const refus = useRef([]);
   const IDEES = day ? IDEES_JOUR : IDEES_SEM;
   /* jour de séance : heure de la séance (réglage du jour ou habituel), modifiable ici pour aujourd'hui */
-  const salle = day && c.statut === 'salle', [hS, setHS] = useState(() => (salle ? Apex.heureSeance(cfg, Apex.dow(jour)) : null));
+  const salle = day && c.statut === 'salle', [hS, setHS] = useState(() => (salle ? Apex.heureSeanceJour(cfg, j, jour) : null));
   const seanceO = salle && hS ? { h: hS, duree: (cfg.q && cfg.q.duree) || 60 } : null;
   const ajoute = p => setTxt(t => (t.indexOf(p) >= 0 ? t : (t ? t.replace(/[. ]+$/, '') + '. ' : '') + p));
   const nom = it => (it.x ? it.x.n : (foods[it.a] ? foods[it.a].n : it.a));
@@ -4577,7 +4573,7 @@ const SLOTS_N = {
 };
 const repasNb = cfg => { const n = +cfg.repasNb; return n >= 3 && n <= 6 ? n : 4; };
 /* jour de séance avec une heure connue : repas placés autour de la séance (pré, post), sinon horaires types */
-const slotsVides = (cfg, statut, date) => { const hs = statut === 'salle' && date ? Apex.heureSeance(cfg, Apex.dow(date)) : null;
+const slotsVides = (cfg, statut, date, j) => { const hs = statut === 'salle' && date ? Apex.heureSeanceJour(cfg, j, date) : null;
   return (hs ? Apex.horairesJour('05:00', repasNb(cfg), { h: hs, duree: (cfg.q && cfg.q.duree) || 60 }) : (SLOTS_N[statut] || SLOTS_N.repos)[repasNb(cfg)]).map(s => ({ id: Apex.uid(), nom: s[0], h: s[1], ok: false, items: [] })); };
 function Repas({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), foods = Apex.allFoods(cfg);
@@ -4597,9 +4593,9 @@ function Repas({ date }) {
   const semOk = !!(cfg.repasSemaine && cfg.repasSemaine[Apex.dow(date)]);
   const vide = meals.every(m => !m.items.length);
   /* Les repas du jour existent d'office, vides : il ne reste qu'à les remplir. */
-  useEffect(() => { if (j.repas == null && !man) put(slotsVides(cfg, c.statut, date)); }, [date, c.statut]);
+  useEffect(() => { if (j.repas == null && !man) put(slotsVides(cfg, c.statut, date, j)); }, [date, c.statut]);
   /* Changer le nombre de repas : si la journée est encore vide, ses repas sont recréés ; sinon on garde ce qui est rempli. */
-  const setNb = n => { Store.patch('cfg', null, { repasNb: n }); if (vide && !man) put(slotsVides(Object.assign({}, cfg, { repasNb: n }), c.statut, date)); toast(n + ' repas par jour'); };
+  const setNb = n => { Store.patch('cfg', null, { repasNb: n }); if (vide && !man) put(slotsVides(Object.assign({}, cfg, { repasNb: n }), c.statut, date, j)); toast(n + ' repas par jour'); };
   const gen = () => { put(Apex.planDuJour(cfg, c.statut, c, date)); toast('Menu du ' + jourNom + ' chargé, calé sur ' + f0(c.kcal) + ' kcal'); };
   const saveJour = () => { Store.patch('cfg', null, { repasMode: 'perso', repasSemaine: Object.assign({}, cfg.repasSemaine || {}, { [Apex.dow(date)]: Apex.repasEnModele(meals, foods) }) }); toast('Enregistré pour tous les ' + jourNom + 's'); };
   const tplOk = !!(cfg.repasModeles && cfg.repasModeles[c.statut]);
@@ -6476,7 +6472,7 @@ function ClaudeLink({ onChange }) {
         ${cons === '1' ? html`<div className="row"><${Pill} st="good">Activée<//><${Confirm} label="Désactiver" sure="Désactiver ?" cls="ghost sm" onYes=${() => { AI.setConsent('0'); Store.refreshAI(); done(AI.hasAny()); setMsg('IA désactivée.'); }} /></div>`
           : html`<button type="button" className="btn pri wide" disabled=${!!busy} onClick=${activerInclus}><${Icon} n="sparkles" s=${18} />${busy === 'e' ? 'Activation…' : 'Activer l’IA gratuite'}</button>`}
         ${privacy}</div>
-        <details className="ai-card"><summary><b>Utiliser ma propre clé Gemini</b> · quota perso</summary><div className="stack" style=${{ marginTop: 10 }}>${gemini}</div></details>`
+        ${own && html`<details className="ai-card"><summary><b>Ma clé Gemini</b></summary><div className="stack" style=${{ marginTop: 10 }}>${gemini}</div></details>`}`
       : html`<div className="ai-card"><div className="row sb"><b>Gemini</b><span className="tag-free">Gratuit</span></div>${gemini}${privacy}</div>`}
     </div>` : html`<div className="stack">
       <p className="sec" style=${{ fontSize: 13 }}>Tu es connecté avec ton compte Claude : tes données Macrolya sont liées à ce compte, dans une base privée. L’IA utilise le quota de ton abonnement Claude, y compris gratuit. Quand il est atteint, l’IA se met en pause jusqu’à sa réinitialisation et le reste de l’app continue. Au premier test, Claude te demande l’autorisation.</p>
@@ -7286,10 +7282,12 @@ function ProfilBody({ cfg, journal, setP, cib, onRedo }) {
       <div className="form">
         <${Num} id="p-dep" label="Poids de départ" unit="kg" value=${p.poidsDepart} onChange=${setP('poidsDepart')} dec=${1} min=${40} max=${200} />
         <${Num} id="p-cib" label="Poids cible" unit="kg" value=${p.poidsCible} onChange=${setP('poidsCible')} dec=${1} min=${40} max=${200} />
-        <label className="fld" htmlFor="p-date"><span className="fld-l">Date de début</span><input id="p-date" className="inp" type="date" value=${p.dateDepart} onChange=${e => { if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) setP('dateDepart')(e.target.value); }} /></label>
-        <${Num} id="p-nap" label="Niveau d’activité (NAP)" value=${p.nap} onChange=${setP('nap')} dec=${2} min=${1.2} max=${2.4} />
+        <label className="fld full" htmlFor="p-date"><span className="fld-l">Date de début de l’objectif</span><input id="p-date" className="inp inp-date" type="date" value=${p.dateDepart} onChange=${e => { if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) setP('dateDepart')(e.target.value); }} /></label>
       </div>
-      <p className="pf-hint">NAP : 1,4 sédentaire · 1,6 actif · 1,8 très actif · 2,0 métier physique.</p></div></div>
+      <fieldset className="hs"><legend className="fld-l">Niveau d’activité au quotidien (NAP)<b>${String(p.nap).replace('.', ',')}</b></legend>
+        <div className="chips">${[[1.4, 'Sédentaire'], [1.6, 'Actif'], [1.8, 'Très actif'], [2.0, 'Métier physique']].map(x => html`<button key=${x[0]} type="button" className="chip" aria-pressed=${Math.abs(p.nap - x[0]) < 0.05} onClick=${() => setP('nap')(x[0])}>${x[1]} · ${x[0].toFixed(1).replace('.', ',')}</button>`)}</div>
+        <div className="pf-nap"><${Num} id="p-nap" label="Valeur précise" value=${p.nap} onChange=${setP('nap')} dec=${2} min=${1.2} max=${2.4} /></div>
+      </fieldset></div></div>
     <div className="pf-g"><span className="prm-t">Cibles du jour</span><div className="pf-c">
       <div className="pf-seg" role="tablist">${[['salle', 'Jour de salle', 'dumbbell'], ['repos', 'Jour de repos', 'moon']].map(x => html`<button key=${x[0]} type="button" role="tab" aria-selected=${cs === x[0]} className=${cs === x[0] ? 'on' : ''} onClick=${() => setCs(x[0])}><${Icon} n=${x[2]} s=${16} />${x[1]}</button>`)}</div>
       <div className="pf-kc"><b className="num">${f0(c.kcal)}</b><span>kcal</span></div>
@@ -7418,10 +7416,12 @@ function App() {
   const sc = u && u.dead ? ['err', 'Reconnecte-toi'] : sy.pending > 0 ? ['pend', 'Enregistrement…'] : (SYNC[sy.mode] || SYNC.local);
   const tabs = TABS_ALL.filter(t => t[0] !== 'coach' || !STANDALONE || st.caps().sample);
   const wiz = !needAuth && !auth && (cfg.onboarded === false || (cfg.onboarded == null && (sy.mode === 'ok' || sy.mode === 'local') && !Object.keys(S.journal).length && !Object.keys(S.seances).length));
+  /* badge réservé aux vrais abonnés Pro ou VIP (code cadeau), même pendant le lancement où tout est offert */
+  const proReel = !!(cfg.pro && cfg.pro.fin && cfg.pro.fin >= Apex.today());
   const View = tab === 'repas' ? Repas : tab === 'training' ? Training : tab === 'analytics' ? Analytics : tab === 'coach' ? Coach : Dashboard;
   return html`<div>
-    <header className="top"><div className="wrap top-in">
-      <div className="brand"><${Icon} n="apex" s=${22} w=${2.6} />Macrolya</div>
+    <header className="top"><div className=${cx('wrap top-in', proReel && 'has-pro')}>
+      <div className="brand"><${Icon} n="apex" s=${22} w=${2.6} />Macrolya${proReel && html`<span className="pro-badge" title="Macrolya Pro">PRO</span>`}</div>
       <span className=${cx('sync', sc[0])} role="status"><i></i>${sc[1]}</span>
       <span className="grow"></span>
       <button type="button" className="ib" aria-label="Actualiser l’app" onClick=${refreshApp}><${Icon} n="refresh" /></button>
