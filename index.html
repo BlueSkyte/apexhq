@@ -1225,10 +1225,39 @@ button.wo-ok { cursor: pointer; padding: 0; } button.wo-ok:active { transform: s
 .hj-s.ghost { color: var(--ink-2); border-style: dashed; }
 @media (max-width: 360px) { .hj { grid-template-columns: 1fr; justify-items: center; } .hj-m { width: 100%; } }
 .hj-i { font-size: 12px; color: var(--ink-3); text-align: center; }
+/* ---------- thèmes de couleur ---------- */
+body[data-theme="or"] { --acc: #c8902a; --acc-hi: #ffd27a; --acc-ink: #1a1002; --acc-glow: rgba(255, 200, 103, .2); }
+body[data-theme="violet"] { --acc: #7c3aed; --acc-hi: #a78bfa; --acc-ink: #0d0420; --acc-glow: rgba(139, 92, 246, .24); }
+body[data-theme="bleu"] { --acc: #0ea5e9; --acc-hi: #7dd3fc; --acc-ink: #021018; --acc-glow: rgba(56, 189, 248, .22); }
+body[data-theme="menthe"] { --acc: #10b981; --acc-hi: #6ee7b7; --acc-ink: #02130d; --acc-glow: rgba(16, 185, 129, .22); }
+body[data-theme="rose"] { --acc: #e11d74; --acc-hi: #f9a8d4; --acc-ink: #1a0310; --acc-glow: rgba(236, 72, 153, .22); }
+.prm-apparence { background: linear-gradient(135deg, #ff8a57, #8b5cf6, #38bdf8); }
+.th-g { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.th-t { display: grid; justify-items: center; gap: 4px; padding: 12px 6px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255, 255, 255, .035); color: var(--ink); }
+.th-t[aria-checked="true"] { border-color: var(--acc-hi); background: rgba(255, 255, 255, .07); }
+.th-t b { font-size: 13px; } .th-t small { font-size: 11px; color: var(--ink-3); }
+.th-s { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, .4); }
+/* ---------- flamme de série ---------- */
+.flamme { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; padding: 3px 9px 3px 6px; border-radius: 99px; background: rgba(232, 52, 28, .14); border: 1px solid rgba(255, 138, 87, .35); }
+.flamme b { font: 700 15px/1 var(--f-num); color: #ffb347; letter-spacing: 0; }
+.flamme.violet { background: rgba(124, 58, 237, .16); border-color: rgba(167, 139, 250, .45); } .flamme.violet b { color: #c4a5ff; }
+.fl-z { position: relative; display: inline-flex; width: 16px; height: 20px; }
+.fl-z svg { overflow: visible; }
+.fl-o, .fl-i { transform-box: fill-box; transform-origin: 50% 100%; animation: fl-flick 1.6s ease-in-out infinite; }
+.fl-i { animation-duration: 1.1s; animation-direction: reverse; }
+@keyframes fl-flick { 0%, 100% { transform: scale(1, 1) skewX(0); } 25% { transform: scale(.95, 1.06) skewX(3deg); } 50% { transform: scale(1.04, .96) skewX(-3deg); } 75% { transform: scale(.97, 1.04) skewX(2deg); } }
+.fl-b { position: absolute; bottom: 8px; width: 3px; height: 3px; border-radius: 50%; opacity: 0; animation: fl-rise 2.2s ease-out infinite; }
+@keyframes fl-rise { 0% { opacity: 0; transform: translate(0, 0) scale(1); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), -20px) scale(.3); } }
+@media (prefers-reduced-motion: reduce) { .fl-o, .fl-i, .fl-b { animation: none; } .fl-b { display: none; } }
+@media (max-width: 420px) {
+  .has-pro .brand { font-size: 17px; gap: 6px; } .has-pro .brand > .ic { width: 18px; height: 18px; }
+  .has-pro .pro-badge { margin-left: 4px; padding: 3px 7px; font-size: 10px; letter-spacing: .1em; }
+  .has-pro .flamme { margin-left: 4px; padding: 2px 7px 2px 4px; } .has-pro .flamme b { font-size: 14px; }
+}
 </style>
 </head><body>
 <div id="app" class="app"><p style="padding:48px 16px;color:#85847e;font-family:system-ui,sans-serif">Chargement de Macrolya…</p></div>
-<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261122121023'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_RELAY = "https://script.google.com/macros/s/AKfycbxO8jSVN56K2yio_DV3wzEUJuUFTh3Xd0xmj77j6CejCK5R26ftBlWnprUg3Xsv_PF-/exec";  window.APEX_FB = {"apiKey":"AIzaSyAAM7fLuA42_fmWuwLzI_O6c6oFC8wME-M","projectId":"macrovamacrova"}; window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
+<script>window.APEX_STANDALONE = true; window.APEX_VERSION = '20261122144536'; window.APEX_URL = "https://blueskyte.github.io/apexhq/"; window.APEX_RELAY = "https://script.google.com/macros/s/AKfycbxO8jSVN56K2yio_DV3wzEUJuUFTh3Xd0xmj77j6CejCK5R26ftBlWnprUg3Xsv_PF-/exec";  window.APEX_FB = {"apiKey":"AIzaSyAAM7fLuA42_fmWuwLzI_O6c6oFC8wME-M","projectId":"macrovamacrova"}; window.APEX_QR = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 31 31\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h31v31H0z\"/><path stroke=\"#000000\" d=\"M1 1.5h7m1 0h2m1 0h2m2 0h2m2 0h2m1 0h7M1 2.5h1m5 0h1m1 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m2 0h2m1 0h4m2 0h2m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h1m1 0h3m4 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m3 0h1m1 0h2m3 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m2 0h3m2 0h1m2 0h1m1 0h1m2 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h1m2 0h7M1 9.5h1m1 0h2m1 0h3m1 0h2m1 0h6m1 0h2m1 0h1m2 0h1m1 0h2M3 10.5h2m1 0h1m1 0h2m8 0h4m1 0h3m3 0h1M2 11.5h2m1 0h1m1 0h4m1 0h1m2 0h1m1 0h1m1 0h1m7 0h2M1 12.5h1m1 0h2m3 0h1m1 0h6m1 0h1m2 0h1m1 0h1m1 0h1m4 0h1M2 13.5h3m2 0h1m2 0h2m4 0h3m1 0h1m5 0h2M1 14.5h1m2 0h1m1 0h1m2 0h3m1 0h2m1 0h2m2 0h1m2 0h1m3 0h3M2 15.5h3m2 0h1m2 0h3m2 0h1m1 0h1m2 0h2m2 0h1m2 0h3M1 16.5h1m1 0h3m2 0h3m3 0h1m1 0h1m3 0h2m1 0h3m2 0h1M1 17.5h1m4 0h4m1 0h2m3 0h1m2 0h1m1 0h2m2 0h2m1 0h1M6 18.5h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m1 0h1m1 0h3M1 19.5h1m2 0h4m2 0h1m1 0h2m2 0h1m1 0h1m3 0h2m1 0h1m1 0h1M3 20.5h2m3 0h1m2 0h1m1 0h1m4 0h3m1 0h1m2 0h1m1 0h1M2 21.5h3m1 0h2m1 0h2m1 0h3m1 0h1m1 0h1m2 0h7M9 22.5h2m3 0h2m1 0h3m1 0h1m3 0h5M1 23.5h7m1 0h1m2 0h3m2 0h1m1 0h3m1 0h1m1 0h2m1 0h1M1 24.5h1m5 0h1m1 0h1m9 0h3m3 0h2m1 0h1M1 25.5h1m1 0h3m1 0h1m2 0h4m1 0h2m1 0h1m2 0h5m1 0h2M1 26.5h1m1 0h3m1 0h1m1 0h1m5 0h4m1 0h3m1 0h3m2 0h1M1 27.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m4 0h1m1 0h1m2 0h1m1 0h1M1 28.5h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m4 0h1m4 0h1m1 0h1M1 29.5h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m3 0h1\"/></svg>";
 window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__bip = e; window.dispatchEvent(new Event('apex-bip')); });
 window.addEventListener('appinstalled', function () { window.__bip = null; });</script>
 <script src="vendor/react.min.js"></script><script src="vendor/react-dom.min.js"></script><script src="vendor/htm.js"></script>

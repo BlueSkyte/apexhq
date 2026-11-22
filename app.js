@@ -2322,6 +2322,20 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   /* Heure de séance d'un jour (0 = dimanche) : réglage du jour, sinon heure habituelle, sinon null. */
   function heureSeance(cfg, dow) { const h = (cfg && cfg.seanceH) || {}, v = h[dow] || h.def; return minutes(v) == null ? null : v; }
   function heureSeanceJour(cfg, j, date) { if (j && j.hSeance != null) return minutes(j.hSeance) == null ? null : j.hSeance; return heureSeance(cfg, A.dow(date)); }
+  /* Série (flamme) : jours d'affilée où l'app a été ouverte ou une donnée remplie. Aujourd'hui pas encore actif : la série d'hier tient jusqu'à minuit. */
+  const IGN = { date: 1, statut: 1, seance: 1, hSeance: 1, auto: 1, man: 1 };
+  function jourActif(j) {
+    if (!j) return false;
+    if ((j.repas || []).some(m => (m.items || []).length)) return true;
+    return Object.keys(j).some(k => !IGN[k] && k !== 'repas' && j[k] != null && j[k] !== '' && !(Array.isArray(j[k]) && !j[k].length));
+  }
+  function serieJours(journal, ouverts, auj) {
+    const vu = {}; (ouverts || []).forEach(d => { vu[d] = 1; });
+    const ok = d => !!vu[d] || jourActif((journal || {})[d]);
+    let d = ok(auj) ? auj : A.addDays(auj, -1), n = 0;
+    while (ok(d) && n < 3650) { n++; d = A.addDays(d, -1); }
+    return n;
+  }
   function horairesJour(heure, n, seance) {
     const m0 = minutes(heure), now = m0 == null ? 420 : Math.min(23 * 60 + 45, m0), fin = 23 * 60 + 45, t0 = Math.ceil(now / 5) * 5;
     n = Math.max(1, Math.min(8, Math.round(n) || 1));
@@ -2431,7 +2445,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     } catch (e) { return null; }
   }
 
-  Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine, optimiserJour, promptMenuJour, menuJourIA, resteJour, horairesJour, repartirGlucides, heureSeance, heureSeanceJour, validerJourIA, recentsRepas, inspiration });
+  Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine, optimiserJour, promptMenuJour, menuJourIA, resteJour, horairesJour, repartirGlucides, heureSeance, heureSeanceJour, serieJours, jourActif, validerJourIA, recentsRepas, inspiration });
 })();
 
 /* ---- 13b-import-menu.js ---- */
@@ -7248,6 +7262,22 @@ const STANDALONE = !!window.APEX_STANDALONE;
 const TABS_ALL = [['dashboard', 'Jour', 'home'], ['repas', 'Repas', 'utensils'], ['training', 'Training', 'dumbbell'], ['coach', 'Coach', 'chat'], ['analytics', 'Analyse', 'chart']];
 const tabOf = () => { let h = ''; try { h = (location.hash || '').replace('#', ''); } catch (e) { h = ''; } return TABS_ALL.some(t => t[0] === h) ? h : 'dashboard'; };
 const SYNC = { boot: ['', 'Connexion…'], wait: ['pend', 'Connexion…'], local: ['', 'Sur cet appareil'], ok: ['ok', 'Synchronisé'], stale: ['pend', 'Hors ligne'], err: ['err', 'Synchro en erreur'] };
+/* Flamme de série : orange et rouge, violette dès 30 jours ; elle vacille, et les comptes Pro ont en plus des braises qui montent. */
+function Flamme({ n, pro }) {
+  const v = n >= 30, c = v ? ['#c4a5ff', '#7c3aed'] : ['#ffb347', '#e8341c'];
+  return html`<span className=${cx('flamme', v && 'violet', pro && 'pro')} role="img" aria-label=${'Série de ' + n + ' jour' + (n > 1 ? 's' : '')} title=${n + ' jour' + (n > 1 ? 's' : '') + ' d’affilée'}>
+    <span className="fl-z" aria-hidden="true">${pro && [0, 1, 2, 3, 4].map(k => html`<i key=${k} className="fl-b" style=${{ left: 4 + k * 3 + 'px', animationDelay: k * 0.37 + 's', '--dx': (k - 2) * 3 + 'px', background: k % 2 ? c[0] : '#ffe08a' }}></i>`)}
+      <svg width="16" height="20" viewBox="0 0 64 76"><path className="fl-o" fill=${c[1]} d="M32 2C36 18 54 26 54 47a22 22 0 0 1-44 0c0-10 5-16 10-21 1 7 4 11 8 12C26 27 28 14 32 2z"/><path className="fl-i" fill=${c[0]} d="M32 30c3 9 12 13 12 22a12 12 0 0 1-24 0c0-6 4-9 6-12 1 4 3 6 5 6-1-6 0-11 1-16z"/></svg></span><b>${n}</b></span>`;
+}
+/* Thèmes de couleur : la couleur d'accent de toute l'app. « Orange » garde le bleu des jours de repos ; les autres valent pour tous les jours. */
+const THEMES = [['', 'Orange', 'par défaut', '#d95926', '#ff8a57'], ['or', 'Or', 'doré chaud', '#c8902a', '#ffd27a'], ['violet', 'Violet néon', 'nuit', '#7c3aed', '#a78bfa'], ['bleu', 'Bleu glacier', 'froid, calme', '#0ea5e9', '#7dd3fc'], ['menthe', 'Vert menthe', 'frais', '#10b981', '#6ee7b7'], ['rose', 'Rose', 'doux', '#e11d74', '#f9a8d4']];
+function ApparenceBody() {
+  const cfg = useStore().cfg(), cur = cfg.theme || '';
+  return html`<div className="stack"><p className="sec" style=${{ fontSize: 14 }}>Choisis la couleur de ton app : boutons, roue, halos et logo changent tout de suite.</p>
+    <div className="th-g" role="radiogroup" aria-label="Thème de couleur">${THEMES.map(t => html`<button key=${t[0] || 'orange'} type="button" role="radio" aria-checked=${cur === t[0]} className="th-t" onClick=${() => Store.patch('cfg', null, { theme: t[0] })}>
+      <span className="th-s" style=${{ background: 'linear-gradient(135deg, ' + t[4] + ', ' + t[3] + ')' }} aria-hidden="true">${cur === t[0] && html`<${Icon} n="check" s=${18} w=${2.6} />`}</span><b>${t[1]}</b><small>${t[2]}</small></button>`)}</div>
+    <p className="mut" style=${{ fontSize: 12 }}>Avec « Orange », les jours de repos restent en bleu pour les repérer d’un coup d’œil.</p></div>`;
+}
 /* comptes du créateur : badge DEV à la place de PRO (identifiant Firebase, pas un secret) */
 const DEV_UIDS = ['R22EpQ5y8KSm0PiUfpCVlapH2iw2'];
 const JOURS = [[1, 'Lundi'], [2, 'Mardi'], [3, 'Mercredi'], [4, 'Jeudi'], [5, 'Vendredi'], [6, 'Samedi'], [0, 'Dimanche']];
@@ -7333,7 +7363,7 @@ function SettingsSheet({ onClose }) {
     ['Entraînement', [['seances', 'Séances', 'dumbbell', 'Types de séances et exercices'], ['focus', 'Points faibles', 'trend', 'Muscles à prioriser']]],
     ['Nutrition', [['repas', 'Repas et aliments', 'utensils', 'Compléments, aliments perso, étiquettes']]],
     ['Connexions', [].concat(STANDALONE ? [['sante', 'Santé et montres', 'heart', se && se.on ? 'Connecté' : 'Apple Santé, Health Connect']] : [], [['claude', 'Intelligence artificielle', 'sparkles', st.caps().sample ? 'Activée' : 'Coach, menus et séances par l’IA']])],
-    ['Application', [['science', 'La science derrière Macrolya', 'check', 'Méthode, études et sources'], ['pro', 'Macrolya Pro', 'sparkles', PRO.actif ? (estPro() ? 'Actif' : 'Outils avancés') : 'Quota IA, code cadeau'], ['rappels', 'Rappels', 'clock', 'Pesée, repas, bilan du soir'], ['partage', 'Partager l’app', 'send', 'Lien, QR code, installation'], ['data', 'Données', 'download', 'Export CSV, bilan PDF, sauvegarde']]],
+    ['Application', [['apparence', 'Apparence', 'sparkles', 'Thème de couleur'], ['science', 'La science derrière Macrolya', 'check', 'Méthode, études et sources'], ['pro', 'Macrolya Pro', 'sparkles', PRO.actif ? (estPro() ? 'Actif' : 'Outils avancés') : 'Quota IA, code cadeau'], ['rappels', 'Rappels', 'clock', 'Pesée, repas, bilan du soir'], ['partage', 'Partager l’app', 'send', 'Lien, QR code, installation'], ['data', 'Données', 'download', 'Export CSV, bilan PDF, sauvegarde']]],
   ].filter(g => g[1].length);
   const cur = sec ? [].concat.apply([], GR.map(g => g[1])).find(x => x[0] === sec) : null;
   return html`<${Sheet} title=${cur ? cur[1] : 'Paramètres'} onClose=${onClose}>
@@ -7360,6 +7390,7 @@ function SettingsSheet({ onClose }) {
     <//>`}
     ${sec === 'claude' && html`<${ClaudeLink} />`}
     ${sec === 'partage' && html`<${ShareBody} />`}
+    ${sec === 'apparence' && html`<${ApparenceBody} />`}
     ${sec === 'science' && html`<${ScienceBody} />`}
     ${sec === 'pro' && html`<${ProBody} />`}
     ${sec === 'rappels' && html`<${RappelsBody} />`}
@@ -7404,6 +7435,9 @@ function App() {
   useEffect(() => { if (!STANDALONE) return undefined; const t = setTimeout(() => checkUpdate(false), 3000), f = () => { if (!document.hidden) checkUpdate(false); }; document.addEventListener('visibilitychange', f); return () => { clearTimeout(t); document.removeEventListener('visibilitychange', f); }; }, []);
   const j = S.journal[date] || {}, statut = Apex.statutDuJour(cfg, j, date), today = Apex.today();
   useEffect(() => { document.body.dataset.statut = statut; }, [statut]);
+  useEffect(() => { document.body.dataset.theme = cfg.theme || ''; }, [cfg.theme]);
+  /* ouverture du jour : compte pour la série (flamme), une fois la base chargée pour ne pas écraser celle du compte */
+  useEffect(() => { if (sy.mode !== 'ok' && sy.mode !== 'local') return; const d = Apex.today(), o = cfg.ouverts || []; if (o.indexOf(d) < 0) Store.patch('cfg', null, { ouverts: o.concat(d).slice(-90) }); }, [sy.mode]);
   const go = t => { setTab(t); try { if (location.hash !== '#' + t) location.hash = t; } catch (e) { /* hash indisponible */ } try { window.scrollTo(0, 0); } catch (e) { /* sans effet */ } };
   const setStatut = v => { if (v === statut) return; if (v === 'repos') Store.patch('journal', date, { date, statut: 'repos' }); else Store.patch('journal', date, { date, statut: 'salle', seance: j.seance || cfg.planning[Apex.dow(date)] || Apex.prochaineSeance(S.seances, cfg, date) }); };
   const u = STANDALONE ? useCloud() : null; /* compte obligatoire : seul le serveur de test local peut s'en passer */
@@ -7420,10 +7454,11 @@ function App() {
   /* badge réservé aux vrais abonnés Pro ou VIP (code cadeau), même pendant le lancement où tout est offert */
   const proReel = !!(cfg.pro && cfg.pro.fin && cfg.pro.fin >= Apex.today());
   const dev = !!(STANDALONE && Cloud.on() && u && DEV_UIDS.indexOf(u.uid) >= 0);
+  const auj = Apex.today(), ser = Apex.serieJours(S.journal, cfg.ouverts, auj);
   const View = tab === 'repas' ? Repas : tab === 'training' ? Training : tab === 'analytics' ? Analytics : tab === 'coach' ? Coach : Dashboard;
   return html`<div>
-    <header className="top"><div className=${cx('wrap top-in', (proReel || dev) && 'has-pro')}>
-      <div className="brand"><${Icon} n="apex" s=${22} w=${2.6} />Macrolya${dev ? html`<span className="pro-badge dev" title="Créateur de Macrolya">DEV</span>` : proReel && html`<span className="pro-badge" title="Macrolya Pro">PRO</span>`}</div>
+    <header className="top"><div className=${cx('wrap top-in', (proReel || dev || ser > 0) && 'has-pro')}>
+      <div className="brand"><${Icon} n="apex" s=${22} w=${2.6} />Macrolya${dev ? html`<span className="pro-badge dev" title="Créateur de Macrolya">DEV</span>` : proReel && html`<span className="pro-badge" title="Macrolya Pro">PRO</span>`}${ser > 0 && html`<${Flamme} n=${ser} pro=${proReel || dev} />`}</div>
       <span className=${cx('sync', sc[0])} role="status"><i></i>${sc[1]}</span>
       <span className="grow"></span>
       <button type="button" className="ib" aria-label="Actualiser l’app" onClick=${refreshApp}><${Icon} n="refresh" /></button>
@@ -7452,6 +7487,7 @@ function App() {
   </div>`;
 }
 
+try { document.body.dataset.theme = Store.cfg().theme || ''; } catch (e) { /* thème par défaut */ }
 try { const d0 = Apex.today(); document.body.dataset.statut = Apex.statutDuJour(Store.cfg(), Store.get().journal[d0], d0); } catch (e) { /* teinte par défaut */ }
 ReactDOM.createRoot(document.getElementById('app')).render(html`<${Boundary}><${App} /><//>`);
 if (STANDALONE && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
