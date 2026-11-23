@@ -3180,7 +3180,18 @@ const iaMemo = async (fn, prompt, o) => {
   let h = 5381; for (let i = 0; i < prompt.length; i++) h = ((h << 5) + h + prompt.charCodeAt(i)) | 0;
   const K = 'apexhq:ia:' + (h >>> 0).toString(36) + prompt.length;
   try { const c = JSON.parse(localStorage.getItem(K) || 'null'); if (c && Date.now() - c.t < 2592e6) return c.v; } catch (e) { /* mémoire illisible */ }
-  const v = await fn(prompt, o);
+  /* Gemini saturé : une demande peut traîner plus d'une minute (mesuré : 83 s puis échec) alors qu'un nouvel essai répond en ~4 s.
+     On coupe chaque essai à 25 s et on relance une fois. */
+  let v;
+  for (let i = 0; ; i++) {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 25000);
+    try { v = await fn(prompt, Object.assign({}, o, { signal: ctl.signal })); break; }
+    catch (e) {
+      const lent = ctl.signal.aborted, c = e && e.code;
+      if (i > 0 || !(lent || c === 'upstream_error')) throw lent ? { code: 'lent' } : e;
+      if (o && o.onRetry) o.onRetry();
+    } finally { clearTimeout(t); }
+  }
   if (v && (+v.kcal > 0 || (Array.isArray(v.items) && v.items.length))) try { localStorage.setItem(K, JSON.stringify({ t: Date.now(), v })); } catch (e) { /* stockage plein : pas de mémoire */ }
   return v;
 };
@@ -3193,6 +3204,7 @@ const aiMsg = e => {
   if (c === 'quota' || c === 'bad_code') return (e && e.message) || 'Quota IA du jour atteint.';
   if (c === 'session_expired') return 'Session expirée : reconnecte-toi à Claude.';
   if (c === 'refused' || c === 'empty_completion' || c === 'invalid_json') return 'Réponse inexploitable. Reformule avec aliments et quantités.';
+  if (c === 'lent') return 'L’IA de Google est saturée en ce moment. Réessaie dans une minute, ou ajoute l’aliment à la main.';
   if (c === 'cancelled') return '';
   return 'Échec de la demande. Réessaie.';
 };
@@ -4330,10 +4342,10 @@ function AddSheet({ foods, title, onAdd, onClose }) {
   /* « Décris ce que tu manges » : un aliment par composant, valeurs de la base quand le plat y est, sinon valeurs pour 100 g en grammes (modifiable). */
   const estimate = async () => {
     const txt = ai.txt.trim(); if (!txt || !sample) return;
-    setAi(s => Object.assign({}, s, { busy: true, err: '', res: null }));
+    setAi(s => Object.assign({}, s, { busy: true, retry: false, err: '', res: null }));
     try {
       const cands = Apex.chercherAliments(foods, txt, 25).map(f => f.id + ' | ' + f.n + ' | ' + (f.u ? 'unité ' + f.u[0] + ', 1 = ' + Math.round(f.k * f.u[1] / 100) + ' kcal' : 'grammes, 100 g = ' + Math.round(f.k) + ' kcal')).join('\n');
-      const r = await iaMemo(sample.json, 'Tu es diététicien. Découpe ce repas en aliments séparés, un par composant (ex. « box crousty, frites de patate douce, chips » = 3 aliments). Sans quantité précisée, prends la portion réellement servie à un adulte. ' + IA_PORTIONS + ' Pour chaque aliment : si un élément de la BASE ci-dessous est le même aliment ou plat ET la même préparation (frit, en frites, cuit, en sauce, cru : un aliment cru ne vaut jamais pour des frites ou une friture), donne son "id" et la quantité "q" dans son unité (nombre d’unités, ou grammes) ; sinon "id": null, "q" en grammes et les valeurs POUR 100 g (table Ciqual, valeurs officielles des enseignes). Réponds uniquement par un objet JSON : {"items": [{"id": "id de la base ou null", "nom": "libellé court", "q": nombre, "kcal100": nombre, "p100": nombre, "g100": nombre, "l100": nombre, "f100": nombre}], "detail": "hypothèses de portions en une ligne"}.\n\nBASE (id | nom | unité) :\n' + (cands || 'aucun élément') + '\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false, maxTokens: 3072 });
+      const r = await iaMemo(sample.json, 'Tu es diététicien. Découpe ce repas en aliments séparés, un par composant (ex. « box crousty, frites de patate douce, chips » = 3 aliments). Sans quantité précisée, prends la portion réellement servie à un adulte. ' + IA_PORTIONS + ' Pour chaque aliment : si un élément de la BASE ci-dessous est le même aliment ou plat ET la même préparation (frit, en frites, cuit, en sauce, cru : un aliment cru ne vaut jamais pour des frites ou une friture), donne son "id" et la quantité "q" dans son unité (nombre d’unités, ou grammes) ; sinon "id": null, "q" en grammes et les valeurs POUR 100 g (table Ciqual, valeurs officielles des enseignes). Réponds uniquement par un objet JSON : {"items": [{"id": "id de la base ou null", "nom": "libellé court", "q": nombre, "kcal100": nombre, "p100": nombre, "g100": nombre, "l100": nombre, "f100": nombre}], "detail": "hypothèses de portions en une ligne"}.\n\nBASE (id | nom | unité) :\n' + (cands || 'aucun élément') + '\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false, maxTokens: 3072, onRetry: () => setAi(s => Object.assign({}, s, { retry: true })) });
       const items = (r && Array.isArray(r.items) ? r.items : []).slice(0, 12).map(it => {
         const q = +it.q, f = it.id && foods[it.id];
         if (f && q > 0 && q <= (f.u ? 20 : 3000)) return { a: f.id, q: f.u ? Math.round(q * 4) / 4 : Math.round(q) };
@@ -4357,7 +4369,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     ${sample && html`<div className="ai-box">
       <label className="fld" htmlFor="ai-txt"><span className="fld-l"><${Icon} n="sparkles" s=${14} /> Décris ce que tu manges, l’IA calcule</span>
         <textarea id="ai-txt" className="inp" rows="2" placeholder="ex. 2 tranches de pain complet, 1 œuf, du fromage, ou « pizza 4 fromages, 2 parts »" value=${ai.txt} maxLength="600" onChange=${e => setAi(Object.assign({}, ai, { txt: e.target.value }))} aria-label="Décris le repas à estimer"></textarea></label>
-      <button type="button" className="btn pri wide" disabled=${ai.busy || !ai.txt.trim()} onClick=${estimate}><${Icon} n="sparkles" s=${18} />${ai.busy ? 'Estimation…' : 'Estimer les macros'}</button>
+      <button type="button" className="btn pri wide" disabled=${ai.busy || !ai.txt.trim()} onClick=${estimate}><${Icon} n="sparkles" s=${18} />${ai.busy ? (ai.retry ? 'L’IA est chargée, nouvel essai…' : 'Estimation…') : 'Estimer les macros'}</button>
       ${ai.err && html`<div className="note"><${Icon} n="alert" /><div><span>${ai.err}</span></div></div>`}
       ${ai.res && html`<div className="note acc"><${Icon} n="sparkles" /><div>
         <span><b>${f0(aiTot.k)} kcal</b> · ${macTxt(aiTot)} · ${ai.res.items.length} aliment${ai.res.items.length > 1 ? 's' : ''}</span>
