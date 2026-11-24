@@ -4722,7 +4722,11 @@ function Repas({ date }) {
   const semOk = !!(cfg.repasSemaine && cfg.repasSemaine[Apex.dow(date)]);
   const vide = meals.every(m => !m.items.length);
   /* Les repas du jour existent d'office, vides : il ne reste qu'à les remplir. */
-  useEffect(() => { if (j.repas == null && !man) put(slotsVides(cfg, c.statut, date, j)); }, [date, c.statut]);
+  /* Journée vide (aucun repas, ou que des repas vides non cochés) : « Ma semaine » si un menu est enregistré pour ce jour, sinon des repas vides à remplir. */
+  useEffect(() => {
+    if (man || (j.repas || []).some(m => m.ok || (m.items || []).length)) return;
+    if (mode === 'perso' && semOk) put(Apex.planDuJour(cfg, c.statut, c, date)); else if (j.repas == null) put(slotsVides(cfg, c.statut, date, j));
+  }, [date, c.statut, semOk]);
   useEffect(() => { const d = Apex.repasDoublons(j.repas); if (d.length) put(j.repas.filter(m => d.indexOf(m) < 0)); }, [date, (j.repas || []).map(m => m.nom + (m.items || []).length).join()]);
   /* Changer le nombre de repas : si la journée est encore vide, ses repas sont recréés ; sinon on garde ce qui est rempli. */
   const setNb = n => { Store.patch('cfg', null, { repasNb: n }); if (vide && !man) put(slotsVides(Object.assign({}, cfg, { repasNb: n }), c.statut, date, j)); toast(n + ' repas par jour'); };
@@ -4790,7 +4794,7 @@ function Repas({ date }) {
             <div className="row"><button type="button" className="btn pri" onClick=${addMeal}><${Icon} n="plus" s=${18} />Ajouter un repas</button></div></div>`
           : html`<div className="empty"><span><b>Aucun repas planifié.</b> ${mode === 'perso' && !semOk ? 'Pas encore de menu enregistré pour ce ' + jourNom + '. Charge le menu de base, modifie-le, puis enregistre-le pour ce jour.' : 'Charge le menu du ' + jourNom + ' : quantités calées sur ' + f0(c.kcal) + ' kcal et ' + c.p + ' g de protéines. Tu remplaces ensuite ce que tu veux.'}</span>
             <button type="button" className="btn pri" onClick=${gen}><${Icon} n="utensils" s=${18} />${mode === 'perso' && semOk ? 'Charger mon menu du ' + jourNom : 'Charger le menu du ' + jourNom}</button></div>`}
-          ${meals.length > 0 && mode === 'perso' && html`<div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${semOk ? 'Enregistré pour les ' + jourNom + 's' : ''}</span><button type="button" className="btn sm ghost" onClick=${saveJour}>${semOk ? 'Mettre à jour' : 'Enregistrer pour tous les ' + jourNom + 's'}</button></div>`}
+          ${meals.length > 0 && mode === 'perso' && html`<div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${semOk ? 'Enregistré pour les ' + jourNom + 's' : ''}</span><span className="row" style=${{ gap: 6 }}>${semOk && !meals.some(m => m.ok) && html`<${Confirm} label=${'Recharger mon menu du ' + jourNom} sure="Remplacer les repas de ce jour ? Touche encore" cls="ghost sm" onYes=${gen} />`}<button type="button" className="btn sm ghost" onClick=${saveJour}>${semOk ? 'Mettre à jour' : 'Enregistrer pour tous les ' + jourNom + 's'}</button></span></div>`}
           ${meals.length > 0 && mode === 'programme' && html`<div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>Plan type ${c.statut} : ${tplOk ? 'le tien' : 'par défaut'}</span>
             <div className="row"><button type="button" className="btn sm ghost" onClick=${saveTpl}>Enregistrer comme plan type</button>${tplOk && html`<${Confirm} label="Rétablir" sure="Rétablir le défaut ?" cls="ghost" onYes=${resetTpl} />`}</div></div>`}
         <//>
