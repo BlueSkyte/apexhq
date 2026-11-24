@@ -5705,7 +5705,7 @@ async function savePhoto(date, pose, file, assets) {
 const photoErr = er => { const c = er && er.code; return c === 'too_large' ? 'Fichier trop lourd.' : c === 'quota_or_state' ? 'Stockage plein : supprime d’anciennes photos.' : c === 'unsupported_type' || (er && er.message === 'decode') ? 'Format non lisible. Utilise un JPEG ou un PNG.' : 'Envoi impossible. Réessaie.'; };
 const PH_JOURS = [[1, 'L', 'Lundi'], [2, 'M', 'Mardi'], [3, 'M', 'Mercredi'], [4, 'J', 'Jeudi'], [5, 'V', 'Vendredi'], [6, 'S', 'Samedi'], [0, 'D', 'Dimanche']];
 function PhotosCard({ date }) {
-  const st = useStore(), S = st.get(), assets = st.caps().assets, local = !assets && STANDALONE, canUp = !!assets || local; const [pose, setPose] = useState('face'); const [busy, setBusy] = useState(''); const [ab, setAb] = useState({ a: '', b: '' });
+  const st = useStore(), S = st.get(), assets = st.caps().assets, local = !assets && STANDALONE, canUp = !!assets || local; const [pose, setPose] = useState('face'); const [busy, setBusy] = useState(''); const [ab, setAb] = useState({ a: '', b: '' }); const [ouv, setOuv] = useState(() => lsGet('ph:ouvert', '') === '1'); const tog = () => { lsSet('ph:ouvert', ouv ? '' : '1'); setOuv(!ouv); };
   const all = Object.keys(S.photos).map(k => Object.assign({ id: k }, S.photos[k])).filter(p => p.asset && p.pose === pose).sort((x, y) => (x.date < y.date ? -1 : 1));
   const A = all.find(p => p.date === ab.a) || all[0], B = all.find(p => p.date === ab.b) || all[all.length - 1];
   const up = async e => {
@@ -5716,7 +5716,11 @@ function PhotosCard({ date }) {
   const del = p => { Store.del('photos', p.id); if (isLocalPhoto(p)) PhotoDB.del(p.id).catch(() => {}); else if (assets) assets.delete(p.asset).catch(() => {}); toast('Photo supprimée'); };
   const fig = (p, lab) => html`<figure className="ph">${p ? html`<${PhotoImg} p=${p} alt=${'Physique ' + pose + ' du ' + dTiny(p.date)} />` : html`<span>${lab}</span>`}${p && html`<figcaption>${dMid(p.date)}${(() => { const m = Apex.mm7(S.journal, p.date); return m ? ' · ' + f1(m.v) + ' kg' : ''; })()}</figcaption>`}</figure>`;
   const cfg = st.cfg(), jp = cfg.photosJour == null ? 0 : cfg.photosJour, auj = Apex.dow(date) === jp;
-  return html`<${Card} cls="c7" title="Physique" sub="Même pose, même lumière, à jeun" right=${html`<${Seg} neutral label="Pose" value=${pose} onChange=${setPose} options=${POSES} />`}>
+  /* repliée par défaut : les photos ne s'affichent que si on les ouvre (choix retenu) */
+  const tout = Object.keys(S.photos).map(k => S.photos[k]).filter(p => p && p.asset), der = tout.reduce((m, p) => (p.date > m ? p.date : m), '');
+  if (!ouv) return html`<${Card} cls="c7" title="Physique" sub=${tout.length ? tout.length + ' photo' + (tout.length > 1 ? 's' : '') + ' · dernière le ' + dMid(der) : 'Aucune photo pour l’instant'}
+    right=${html`<button type="button" className="btn sm" aria-expanded="false" onClick=${tog}><${Icon} n="camera" s=${16} />Afficher</button>`}><//>`;
+  return html`<${Card} cls="c7" title="Physique" sub="Même pose, même lumière, à jeun" right=${html`<div className="row" style=${{ gap: 6 }}><${Seg} neutral label="Pose" value=${pose} onChange=${setPose} options=${POSES} /><button type="button" className="ib" aria-label="Replier les photos" aria-expanded="true" onClick=${tog}><${Icon} n="x" s=${18} /></button></div>`}>
     <div className="ph-jour"><span><${Icon} n="camera" s=${15} />Jour photos${auj ? html`<em>c’est aujourd’hui</em>` : ''}</span>
       <div className="ph-j" role="group" aria-label="Jour photos">${PH_JOURS.map(d => html`<button key=${d[0]} type="button" aria-pressed=${jp === d[0]} aria-label=${d[2]} onClick=${() => { Store.patch('cfg', null, { photosJour: d[0] }); toast('Jour photos : ' + d[2].toLowerCase()); }}>${d[1]}</button>`)}</div></div>
     ${all.length ? html`<div className="cmp">${fig(A, 'Avant')}${fig(all.length > 1 ? B : null, 'Prochaine série')}</div>` : html`<div className="empty"><span><b>Aucune photo ${pose}.</b> Première série le jour photos : face, profil, dos. Le comparatif avant / après s’affiche dès 2 dates.</span></div>`}
