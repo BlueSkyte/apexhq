@@ -178,10 +178,23 @@ const Apex = (() => {
   const Z = () => ({ k: 0, p: 0, g: 0, l: 0, f: 0 });
   const add = (a, b) => { a.k += b.k; a.p += b.p; a.g += b.g; a.l += b.l; a.f += (b.f || 0); return a; };
   function foodOf(it, foods) {
-    if (it.x) return { id: null, n: it.x.n, c: 'libre', r: '', k: it.x.k || 0, p: it.x.p || 0, g: it.x.g || 0, l: it.x.l || 0, f: it.x.f || 0, d: it.x.g100 ? 100 : 1, u: it.x.g100 ? null : ['portion', 100] };
+    if (it.x) return { id: null, n: it.x.n, c: 'libre', r: '', k: it.x.k || 0, p: it.x.p || 0, g: it.x.g || 0, l: it.x.l || 0, f: it.x.f || 0, d: it.x.g100 ? 100 : 1, u: it.x.g100 ? null : ['portion', 100], ml: it.x.ml ? 1 : 0 };
     return (foods || FOODS)[it.a] || null;
   }
   const grams = (it, f) => (f.u ? it.q * f.u[1] : it.q);
+  /* Aliments perso enregistrés en « portion de 100 g » (ancienne saisie manuelle) : passés en grammes, quantités ×100, mêmes calories.
+     Renvoie null si rien à faire, sinon { aliments, jours: { date: repas } }. */
+  function migrerPortions(cfg, journal) {
+    const al = (cfg && cfg.aliments) || {}, ids = Object.keys(al).filter(k => al[k] && al[k].c === 'perso' && al[k].u && al[k].u[0] === 'portion' && al[k].u[1] === 100);
+    if (!ids.length) return null;
+    const aliments = Object.assign({}, al), jours = {};
+    ids.forEach(k => { aliments[k] = Object.assign({}, al[k], { u: null, d: 100 }); });
+    Object.keys(journal || {}).forEach(d => {
+      const rp = journal[d] && journal[d].repas; if (!Array.isArray(rp) || !rp.some(m => (m.items || []).some(it => ids.indexOf(it.a) >= 0))) return;
+      jours[d] = rp.map(m => Object.assign({}, m, { items: (m.items || []).map(it => (ids.indexOf(it.a) >= 0 ? Object.assign({}, it, { q: Math.round(it.q * 100) }) : it)) }));
+    });
+    return { aliments, jours };
+  }
   function mac(it, foods) {
     const f = foodOf(it, foods); if (!f) return Z();
     const x = grams(it, f) / 100;
@@ -652,7 +665,7 @@ const Apex = (() => {
 
   return {
     pad, iso, parse, today, addDays, dow, diffDays, range, lundi, uid, num, fx, sg, kgTxt,
-    TYPES, types, SUPPS_DEF, supps, groupes, MIGR, migrList, MAX_SERIES, GROUPES_DEF, focusLabel, DEFAULT_CFG, mergeCfg, seanceDuJour, sportsDuJour, statutDuJour, cibleDuJour, mifflin, bilanTheorique,
+    TYPES, types, SUPPS_DEF, supps, groupes, MIGR, migrList, MAX_SERIES, GROUPES_DEF, focusLabel, DEFAULT_CFG, mergeCfg, migrerPortions, seanceDuJour, sportsDuJour, statutDuJour, cibleDuJour, mifflin, bilanTheorique,
     FOODS, CATS, allFoods, foodOf, grams, mac, totMeal, totJour, Z, add,
     MODELES, pas, arrondi, ajuster, planDuJour, swapOptions, boucler, lissage,
     serie, mm7, serieMM7, pente, tendance, verdictRythme, eta, tdee, adherence, navy, lecture,
@@ -2255,23 +2268,23 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   }
   /* Un jour proposé par l'IA → repas validés (aliments connus ou plats libres chiffrés), ou null si invalide. */
   function validerJourIA(day, foods, min) {
-    if (!Array.isArray(day) || day.length < (min == null ? 2 : min) || day.length > 8) return null;
+    if (!Array.isArray(day)) return null;
     const meals = [];
-    for (let i = 0; i < day.length; i++) {
-      const m = day[i]; if (!m || !Array.isArray(m.items) || m.items.length < 1 || m.items.length > 9) return null;
+    for (let i = 0; i < day.length && meals.length < 8; i++) {
+      const m = day[i]; if (!m || !Array.isArray(m.items)) continue;
       const items = [];
-      for (const it of m.items) {
+      for (const it of m.items.slice(0, 12)) { // tolérant : un élément inconnu ou mal chiffré est ignoré, pas tout le menu
         if (Array.isArray(it)) {
-          const f = foods[it[0]], q = Number(it[1]); if (!f || !(q > 0) || q > (f.u ? 20 : 1200)) return null;
+          const f = foods[it[0]], q = Number(it[1]); if (!f || !(q > 0) || q > (f.u ? 20 : 1200)) continue;
           items.push({ a: f.id, q: f.u ? Math.round(q * 2) / 2 : Math.round(q), adj: f.r ? 1 : 0 });
         } else if (it && typeof it === 'object' && it.n) {
-          const k = Number(it.k); if (!(k >= 20 && k <= 2500)) return null;
+          const k = Number(it.k); if (!(k >= 20 && k <= 2500)) continue;
           items.push({ x: { n: String(it.n).slice(0, 60), k: Math.round(k), p: Math.round(+it.p || 0), g: Math.round(+it.g || 0), l: Math.round(+it.l || 0), f: Math.round(+it.f || 0) }, q: 1 });
-        } else return null;
+        }
       }
-      meals.push({ id: 'm' + (i + 1), nom: String(m.nom || 'Repas').trim().slice(0, 24) || 'Repas', h: heureProp(m.h), items });
+      if (items.length) meals.push({ id: 'm' + (meals.length + 1), nom: String(m.nom || 'Repas').trim().slice(0, 24) || 'Repas', h: heureProp(m.h), items });
     }
-    return meals;
+    return meals.length >= (min == null ? 2 : min) ? meals : null;
   }
   function validerMenuSemaine(r, cfg, opts) {
     try {
@@ -2496,7 +2509,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       'Profil : ' + ip.ligne + ', objectif ' + ip.objTxt + (q.regime && q.regime !== 'omnivore' ? ', régime ' + q.regime : '') + (q.exclus ? ', aliments à éviter : ' + q.exclus : '') + '.',
       'Journée : ' + (seance ? 'jour de séance (' + seance + (o.seanceH ? ', à ' + o.seanceH : '') + ')' : 'jour de repos') + ', cible totale ' + c.kcal + ' kcal, P ' + c.p + ' g, G ' + c.g + ' g, L ' + c.l + ' g. Il est ' + (o.heure || '08:00') + '.',
       deja.length ? 'Déjà mangé aujourd’hui (à ne pas reproposer) :\n' + deja.join('\n') : 'Rien n’a encore été mangé aujourd’hui.',
-      'IL RESTE À MANGER : ' + r.kcal + ' kcal, P ' + r.p + ' g, G ' + r.g + ' g, L ' + r.l + ' g. Compose exactement ' + o.repas + ' repas, tous après ' + (o.heure || '08:00') + (o.horaire ? ', avec EXACTEMENT ces noms et heures, dans cet ordre (les repas déjà passés de la journée ne sont plus à faire) : ' + o.horaire.map(x => x[0] + ' ' + x[1]).join(', ') : '') + ' ; chaque repas a une heure "h" au format HH:MM.' + reglesSeance(o) + (o.repas === 1 ? ' Un seul repas : fais-en un vrai repas complet.' : ''),
+      'IL RESTE À MANGER : ' + r.kcal + ' kcal, P ' + r.p + ' g, G ' + r.g + ' g, L ' + r.l + ' g. Compose exactement ' + o.repas + ' repas, tous après ' + (o.heure || '08:00') + (o.horaire ? (o.contraintes ? '. Horaires proposés par défaut : ' + o.horaire.map(x => x[0] + ' ' + x[1]).join(', ') + '. Si la demande parle d’horaires, de nombre de repas, de jeûne ou de plages (ex. « rien avant midi », « 2 repas », « je mange à 13 h »), SUIS LA DEMANDE : change les heures, les noms et même le nombre de repas' : ', avec EXACTEMENT ces noms et heures, dans cet ordre (les repas déjà passés de la journée ne sont plus à faire) : ' + o.horaire.map(x => x[0] + ' ' + x[1]).join(', ')) : '') + ' ; chaque repas a une heure "h" au format HH:MM.' + reglesSeance(o) + (o.repas === 1 ? ' Un seul repas : fais-en un vrai repas complet.' : ''),
       'RÈGLES DE DIÉTÉTIQUE SPORTIVE PAR DÉFAUT' + (o.contraintes ? ' (la demande passe avant)' : '') + ' : déjeuner et dîner sont les vrais gros repas (viande ou poisson, féculent, légumes, un peu de bonne matière grasse). Les autres repas sont légers (petit-déj : protéine + avoine ou pain + fruit ; pré-séance : glucides digestes + un peu de protéines, peu de lipides ; post-séance : whey ou skyr + fruit + galettes de riz ; collation : skyr, fromage blanc ou whey + fruit). Protéines réparties sur les repas.',
       o.contraintes ? blocDemande(o.contraintes) : 'Aucune demande particulière.',
       blocVariete(o),
@@ -2508,13 +2521,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   function menuJourIA(r, cfg, reste, dow, opts) {
     try {
       const foods = A.allFoods(cfg), v = validerJourIA(r && r.repas, foods, 1); if (!v) return null;
-      const meals = caleHoraires(v, opts && opts.horaire);
+      /* avec une demande libre, on garde les noms et heures de l'IA (elle a pu suivre « rien avant midi ») ; sinon le planning de l'app */
+      const meals = opts && opts.libre ? v.slice().sort((a, b) => String(a.h || '').localeCompare(String(b.h || ''))) : caleHoraires(v, opts && opts.horaire);
       const corr = (corrigerMenu({ [dow]: meals }, cfg, opts) || {})[dow] || meals;
       if (reste.kcal < 150) return { meals: corr.map(m => Object.assign({}, m, { ok: false })), tot: null };
       const res = etalonnerRepas(cfg, corr, reste, foods, opts), plan = (opts && opts.horaire) || [];
       if (!plan.some(p => p[2])) return res;
       /* jour de séance : ~60 % des glucides au pré et au post (rôle retrouvé par l'heure, puis retiré des données) */
-      const roleDe = h => (plan.find(p => p[1] === h) || [])[2];
+      /* rôle pré/post : même heure que le planning, sinon (demande libre) le repas le plus proche à moins de 2 h */
+      const tP = p => minutes(p[1]), roleDe = h => { const e = plan.find(p => p[1] === h); if (e || !(opts && opts.libre)) return (e || [])[2]; const t = minutes(h); if (t == null) return undefined; const p = plan.filter(x => x[2] && Math.abs(tP(x) - t) <= 120).sort((a, b) => Math.abs(tP(a) - t) - Math.abs(tP(b) - t))[0]; return p && p[2]; };
       const ms = repartirGlucides(res.meals.map(m => Object.assign({}, m, { role: roleDe(m.h) })), foods, 0.6).map(m => { const o = Object.assign({}, m); delete o.role; return o; });
       const t = ms.reduce((s, m) => A.add(s, A.totMeal(m, foods)), A.Z());
       return { meals: ms, tot: { k: Math.round(t.k), p: Math.round(t.p), g: Math.round(t.g), l: Math.round(t.l) } };
@@ -2657,7 +2672,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return { semaine, totaux, manquants };
   }
   /* Repas du journal à partir du modèle fixe (nouveaux identifiants, rien de coché). */
-  const repasDepuisFixe = tpl => tpl.map(m => ({ id: m.id, nom: m.nom, h: m.h, ok: false, items: m.items.map(x => ({ id: A.uid(), a: x.a, q: x.q })) }));
+  const repasDepuisFixe = tpl => tpl.map(m => ({ id: m.id, nom: m.nom, h: m.h, ok: false, items: m.items.map(x => ({ id: A.uid(), a: x.a, q: x.q })) })).filter(m => m.items.length);
+  /* Repas vides en double d'un repas rempli (« Petit-déj » vide à côté de « Petit-déjeuner ») : à retirer. Même début de nom = même repas. */
+  const cleRepas = n => String(n || '').toLowerCase().normalize('NFD').replace(/[^a-z]/g, '').slice(0, 6);
+  const repasDoublons = ms => { const pleins = (ms || []).filter(m => (m.items || []).length).map(m => cleRepas(m.nom)); return (ms || []).filter(m => !(m.items || []).length && !m.ok && pleins.indexOf(cleRepas(m.nom)) >= 0); };
 
   /* planDuJour : un jour importé (repas « fixe ») garde les quantités écrites, sans recalage. */
   const planAvant = A.planDuJour;
@@ -2667,7 +2685,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return planAvant(cfg, statut, cible, date);
   };
 
-  Object.assign(A, { lireAliment, lireMenu, cleAliment: cle, candidatsImport: candidats, aReconnaitre, promptReconnaissance, lireReconnaissance, alimentNeuf, quantiteImport: quantite, construireSemaine, repasDepuisFixe });
+  Object.assign(A, { repasDoublons, lireAliment, lireMenu, cleAliment: cle, candidatsImport: candidats, aReconnaitre, promptReconnaissance, lireReconnaissance, alimentNeuf, quantiteImport: quantite, construireSemaine, repasDepuisFixe });
 })();
 
 /* ---- 14-program-logic.js ---- */
@@ -3176,22 +3194,24 @@ const IA_PORTIONS = 'Compte TOUT ce qui compose le plat tel qu’il est servi : 
 
 /* Mémoire des estimations nutritionnelles : même texte = même réponse, instantanée et sans quota.
    shortcut: entrées jamais purgées avant 30 jours, à purger si le stockage local sature. */
+/* Gemini saturé : une demande peut traîner plus d'une minute (mesuré : 83 s puis échec) alors qu'un nouvel essai répond en ~4 s.
+   Coupe chaque essai à ms et relance une fois (délai, erreur réseau ou JSON illisible). Le quota atteint n'est jamais relancé. */
+const iaEssais = async (appel, ms, onRetry) => {
+  for (let i = 0; ; i++) {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+    try { return await appel(ctl.signal); }
+    catch (e) {
+      const lent = ctl.signal.aborted, c = e && e.code;
+      if (i > 0 || !(lent || c === 'upstream_error' || c === 'invalid_json')) throw lent ? { code: 'lent' } : e;
+      if (onRetry) onRetry();
+    } finally { clearTimeout(t); }
+  }
+};
 const iaMemo = async (fn, prompt, o) => {
   let h = 5381; for (let i = 0; i < prompt.length; i++) h = ((h << 5) + h + prompt.charCodeAt(i)) | 0;
   const K = 'apexhq:ia:' + (h >>> 0).toString(36) + prompt.length;
   try { const c = JSON.parse(localStorage.getItem(K) || 'null'); if (c && Date.now() - c.t < 2592e6) return c.v; } catch (e) { /* mémoire illisible */ }
-  /* Gemini saturé : une demande peut traîner plus d'une minute (mesuré : 83 s puis échec) alors qu'un nouvel essai répond en ~4 s.
-     On coupe chaque essai à 25 s et on relance une fois. */
-  let v;
-  for (let i = 0; ; i++) {
-    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 25000);
-    try { v = await fn(prompt, Object.assign({}, o, { signal: ctl.signal })); break; }
-    catch (e) {
-      const lent = ctl.signal.aborted, c = e && e.code;
-      if (i > 0 || !(lent || c === 'upstream_error')) throw lent ? { code: 'lent' } : e;
-      if (o && o.onRetry) o.onRetry();
-    } finally { clearTimeout(t); }
-  }
+  const v = await iaEssais(signal => fn(prompt, Object.assign({}, o, { signal })), 25000, o && o.onRetry);
   if (v && (+v.kcal > 0 || (Array.isArray(v.items) && v.items.length))) try { localStorage.setItem(K, JSON.stringify({ t: Date.now(), v })); } catch (e) { /* stockage plein : pas de mémoire */ }
   return v;
 };
@@ -3204,7 +3224,7 @@ const aiMsg = e => {
   if (c === 'quota' || c === 'bad_code') return (e && e.message) || 'Quota IA du jour atteint.';
   if (c === 'session_expired') return 'Session expirée : reconnecte-toi à Claude.';
   if (c === 'refused' || c === 'empty_completion' || c === 'invalid_json') return 'Réponse inexploitable. Reformule avec aliments et quantités.';
-  if (c === 'lent') return 'L’IA de Google est saturée en ce moment. Réessaie dans une minute, ou ajoute l’aliment à la main.';
+  if (c === 'lent') return 'L’IA de Google est saturée en ce moment. Réessaie dans une minute.';
   if (c === 'cancelled') return '';
   return 'Échec de la demande. Réessaie.';
 };
@@ -3877,8 +3897,8 @@ function Activite({ date, cls }) {
   const eau = j.eau || 0;
   return html`<${Card} cls=${cls} title="Pas et eau">
     <div className="form">
-      <${Num} id="act-pas" label=${'Pas · objectif ' + f0(cfg.cibles.pasMin)} value=${j.pas == null ? null : j.pas} onChange=${set('pas')} dec=${0} min=${0} max=${80000} placeholder="0" />
-      <div className="fld"><span className="fld-l">Eau<b>${fq(eau)} / ${fq(cfg.cibles.eau)} L</b></span>
+      <${Num} id="act-pas" label=${'👟 Pas · objectif ' + f0(cfg.cibles.pasMin)} value=${j.pas == null ? null : j.pas} onChange=${set('pas')} dec=${0} min=${0} max=${80000} placeholder="0" />
+      <div className="fld"><span className="fld-l">💧 Eau<b>${fq(eau)} / ${fq(cfg.cibles.eau)} L</b></span>
         <div className="row"><button className="btn grow" aria-label="Retirer 25 cl" onClick=${() => set('eau')(Math.max(0, Math.round((eau - 0.25) * 100) / 100) || null)}><${Icon} n="minus" s=${18} /></button>
         <button className="btn grow" aria-label="Ajouter 25 cl" onClick=${() => set('eau')(Math.round((eau + 0.25) * 100) / 100)}><${Icon} n="plus" s=${18} /></button></div></div>
     </div>
@@ -4176,7 +4196,7 @@ function MensuCard({ date, win, cls }) {
 
 /* ---- 40-ui-repas.js ---- */
 /* Macrolya — onglet 2 : plan repas, swap, recalage, écarts, macros résiduelles, suppléments. */
-const unitOf = f => (f.u ? f.u[0] : 'g');
+const unitOf = f => (f.u ? f.u[0] : f.ml ? 'ml' : 'g');
 const macTxt = m => 'P ' + f0(m.p) + ' · G ' + f0(m.g) + ' · L ' + f0(m.l);
 const norm = s => String(s).toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '');
 const aiErr = e => aiMsg(e);
@@ -4322,7 +4342,7 @@ function FoodLibSheet({ onClose, onAdded }) {
 
 function AddSheet({ foods, title, onAdd, onClose }) {
   const [q, setQ] = useState(''); const [cat, setCat] = useState(''); const [scan, setScan] = useState(false);
-  const [fr, setFr] = useState({ n: '', k: null, p: null, g: null, l: null });
+  const [fr, setFr] = useState({ n: '', k: null, p: null, g: null, l: null, qte: 100, ml: false });
   const [ai, setAi] = useState({ txt: '', busy: false, res: null, err: '', keep: true });
   const sample = Store.caps().sample;
   /* recherche classée : le mot cherché d'abord au début d'un nom, les aliments de base avant les plats (« pomme » → Pomme, pas gnocchi) ; puis le reste des correspondances partielles */
@@ -4334,9 +4354,9 @@ function AddSheet({ foods, title, onAdd, onClose }) {
   const pick = f => { onAdd({ a: f.id, q: f.d || (f.u ? 1 : 100) }); onClose(); };
   const addFree = () => {
     if (!fr.n.trim() || fr.k == null) return;
-    const x = { n: fr.n.trim().slice(0, 60), k: fr.k || 0, p: fr.p || 0, g: fr.g || 0, l: fr.l || 0 };
-    if (fr.keep) { const id = garderAliment({ n: x.n, r: '', k: x.k, p: x.p, g: x.g, l: x.l, f: 0, d: 1, u: ['portion', 100] }); onAdd({ a: id, q: 1 }); }
-    else onAdd({ q: 1, x });
+    const x = { n: fr.n.trim().slice(0, 60), k: fr.k || 0, p: fr.p || 0, g: fr.g || 0, l: fr.l || 0 }, qte = Math.max(1, Math.round(fr.qte || 100)), ml = fr.ml ? 1 : 0;
+    if (fr.keep) { const id = garderAliment({ n: x.n, r: '', k: x.k, p: x.p, g: x.g, l: x.l, f: 0, d: qte, u: null, ml }); onAdd({ a: id, q: qte }); }
+    else onAdd({ q: qte, x: Object.assign(x, { g100: 1, ml }) });
     onClose();
   };
   /* « Décris ce que tu manges » : un aliment par composant, valeurs de la base quand le plat y est, sinon valeurs pour 100 g en grammes (modifiable). */
@@ -4395,12 +4415,15 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     </div>
     <details className="more"><summary>Saisie manuelle des macros</summary><div className="stack">
       <div className="form"><label className="fld full" htmlFor="fr-n"><span className="fld-l">Nom</span><input id="fr-n" className="inp" type="text" maxLength="60" placeholder="Poke bowl saumon" value=${fr.n} onChange=${e => setFr(Object.assign({}, fr, { n: e.target.value }))} /></label></div>
+      <div className="stack"><span className="fld-l">Unité</span><div className="pf-seg" role="radiogroup" aria-label="Unité">${[[false, 'Grammes (g)'], [true, 'Millilitres (ml)']].map(u => html`<button key=${String(u[0])} type="button" role="radio" aria-checked=${!!fr.ml === u[0]} className=${!!fr.ml === u[0] ? 'on' : ''} onClick=${() => setFr(Object.assign({}, fr, { ml: u[0] }))}>${u[1]}</button>`)}</div></div>
+      <span className="fld-l">Valeurs pour 100 ${fr.ml ? 'ml' : 'g'} (comme sur l’étiquette)</span>
       <div className="form f4">
-        <${Num} id="fr-k" label="kcal" value=${fr.k} onChange=${v => setFr(Object.assign({}, fr, { k: v }))} dec=${0} min=${0} max=${6000} />
-        <${Num} id="fr-p" label="Protéines" value=${fr.p} onChange=${v => setFr(Object.assign({}, fr, { p: v }))} dec=${0} min=${0} max=${400} />
-        <${Num} id="fr-g" label="Glucides" value=${fr.g} onChange=${v => setFr(Object.assign({}, fr, { g: v }))} dec=${0} min=${0} max=${900} />
-        <${Num} id="fr-l" label="Lipides" value=${fr.l} onChange=${v => setFr(Object.assign({}, fr, { l: v }))} dec=${0} min=${0} max=${400} />
+        <${Num} id="fr-k" label="kcal" value=${fr.k} onChange=${v => setFr(Object.assign({}, fr, { k: v }))} dec=${0} min=${0} max=${950} />
+        <${Num} id="fr-p" label="Protéines" value=${fr.p} onChange=${v => setFr(Object.assign({}, fr, { p: v }))} dec=${1} min=${0} max=${100} />
+        <${Num} id="fr-g" label="Glucides" value=${fr.g} onChange=${v => setFr(Object.assign({}, fr, { g: v }))} dec=${1} min=${0} max=${100} />
+        <${Num} id="fr-l" label="Lipides" value=${fr.l} onChange=${v => setFr(Object.assign({}, fr, { l: v }))} dec=${1} min=${0} max=${100} />
       </div>
+      <${Num} id="fr-q" label="Quantité mangée" unit=${fr.ml ? 'ml' : 'g'} value=${fr.qte} onChange=${v => setFr(Object.assign({}, fr, { qte: v }))} dec=${0} min=${1} max=${3000} />
       <label className="chk-l" htmlFor="fr-keep"><input id="fr-keep" type="checkbox" checked=${!!fr.keep} onChange=${e => setFr(Object.assign({}, fr, { keep: e.target.checked }))} /><span>Garder dans ma bibliothèque</span></label>
       <button type="button" className="btn wide" disabled=${!fr.n.trim() || fr.k == null} onClick=${addFree}>Ajouter</button>
     </div></details>
@@ -4566,7 +4589,7 @@ function MenuIASheet({ onClose, jour }) {
   const reste = day ? Apex.resteJour(c, mange) : null;
   const defRepas = day ? Math.max(1, Math.min(6, meals.filter(m => !m.ok).length || (manges.length ? 2 : 4))) : +lsGet('menu:repas', repasNb(cfg));
   const [repas, setRepas] = useState(defRepas); const [txt, setTxt] = useState(() => (day ? '' : lsGet('menu:txt', '')));
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [res, setRes] = useState(null); const refus = useRef([]);
+  const [busy, setBusy] = useState(false); const [retry, setRetry] = useState(false); const [err, setErr] = useState(''); const [res, setRes] = useState(null); const refus = useRef([]);
   const IDEES = day ? IDEES_JOUR : IDEES_SEM;
   /* jour de séance : heure de la séance (réglage du jour ou habituel), modifiable ici pour aujourd'hui */
   const salle = day && c.statut === 'salle', [hS, setHS] = useState(() => (salle ? Apex.heureSeanceJour(cfg, j, jour) : null));
@@ -4581,20 +4604,22 @@ function MenuIASheet({ onClose, jour }) {
     if (!sample) return;
     refus.current = autre && res ? refus.current.concat(plats(res)).slice(-14) : [];
     if (!day) { lsSet('menu:repas', repas); lsSet('menu:txt', txt); }
-    setBusy(true); setErr(''); if (!autre) setRes(null);
+    setBusy(true); setRetry(false); setErr(''); if (!autre) setRes(null);
     const recents = Apex.recentsRepas(S.journal, cfg, jour || Apex.today(), 10), opts = { libre: !!txt.trim() };
     try {
       if (day) {
         const h = heure(); opts.horaire = Apex.horairesJour(h, repas, seanceO);
         const prompt = Apex.promptMenuJour({ cfg, cible: c, reste, repas, contraintes: txt, heure: h, horaire: opts.horaire, seanceH: seanceO && hS, seance: c.statut === 'salle' ? [muscuJ && 'muscu ' + muscuJ].concat(spJ.map(s => s.n + ' ' + s.duree + ' min ' + s.int)).filter(Boolean).join(' + ') || 'entraînement' : '', recents, refus: refus.current,
           deja: manges.map(m => ({ nom: m.nom, h: m.h, txt: m.items.map(it => nom(it) + qte(it)).join(', ') })) });
-        const r = await Promise.race([sample.json(prompt, { modelTier: 'default', cache: false, maxTokens: 4096 }), new Promise((_, ko) => setTimeout(() => ko({ code: 'upstream_error' }), 120000))]);
-        const v = Apex.menuJourIA(r, cfg, reste, Apex.dow(jour), opts);
+        const demande = p => iaEssais(signal => sample.json(p, { modelTier: 'default', cache: false, maxTokens: 6144, signal }), 50000, () => setRetry(true));
+        let v = Apex.menuJourIA(await demande(prompt), cfg, reste, Apex.dow(jour), opts);
+        if (!v) { setRetry(true); v = Apex.menuJourIA(await demande(prompt + '\n\nRAPPEL : réponds uniquement avec l’objet JSON demandé, chaque repas avec au moins un aliment de la liste ou un plat chiffré.'), cfg, reste, Apex.dow(jour), opts); }
         if (!v) setErr('La proposition de l’IA était incomplète. Relance, ou reformule ta demande.'); else setRes(v);
       } else {
         const prompt = Apex.promptMenuSemaine({ cfg, repas, contraintes: txt, recents, refus: refus.current });
-        const r = await Promise.race([sample.json(prompt, { modelTier: 'default', cache: false, maxTokens: 8192 }), new Promise((_, ko) => setTimeout(() => ko({ code: 'upstream_error' }), 150000))]);
-        const v = Apex.validerMenuSemaine(r, cfg, opts);
+        const demande = p => iaEssais(signal => sample.json(p, { modelTier: 'default', cache: false, maxTokens: 8192, signal }), 100000, () => setRetry(true));
+        let v = Apex.validerMenuSemaine(await demande(prompt), cfg, opts);
+        if (!v) { setRetry(true); v = Apex.validerMenuSemaine(await demande(prompt + '\n\nRAPPEL : réponds uniquement avec l’objet JSON demandé, les 7 jours remplis.'), cfg, opts); }
         if (!v) setErr('La proposition de l’IA était incomplète. Relance, ou simplifie ta demande.');
         else setRes(Object.assign({ manquants: v.manquants }, Apex.etalonnerSemaine(cfg, v.semaine, opts)));
       }
@@ -4627,7 +4652,7 @@ function MenuIASheet({ onClose, jour }) {
         <textarea id="menu-txt" className="inp" maxLength="700" rows="3" placeholder=${day ? 'ex. resto japonais ce soir, je veux un burger ce midi, que des plats froids, pas le temps de cuisiner…' : 'ex. cantine le midi, séance à 18 h, vendredi soir resto, cuisine du monde, petit budget…'} value=${txt} onChange=${e => setTxt(e.target.value)}></textarea></label>
       <div className="chips">${IDEES.map(p => html`<button key=${p} type="button" className="chip" onClick=${() => ajoute(p)}>${p}</button>`)}</div>
       ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
-      <button type="button" className="btn pri wide" disabled=${busy} onClick=${() => run(false)}><${Icon} n="sparkles" s=${18} />${busy ? (day ? 'L’IA compose ta journée…' : 'L’IA compose ta semaine (≈ 30 s)…') : day ? 'Composer ma journée' : 'Générer ma semaine'}</button>
+      <button type="button" className="btn pri wide" disabled=${busy} onClick=${() => run(false)}><${Icon} n="sparkles" s=${18} />${busy ? (retry ? 'L’IA est chargée, nouvel essai…' : day ? 'L’IA compose ta journée…' : 'L’IA compose ta semaine (≈ 30 s)…') : day ? 'Composer ma journée' : 'Générer ma semaine'}</button>
       <p className="mut" style=${{ fontSize: 12 }}>${day ? 'Une demande d’IA. Les repas déjà cochés restent ; les autres sont remplacés.' : 'Une demande d’IA. Remplace « Ma semaine » ; tes journées saisies ne changent pas.'} Menus variés : l’IA évite tes plats des derniers jours.</p>
     <//>` : day ? html`<${React.Fragment}>
       <div className="row sb"><${Pill} st="good">Journée prête<//><span className="mut" style=${{ fontSize: 12 }}>${t ? '≈ ' + f0(t.k) + ' kcal · P ' + f0(t.p) + ' · G ' + f0(t.g) + ' · L ' + f0(t.l) : ''}${reste.kcal > 0 ? ' / ' + f0(reste.kcal) + ' restants' : ''}</span></div>
@@ -4698,6 +4723,7 @@ function Repas({ date }) {
   const vide = meals.every(m => !m.items.length);
   /* Les repas du jour existent d'office, vides : il ne reste qu'à les remplir. */
   useEffect(() => { if (j.repas == null && !man) put(slotsVides(cfg, c.statut, date, j)); }, [date, c.statut]);
+  useEffect(() => { const d = Apex.repasDoublons(j.repas); if (d.length) put(j.repas.filter(m => d.indexOf(m) < 0)); }, [date, (j.repas || []).map(m => m.nom + (m.items || []).length).join()]);
   /* Changer le nombre de repas : si la journée est encore vide, ses repas sont recréés ; sinon on garde ce qui est rempli. */
   const setNb = n => { Store.patch('cfg', null, { repasNb: n }); if (vide && !man) put(slotsVides(Object.assign({}, cfg, { repasNb: n }), c.statut, date, j)); toast(n + ' repas par jour'); };
   const gen = () => { put(Apex.planDuJour(cfg, c.statut, c, date)); toast('Menu du ' + jourNom + ' chargé, calé sur ' + f0(c.kcal) + ' kcal'); };
@@ -5047,7 +5073,7 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
   const rest = Apex.restDe(e0, ex), sets = ex.sets || [], normales = sets.filter(s => !s.w), faites = sets.filter(Apex.setFait);
   const [ouvert, setOuvert] = useState(() => !ex.ok), [note, setNote] = useState(!!ex.note);
   const best = h.reduce((b, x) => Math.max(b, x.e1), 0), cur = sets.reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0), record = cur > best + 0.05 && best > 0;
-  let num = 0; const toutCoche = normales.length > 0 && normales.every(s => Apex.setCoche(s)), nCoche = normales.filter(s => Apex.setCoche(s)).length, replie = toutCoche && !ouvert;
+  let num = 0; const toutCoche = normales.length > 0 && normales.every(s => Apex.setCoche(s)), nCoche = normales.filter(s => Apex.setCoche(s)).length, replie = !ouvert; // on replie ou rouvre librement, fini ou pas (seul « Terminer » clôt l’exercice)
   const arr = v => Math.round(v / (e.inc || 2.5)) * (e.inc || 2.5);
   const kgInt = k => { const s = sets[k]; if (s.t === 'bo') { const t = sets.find(x => x.t === 'top'); return t && t.kg > 0 ? arr(t.kg * 0.85) : null; } if (s.t === 'd') { const p = sets[k - 1]; return p && p.kg > 0 ? arr(p.kg * 0.75) : null; } return null; };
   const repos = s => (s.t === 'd' ? 0 : s.w ? 45 : rest);
@@ -5073,7 +5099,8 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
     <div className="wo-xh" data-sort-zone="1">
       <span className="mfig-box" onClick=${() => setOuvert(true)}><${MuscleFig} m=${e.m} s=${e.s} h=${40} /></span>
       <button type="button" className="wo-xt" onClick=${() => setOuvert(true)} aria-label=${'Rouvrir ' + e.n}><b>${e.n}</b><span>${faites.length} série${faites.length > 1 ? 's' : ''}${faites.length ? ' · ' + setsTxt(faites) : ''}${record ? ' · record' : ''}</span></button>
-      <span className="wo-ok on" role="img" aria-label=${'Toutes les séries validées : ' + e.n}><${Icon} n="check" s=${20} w=${2.8} /></span>
+      ${toutCoche ? html`<span className="wo-ok on" role="img" aria-label=${'Toutes les séries validées : ' + e.n}><${Icon} n="check" s=${20} w=${2.8} /></span>` : html`<span className="wo-ok" role="img" aria-label=${nCoche + ' séries validées sur ' + normales.length}><span className="wo-okn"><b>${nCoche}</b><small>/${normales.length}</small></span></span>`}
+      <button type="button" className="ib wo-tog" aria-label=${'Rouvrir ' + e.n} aria-expanded="false" onClick=${() => setOuvert(true)}><${Icon} n="chevR" s=${20} /></button>
     </div></div>`;
   return html`<div className="wo-x" data-sort="1">
     <div className="wo-xh" data-sort-zone="1">
@@ -5082,6 +5109,7 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
       ${toutCoche ? html`<button type="button" className="wo-ok on" aria-label=${'Terminer l’exercice : ' + e.n} onClick=${terminer}><${Icon} n="check" s=${20} w=${2.8} /></button>`
         : html`<span className="wo-ok" role="img" aria-label=${nCoche + ' séries validées sur ' + normales.length}><span className="wo-okn"><b>${nCoche}</b><small>/${normales.length}</small></span></span>`}
       ${html`<button type="button" className="ib" aria-label=${'Options : ' + e.n} onClick=${onEdit}><${Icon} n="more" s=${22} /></button>`}
+      <button type="button" className="ib wo-tog open" aria-label=${'Replier ' + e.n} aria-expanded="true" onClick=${() => setOuvert(false)}><${Icon} n="chevR" s=${20} /></button>
     </div>
     <div className="wo-meta">
       <div className="wo-rest" role="group" aria-label="Temps de repos de cet exercice">
@@ -7159,7 +7187,12 @@ const RAPPELS = [
   ['pesee', 'Pesée du matin', '07:30', 'Pèse-toi', 'À jeun, après les toilettes : note ton poids dans Macrolya.'],
   ['repas', 'Repas du midi', '12:30', 'Ton déjeuner', 'Note ou coche ton déjeuner dans Macrolya.'],
   ['soir', 'Bilan du soir', '21:00', 'Bilan du jour', 'Coche tes repas mangés et regarde ce qu’il te reste.'],
+  ['supps', 'Compléments', '09:00', '💊 Tes compléments du jour', 'Pense à les prendre, puis coche-les dans Macrolya.'],
 ];
+/* rappel des compléments : seulement pour qui en a déclaré, avec leurs noms dans la notification */
+const mesSupps = cfg => (cfg && Array.isArray(cfg.supps) ? cfg.supps : []);
+const corpsRappel = (x, cfg) => { if (x[0] !== 'supps') return x[4]; const n = mesSupps(cfg).map(s => s.n).filter(Boolean); return n.length ? n.slice(0, 4).join(' · ') + (n.length > 4 ? '…' : '') + '. Coche-les dans Macrolya une fois pris.' : x[4]; };
+const rappelsVisibles = cfg => RAPPELS.filter(x => x[0] !== 'supps' || mesSupps(cfg).length);
 const rappelsDe = cfg => { const r = (cfg && cfg.rappels) || {}; const o = {}; RAPPELS.forEach(x => { const v = r[x[0]] || {}; o[x[0]] = { on: !!v.on, h: /^\d\d:\d\d$/.test(v.h || '') ? v.h : x[2] }; }); return o; };
 const capNatif = () => { const c = window.Capacitor; try { return c && c.isNativePlatform && c.isNativePlatform() ? c : null; } catch (e) { return null; } };
 const notifPlugin = () => { const c = capNatif(); if (!c) return null; try { if (c.isPluginAvailable && !c.isPluginAvailable('LocalNotifications')) return null; return (c.Plugins && c.Plugins.LocalNotifications) || c.registerPlugin('LocalNotifications'); } catch (e) { return null; } };
@@ -7170,7 +7203,8 @@ async function planifierRappels(cfg, demander) {
     await LN.cancel({ notifications: RAPPELS.map((x, i) => ({ id: 101 + i })) }).catch(() => {});
     const r = rappelsDe(cfg), list = [];
     RAPPELS.forEach((x, i) => { if (!r[x[0]].on) return; const [h, m] = r[x[0]].h.split(':').map(Number);
-      list.push({ id: 101 + i, title: x[3], body: x[4], schedule: { on: { hour: h, minute: m }, repeats: true, allowWhileIdle: true } }); });
+      if (x[0] === 'supps' && !mesSupps(cfg).length) return;
+      list.push({ id: 101 + i, title: x[3], body: corpsRappel(x, cfg), schedule: { on: { hour: h, minute: m }, repeats: true, allowWhileIdle: true } }); });
     if (list.length) await LN.schedule({ notifications: list });
     return 'ok';
   } catch (e) { return 'err'; }
@@ -7180,8 +7214,8 @@ function RappelsBody() {
   const set = (k, v) => { const n = Object.assign({}, cfg.rappels || {}, { [k]: Object.assign({}, r[k], v) }); Store.patch('cfg', null, { rappels: n });
     planifierRappels(Object.assign({}, cfg, { rappels: n }), !!v.on).then(s => setEtat(s)); };
   return html`<div className="stack">
-    ${RAPPELS.map(x => html`<div key=${x[0]} className="rp-row">
-      <label className="chk-l" htmlFor=${'rp-' + x[0]}><input id=${'rp-' + x[0]} type="checkbox" checked=${r[x[0]].on} onChange=${e => set(x[0], { on: e.target.checked })} /><span><b>${x[1]}</b><small>${x[4]}</small></span></label>
+    ${rappelsVisibles(cfg).map(x => html`<div key=${x[0]} className="rp-row">
+      <label className="chk-l" htmlFor=${'rp-' + x[0]}><input id=${'rp-' + x[0]} type="checkbox" checked=${r[x[0]].on} onChange=${e => set(x[0], { on: e.target.checked })} /><span><b>${x[0] === 'supps' ? '💊 ' : ''}${x[1]}</b><small>${corpsRappel(x, cfg)}</small></span></label>
       <input type="time" className="inp rp-h" aria-label=${'Heure : ' + x[1]} value=${r[x[0]].h} onChange=${e => { if (/^\d\d:\d\d$/.test(e.target.value)) set(x[0], { h: e.target.value }); }} />
     </div>`)}
     ${etat === 'refus' && html`<div className="note"><${Icon} n="alert" /><div><span>Notifications refusées : autorise-les pour Macrolya dans les réglages du téléphone.</span></div></div>`}
@@ -7194,11 +7228,11 @@ function RappelBanner({ go }) {
   const [vu, setVu] = useState(() => lsGet('rappel:vu', '')); const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick(x => x + 1), 60000); return () => clearInterval(t); }, []);
   const now = new Date(), hm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-  const reps = j.repas || [], fait = { pesee: j.poids != null, repas: !!j.man || reps.some(m => m.ok), soir: !!j.man || (reps.length > 0 && reps.every(m => m.ok)) };
-  const x = RAPPELS.slice().reverse().find(y => r[y[0]].on && hm >= r[y[0]].h && !fait[y[0]] && vu !== d + ':' + y[0]);
+  const reps = j.repas || [], fait = { pesee: j.poids != null, repas: !!j.man || reps.some(m => m.ok), soir: !!j.man || (reps.length > 0 && reps.every(m => m.ok)), supps: mesSupps(cfg).every(s => (j.supp || {})[s.id]) };
+  const x = rappelsVisibles(cfg).filter(y => y[0] !== 'supps').slice().reverse().find(y => r[y[0]].on && hm >= r[y[0]].h && !fait[y[0]] && vu !== d + ':' + y[0]);
   if (!x) return null;
   const ok = () => { const v = d + ':' + x[0]; lsSet('rappel:vu', v); setVu(v); };
-  return html`<div className="note acc rp-ban" role="status"><${Icon} n=${x[0] === 'pesee' ? 'scale' : x[0] === 'repas' ? 'utensils' : 'moon'} /><div><span><b>${x[3]}</b> · ${x[4]}</span></div>
+  return html`<div className="note acc rp-ban" role="status"><${Icon} n=${x[0] === 'pesee' ? 'scale' : x[0] === 'repas' || x[0] === 'supps' ? 'utensils' : 'moon'} /><div><span><b>${x[3]}</b> · ${corpsRappel(x, cfg)}</span></div>
     <button type="button" className="btn sm pri" onClick=${() => { ok(); go(x[0] === 'pesee' ? 'dashboard' : 'repas'); }}>Y aller</button>
     <button type="button" className="ib sm" aria-label="Masquer le rappel" onClick=${ok}><${Icon} n="x" s=${16} /></button></div>`;
 }
@@ -7561,6 +7595,8 @@ function App() {
   const j = S.journal[date] || {}, statut = Apex.statutDuJour(cfg, j, date), today = Apex.today();
   useEffect(() => { document.body.dataset.statut = statut; }, [statut]);
   useEffect(() => { document.body.dataset.theme = cfg.theme || ''; }, [cfg.theme]);
+  /* une fois la base chargée : aliments perso en « portion » convertis en grammes (affichage « 50 g » au lieu de « 0,5 ») */
+  useEffect(() => { if (sy.mode !== 'ok' && sy.mode !== 'local') return; const m = Apex.migrerPortions(Store.cfg(), Store.get().journal); if (!m) return; Object.keys(m.jours).forEach(d => Store.patch('journal', d, { repas: m.jours[d] })); Store.patch('cfg', null, { aliments: m.aliments }); }, [sy.mode]);
   /* ouverture du jour : compte pour la série (flamme), une fois la base chargée pour ne pas écraser celle du compte */
   useEffect(() => { if (sy.mode !== 'ok' && sy.mode !== 'local') return; const d = Apex.today(), o = cfg.ouverts || []; if (o.indexOf(d) < 0) Store.patch('cfg', null, { ouverts: o.concat(d).slice(-90) }); }, [sy.mode]);
   const go = t => { setTab(t); try { if (location.hash !== '#' + t) location.hash = t; } catch (e) { /* hash indisponible */ } try { window.scrollTo(0, 0); } catch (e) { /* sans effet */ } };
