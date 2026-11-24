@@ -737,6 +737,17 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return best || JOURS_ENT[n].slice();
   }
 
+  /* Repères en g par kg de poids selon l'objectif (Helms 2014 et Morton 2018 pour les protéines ; lipides ≥ 0,6 g/kg ;
+     glucides 3 à 5 g/kg pour la musculation, ISSN 2017). p et l : valeur conseillée ; *Min/*Max : fourchette des études. */
+  function recoMacros(q) {
+    const obj = (q && q.objectif) || 'seche', list = intensites(obj), it = list.find(x => x[0] === (q && q.intensite)) || list[0];
+    const p = obj === 'seche' ? { leger: 2.0, normal: 2.2, agressif: 2.4 }[it[0]] : obj === 'masse' ? 1.8 : 1.9;
+    const l = obj === 'seche' ? (it[0] === 'agressif' ? 0.7 : 0.8) : obj === 'masse' ? 1.0 : 0.9;
+    return obj === 'seche' ? { obj, p, pMin: 2.0, pMax: 2.4, l, lMin: 0.6, lMax: 1.0, gMin: 2.5, gMax: 5 }
+      : obj === 'masse' ? { obj, p, pMin: 1.6, pMax: 2.2, l, lMin: 0.8, lMax: 1.2, gMin: 4, gMax: 7 }
+      : { obj, p, pMin: 1.6, pMax: 2.2, l, lMin: 0.7, lMax: 1.1, gMin: 3, gMax: 5 };
+  }
+
   /* ---------- calories ---------- */
   function calcPlan(q) {
     const kg = q.poids, warn = [], n = clamp(Math.round(q.seances || 0), 0, 7);
@@ -757,8 +768,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     const floor = Math.max(q.sexe === 'F' ? 1200 : 1500, 0.9 * bmr);
     let avg = tdee + delta;
     if (avg < floor) { avg = floor; delta = avg - tdee; warn.push('Calories relevées au plancher de sécurité (' + rd(floor) + ' kcal).'); }
-    const gkg = obj === 'seche' ? { leger: 2.0, normal: 2.2, agressif: 2.4 }[it[0]] : obj === 'masse' ? 1.8 : 1.9;
-    const lkg = obj === 'seche' ? (it[0] === 'agressif' ? 0.7 : 0.8) : obj === 'masse' ? 1.0 : 0.9;
+    const rm = recoMacros(q), gkg = rm.p, lkg = rm.l;
     let P = Math.round(gkg * kg); if (P * 4 > avg * 0.35) P = Math.round(avg * 0.35 / 4);
     const L = Math.max(Math.round(0.6 * kg), Math.min(Math.round(lkg * kg), Math.round((avg - P * 4) * 0.5 / 9)));
     let salleK = avg, reposK = avg;
@@ -1122,7 +1132,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return { obj, objTxt: OBJ_TXT[obj], sexe, rythme, focus, prenom: String(p.prenom || '').trim(), ligne: (p.prenom ? 'prénom ' + String(p.prenom).trim() + ', ' : '') + sexe + ', ' + p.age + ' ans, ' + p.taille + ' cm, départ ' + p.poidsDepart + ' kg le ' + p.dateDepart + ', cible ' + p.poidsCible + ' kg' };
   }
 
-  Object.assign(A, { SPLIT_CHOIX, SPLIT_N, splitNorm, iaProfil, completerProgramme, ajusterDuree, OBJECTIFS, INTENSITES, intensites, calcPlan, planToCfg, SPORTS, sportsNorm, sportsKcal, joursSports, joursMuscu, FOCUS_CHOIX, VOL, cibleVolume, focusGroupes, focusEclate, plafonnerVolume, SPLITS, SPLIT_TYPES, splitBase, splitSuggere, genProgramme, volumeGroupe, validerProgrammeIA, exclusIds, modelesPour, wheyAliments, SUPP_CHOIX, suppsListe });
+  Object.assign(A, { SPLIT_CHOIX, SPLIT_N, splitNorm, iaProfil, completerProgramme, ajusterDuree, OBJECTIFS, INTENSITES, intensites, calcPlan, recoMacros, planToCfg, SPORTS, sportsNorm, sportsKcal, joursSports, joursMuscu, FOCUS_CHOIX, VOL, cibleVolume, focusGroupes, focusEclate, plafonnerVolume, SPLITS, SPLIT_TYPES, splitBase, splitSuggere, genProgramme, volumeGroupe, validerProgrammeIA, exclusIds, modelesPour, wheyAliments, SUPP_CHOIX, suppsListe });
 })();
 
 /* ---- 12-adapt-logic.js ---- */
@@ -7487,6 +7497,23 @@ function ProfilBody({ cfg, journal, setP, cib, onRedo }) {
       <div className="pf-kc"><b className="num">${f0(c.kcal)}</b><span>kcal</span></div>
       <div className="pf-mac" aria-hidden="true"><i style=${{ flex: c.p * 4, background: 'var(--p)' }}></i><i style=${{ flex: c.g * 4, background: 'var(--g)' }}></i><i style=${{ flex: c.l * 9, background: 'var(--l)' }}></i></div>
       <div className="pf-leg"><span><i style=${{ background: 'var(--p)' }}></i>Prot. ${c.p} g · ${pc(c.p * 4)} %</span><span><i style=${{ background: 'var(--g)' }}></i>Gluc. ${c.g} g · ${pc(c.g * 4)} %</span><span><i style=${{ background: 'var(--l)' }}></i>Lip. ${c.l} g · ${pc(c.l * 9)} %</span></div>
+      ${(() => { const rm = Apex.recoMacros(cfg.q || {}), kg = now || p.poidsDepart, ci = cfg.cibles, v1 = x => String(x.toFixed(1)).replace('.', ',');
+        const OBJ = { seche: 'sèche', masse: 'prise de masse', neutre: 'maintien' }[rm.obj];
+        /* même valeur les jours actifs et de repos ; glucides recalculés ; le plancher suit si on descend */
+        const setKg = (k, v) => { const n = Math.round(v * kg), o = { salle: Object.assign({}, ci.salle, { [k]: n }), repos: Object.assign({}, ci.repos, { [k]: n }) };
+          ['salle', 'repos'].forEach(s => { o[s].g = Math.max(0, Math.round((o[s].kcal - o[s].p * 4 - o[s].l * 9) / 4)); });
+          Store.patch('cfg', null, { cibles: Object.assign({}, ci, o, { planchers: Object.assign({}, ci.planchers, { [k]: Math.min(ci.planchers[k], n) }) }) }); };
+        const ligne = (k, nom, opts, reco, mn, mx) => { const cur = Math.round(ci.salle[k] / kg * 10) / 10;
+          return html`<div className="gk"><span className="fld-l">${nom} par kg de poids<b>${v1(cur)} g/kg · ${ci.salle[k]} g</b></span>
+            <div className="chips">${opts.map(x => html`<button key=${x} type="button" className=${cx('chip gk-c', x === reco && 'reco')} aria-pressed=${Math.abs(cur - x) < 0.05} onClick=${() => setKg(k, x)}><b>${v1(x)}</b>${x === reco && html`<small>conseillé</small>`}</button>`)}</div>
+            <p className="pf-hint">Fourchette des études en ${OBJ} : ${v1(mn)} à ${v1(mx)} g/kg.</p></div>`; };
+        const gS = ci.salle.g / kg, gR = ci.repos.g / kg, okG = x => x >= rm.gMin && x <= rm.gMax;
+        return html`<div className="gk-box"><span className="prm-t">Répartition selon ton poids (${v1(kg)} kg)</span>
+          ${ligne('p', 'Protéines', [1.6, 1.8, 1.9, 2.0, 2.1, 2.2, 2.4], rm.p, rm.pMin, rm.pMax)}
+          ${ligne('l', 'Lipides', [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2], rm.l, rm.lMin, rm.lMax)}
+          <div className="gk"><span className="fld-l">Glucides par kg de poids<b>${v1(gS)} g/kg actif · ${v1(gR)} repos</b></span>
+            <p className="pf-hint">Les glucides prennent le reste des calories. Conseillé en ${OBJ} : ${v1(rm.gMin)} à ${v1(rm.gMax)} g/kg. ${okG(gS) ? 'Tu es dans la fourchette.' : gS < rm.gMin ? 'Un peu bas : baisse les lipides ou les protéines pour en libérer.' : 'Au-dessus : normal si tu t’entraînes beaucoup.'}</p></div>
+        </div>`; })()}
       <div key=${cs}>${cib(cs)}</div>
       <p className="pf-hint">Les glucides se calculent seuls. Minimum : ${f0(cfg.cibles.planchers.kcal)} kcal, ${cfg.cibles.planchers.p} g de protéines, ${cfg.cibles.planchers.l} g de lipides.</p></div></div>
     <div className="pf-g"><span className="prm-t">Planning · ${nb} séance${nb > 1 ? 's' : ''} par semaine</span>
