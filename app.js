@@ -7312,12 +7312,10 @@ function ProLock({ titre }) {
     <button type="button" className="btn pri" onClick=${ouvrirPro}>Découvrir Pro</button></section>`;
 }
 /* Zone Pro : rend son contenu si l'utilisateur y a droit, sinon un seul encart verrouillé. */
-/* Zone Pro : le vrai contenu, flouté et inerte, avec un cadenas par-dessus (on voit ce qu'on débloque). */
-function ProZone({ titre, children }) {
+/* Zone Pro : chaque carte reste à sa place, titre lisible, contenu flouté avec son propre cadenas ; un appui ouvre Pro. */
+function ProZone({ children }) {
   if (estPro()) return children;
-  return html`<div className="c12 pro-flou"><div className="grid pro-flou-in" aria-hidden="true" inert="">${children}</div>
-    <div className="pro-flou-v"><i><${Icon} n="lock" s=${22} /></i><b>${titre || 'Fonction Macrolya Pro'}</b><span>Débloque-la avec Macrolya Pro ou un code cadeau.</span>
-      <button type="button" className="btn pri" onClick=${ouvrirPro}><${Icon} n="lock" s=${16} />Débloquer</button></div></div>`;
+  return html`<div className="pro-z" style=${{ display: 'contents' }} onClickCapture=${e => { e.preventDefault(); e.stopPropagation(); ouvrirPro(); }}>${children}</div>`;
 }
 function ProBody() {
   const [q, setQ] = useState(() => AI.quota()), [code, setCode] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [fete, setFete] = useState(null), [ko, setKo] = useState(false);
