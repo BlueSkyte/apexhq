@@ -972,7 +972,22 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     });
     let res = plafonnerVolume({ seanceTypes: used, programme: prog, planning }, groupes, cfg, q);
     if (!q.persoVide) { res = adapterMateriel(res, cfg, q.equip); if (q.duree > 0) res = ajusterDuree(res, groupes, cfg, q.duree); res = limiterNombre(res, groupes, cfg, 12); }
-    return res;
+    return prioriserFaibles(res, groupes, cfg);
+  }
+  /* Points faibles travaillés FRAIS et DUR : en tête de séance (gros mouvement d'abord, isolation ensuite) et plus près de l'échec
+     (RIR 1 sur les mouvements lourds, 0 = dernière série à l'échec sur l'isolation). Études : Robinson 2024 (proximité de l'échec
+     et hypertrophie), Nunes 2021 (gains les plus forts sur les exercices faits en premier), Pelland 2024 (le volume compte toujours). */
+  function prioriserFaibles(res, groupes, cfg) {
+    const ex = A.allExos(cfg), faibles = {}; (groupes || []).forEach(g => (g.m || []).forEach(m => { faibles[m] = 1; }));
+    if (!Object.keys(faibles).length) return res;
+    const prog = {};
+    Object.keys(res.programme).forEach(t => {
+      const l = res.programme[t].map(x => Object.assign({}, x)), fa = x => !!(ex[x.e] && faibles[ex[x.e].m]);
+      l.forEach(x => { if (fa(x) && x.rir == null) x.rir = ex[x.e].lo <= 8 ? 1 : 0; });
+      const devant = x => fa(x) && ex[x.e].m !== 'abd'; // abdos fatigués avant un squat ou un soulevé de terre : risque pour le dos, ils restent à la fin
+      prog[t] = l.filter(devant).sort((a, b) => ex[a.e].lo - ex[b.e].lo).concat(l.filter(x => !devant(x)));
+    });
+    return Object.assign({}, res, { programme: prog });
   }
   /* Remplace les exercices dont le matériel manque (maison, salle limitée…) par un exercice du même muscle, sinon les retire. */
   function adapterMateriel(res, cfg, equip) {
@@ -1167,7 +1182,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     return { obj, objTxt: OBJ_TXT[obj], sexe, rythme, focus, prenom: String(p.prenom || '').trim(), ligne: (p.prenom ? 'prénom ' + String(p.prenom).trim() + ', ' : '') + sexe + ', ' + p.age + ' ans, ' + p.taille + ' cm, départ ' + p.poidsDepart + ' kg le ' + p.dateDepart + ', cible ' + p.poidsCible + ' kg' };
   }
 
-  Object.assign(A, { SPLIT_CHOIX, SPLIT_N, splitNorm, iaProfil, completerProgramme, ajusterDuree, OBJECTIFS, INTENSITES, intensites, calcPlan, recoMacros, planToCfg, SPORTS, sportsNorm, sportsKcal, joursSports, joursMuscu, FOCUS_CHOIX, VOL, cibleVolume, focusGroupes, focusEclate, plafonnerVolume, SPLITS, SPLIT_TYPES, splitBase, splitSuggere, genProgramme, volumeGroupe, validerProgrammeIA, exclusIds, modelesPour, wheyAliments, SUPP_CHOIX, suppsListe });
+  Object.assign(A, { prioriserFaibles, SPLIT_CHOIX, SPLIT_N, splitNorm, iaProfil, completerProgramme, ajusterDuree, OBJECTIFS, INTENSITES, intensites, calcPlan, recoMacros, planToCfg, SPORTS, sportsNorm, sportsKcal, joursSports, joursMuscu, FOCUS_CHOIX, VOL, cibleVolume, focusGroupes, focusEclate, plafonnerVolume, SPLITS, SPLIT_TYPES, splitBase, splitSuggere, genProgramme, volumeGroupe, validerProgrammeIA, exclusIds, modelesPour, wheyAliments, SUPP_CHOIX, suppsListe });
 })();
 
 /* ---- 12-adapt-logic.js ---- */
@@ -2853,7 +2868,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       'Profil : ' + ip.sexe + ', ' + a.age + ' ans, ' + a.poids + ' kg, niveau ' + a.niveau + ', objectif ' + ip.objTxt + '.',
       'Séances par semaine : ' + n + ' de ' + a.duree + ' minutes maximum chacune (échauffement inclus, compte 2,2 à 3 minutes par série). Découpage : ' + split + '.',
       'Points faibles à prioriser, avec leur cible de séries directes par semaine et leur fréquence : ' + (groupes.length ? groupes.map(g => g.n + ' ' + g.min + ' à ' + g.max + ' séries, ' + g.freq + ' fois par semaine').join(' ; ') : 'aucun, programme équilibré') + '.',
-      'Principes d’entraînement à respecter (études sur l’hypertrophie) : chaque muscle travaillé au moins 2 fois par semaine ; environ 10 à 20 séries par semaine et par muscle au total (les séries indirectes comptent pour moitié : les biceps reçoivent déjà du volume des tirages, les triceps des développés), donc pas de surplus inutile sur les muscles qui ne sont pas des points faibles ; 8 séries maximum par muscle et par séance ; la plupart des exercices entre 6 et 15 répétitions à 0-3 répétitions de la limite ; préfère les exercices qui sollicitent le muscle en position étirée (curl incliné, extension triceps au-dessus de la tête, écarté poulie, leg curl assis, soulevé roumain, élévations latérales poulie).',
+      'Principes d’entraînement à respecter (études sur l’hypertrophie) : chaque muscle travaillé au moins 2 fois par semaine ; environ 10 à 20 séries par semaine et par muscle au total (les séries indirectes comptent pour moitié : les biceps reçoivent déjà du volume des tirages, les triceps des développés), donc pas de surplus inutile sur les muscles qui ne sont pas des points faibles ; 8 séries maximum par muscle et par séance ; la plupart des exercices entre 6 et 15 répétitions à 1-3 répétitions de la limite ; POINTS FAIBLES : leurs exercices EN PREMIER dans la séance, quand le muscle est frais (sauf les abdos, toujours à la fin), et plus près de l’échec (1 répétition de la limite sur les mouvements lourds, dernière série à l’échec sur l’isolation) ; préfère les exercices qui sollicitent le muscle en position étirée (curl incliné, extension triceps au-dessus de la tête, écarté poulie, leg curl assis, soulevé roumain, élévations latérales poulie).',
       'Exercices autorisés (id=nom, muscle, répétitions habituelles) : ' + cat + '.',
       'Règles : ' + (a.maxExos ? '3 à ' + a.maxExos + ' exercices par séance (JAMAIS plus de ' + a.maxExos + ')' : '5 à 9 exercices par séance') + ', 3 à 4 séries par exercice (JAMAIS 5 ou plus : pour compenser un point faible, ajoute un exercice ou une séance qui le travaille, pas des séries en plus), exercices lourds en premier, chaque point faible travaillé au moins aussi souvent que sa fréquence, jours de repos répartis. Pour chaque exercice donne aussi le temps de repos "repos" en secondes (60 à 90 en isolation, 120 à 180 sur les mouvements lourds) et la fourchette de répétitions "reps":[min,max] et le "rir" visé (0 à 3 : 0 = échec, 2 = deux répétitions en réserve) : charges lourdes et RIR 2 pour les mouvements de base, RIR 0 à 1 pour l’isolation. Utilise uniquement les id autorisés.',
       'Réponds uniquement par un objet JSON : {"seances":[{"nom":"Haut","exercices":[{"id":"di_halt","series":4,"reps":[6,10],"rir":2,"repos":150}]}],"planning":{"0":"","1":"Haut","2":"","3":"","4":"","5":"","6":""}}. Le planning associe chaque jour (0 = dimanche … 6 = samedi) au nom d’une séance, ou "" pour un repos. Exactement ' + n + ' jours d’entraînement.'];
@@ -7666,8 +7681,9 @@ const SCIENCE = [
     'Métabolisme de base : équation de Mifflin-St Jeor, la plus précise chez l’adulte ; Katch-McArdle si tu indiques ta masse grasse (elle tient compte de ta masse maigre).',
     'Dépense totale : métabolisme × activité du quotidien, plus tes pas, tes séances et ton cardio, comptés à part.',
     'Sèche : déficit de 10 à 20 % selon le rythme choisi, plafonné à 1 % du poids par semaine pour garder le muscle. Prise de masse : surplus de 5 à 10 %.',
-    'Planchers de sécurité : jamais sous 1 500 kcal (homme) ou 1 200 kcal (femme), ni sous 90 % du métabolisme de base.'],
-    ['Mifflin MD, St Jeor ST et al. (1990), Am J Clin Nutr 51:241-247', 'Frankenfield D et al. (2005), J Am Diet Assoc 105:775-789', 'Helms ER et al. (2014), J Int Soc Sports Nutr 11:20']],
+    'Planchers de sécurité : jamais sous 1 500 kcal (homme) ou 1 200 kcal (femme), ni sous 90 % du métabolisme de base.',
+    'Coach hebdo : chaque semaine, ta dépense réelle est recalculée sur 14 jours (ce que tu manges et l’évolution de ta moyenne 7 jours, 1 kg ≈ 7 700 kcal). Tes calories sont recalées pour viser −0,75 % du poids par semaine en sèche ou +0,35 % en prise de masse, au plus ±250 kcal par jour d’un coup.'],
+    ['Mifflin MD, St Jeor ST et al. (1990), Am J Clin Nutr 51:241-247', 'Frankenfield D et al. (2005), J Am Diet Assoc 105:775-789', 'Helms ER et al. (2014), J Int Soc Sports Nutr 11:20', 'Hall KD (2008), Int J Obes 32:573-576 (déficit par kilo perdu)', 'Iraki J et al. (2019), Sports 7:154 (prise de masse chez le pratiquant naturel)']],
   ['target', 'Tes macros', [
     'Protéines : 2,0 à 2,4 g/kg en sèche, 1,8 g/kg en prise de masse, 1,9 g/kg au maintien. Au-delà de 1,6 g/kg, le gain de muscle plafonne chez la plupart ; en déficit, viser plus haut protège la masse maigre.',
     'Lipides : au moins 0,6 g/kg (hormones), autour de 0,8 à 1 g/kg selon l’objectif.',
@@ -7684,14 +7700,18 @@ const SCIENCE = [
     'Volume : 10 à 20 séries directes par muscle et par semaine, davantage sur tes points faibles.',
     'Fréquence : chaque muscle travaillé au moins deux fois par semaine quand ton planning le permet.',
     'Effort : séries proches de l’échec (1 à 3 répétitions en réserve), progression de charge semaine après semaine.',
+    'Points faibles : travaillés en premier dans la séance, quand le muscle est frais, et plus près de l’échec (1 répétition en réserve sur les mouvements lourds, dernière série à l’échec sur l’isolation). Les abdos restent en fin de séance pour protéger le dos.',
     'Techniques avancées en option : top set + back-off (−15 %), dégressives (−25 %), tempo contrôlé.'],
-    ['Schoenfeld BJ, Ogborn D, Krieger JW (2017), J Sports Sci 35:1073-1082 (méta-analyse)', 'Pelland JC et al. (2024), relation dose-réponse du volume (méta-régression)', 'Schoenfeld BJ et al. (2016), Sports Med 46:1689-1697 (fréquence)', 'Refalo MC et al. (2023), Sports Med (proximité de l’échec)']],
+    ['Schoenfeld BJ, Ogborn D, Krieger JW (2017), J Sports Sci 35:1073-1082 (méta-analyse)', 'Pelland JC et al. (2024), relation dose-réponse du volume (méta-régression)', 'Schoenfeld BJ et al. (2016), Sports Med 46:1689-1697 (fréquence)', 'Refalo MC et al. (2023), Sports Med 53:649-665 (échec ou non : méta-analyse)', 'Robinson ZP et al. (2024), Sports Med (proximité de l’échec et hypertrophie, méta-régression)', 'Nunes JP et al. (2021), Eur J Sport Sci (ordre des exercices, méta-analyse)']],
+  ['bolt', 'Tes compléments', [
+    'Créatine monohydrate : 3 à 5 g par jour, tous les jours, à n’importe quelle heure ; le complément le mieux étudié pour la force et la masse musculaire.'],
+    ['Kreider RB et al. (2017), position de l’ISSN sur la créatine, J Int Soc Sports Nutr 14:18']],
   ['utensils', 'Tes aliments', [
     'Valeurs nutritionnelles de la table Ciqual de l’ANSES, la référence française, plus des centaines de plats du quotidien avec leurs vraies portions.',
     'Les quantités de tes menus sont recalculées au gramme près pour coller à tes cibles du jour.'],
     ['ANSES, table de composition nutritionnelle Ciqual 2020']],
   ['check', 'Vérifié à chaque mise à jour', [
-    'Plus de 380 tests automatiques contrôlent les calculs (calories, macros, volume, horaires des repas) avant chaque publication.',
+    'Plus de 460 tests automatiques contrôlent les calculs (calories, macros, volume, horaires des repas) avant chaque publication.',
     'Un banc d’essai fait tourner 300 profils différents (âge, poids, objectifs, régimes, allergies) sur 18 900 journées de repas simulées pour repérer les incohérences.'],
     []],
 ];
