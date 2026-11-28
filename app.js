@@ -7291,17 +7291,17 @@ function ProLock({ titre }) {
 /* Zone Pro : rend son contenu si l'utilisateur y a droit, sinon un seul encart verrouillé. */
 function ProZone({ titre, children }) { return estPro() ? children : html`<${ProLock} titre=${titre} />`; }
 function ProBody() {
-  const [q, setQ] = useState(() => AI.quota()), [code, setCode] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [fete, setFete] = useState(null);
+  const [q, setQ] = useState(() => AI.quota()), [code, setCode] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [fete, setFete] = useState(null), [ko, setKo] = useState(false);
   useEffect(() => { const f = e => setQ(e.detail); window.addEventListener('ia:quota', f); AI.relais('statut').then(x => { if (x) setQ(x); }).catch(() => {}); return () => window.removeEventListener('ia:quota', f); }, []);
   const vip = q && q.pro, aVie = !!vip && vip >= '2999';
   const activer = async () => {
-    if (!code.trim() || busy) return; setBusy(true); setMsg('');
+    if (!code.trim() || busy) return; setBusy(true); setMsg(''); setKo(false);
     try {
       const r = await AI.relais('code', { code: code.trim() }); if (r) setQ(r); setCode('');
       if (r && r.pro) Store.patch('cfg', null, { pro: { fin: r.pro, vip: 1 } });
       setMsg(r && r.pro >= '2999' ? 'Code activé : Pro à vie 🎉' : 'Code activé : Pro jusqu’au ' + dMid(r && r.pro) + ' 🎉');
       if (r && r.pro) setFete(r.pro);
-    } catch (e) { setMsg(aiMsg(e) || 'Code refusé.'); }
+    } catch (e) { setKo(true); setMsg(e && e.code === 'bad_code' ? (e.message || 'Code invalide.') : aiMsg(e) || 'Code refusé.'); }
     setBusy(false);
   };
   return html`<div className="stack">
@@ -7309,9 +7309,9 @@ function ProBody() {
     <div className="pro-hero"><${ProTag} /><b>${vip ? 'Macrolya Pro · VIP' : 'Macrolya Pro'}</b><span>${vip ? (aVie ? 'Actif à vie. Merci 🙏' : 'Actif jusqu’au ' + dMid(vip) + '.') : PRO.actif ? (estPro() ? 'Ton abonnement est actif.' : 'Débloque les outils avancés pour ' + PRO.prix + '.') : 'Fonctions Pro offertes pendant le lancement. L’IA : 10 messages par jour en gratuit, 150 en Pro.'}</span></div>
     ${q && q.l > 0 && html`<div className="pro-q"><span>IA aujourd’hui</span><b>${q.u} / ${q.l}</b><i style=${{ width: Math.min(100, Math.round(q.u / q.l * 100)) + '%' }}></i></div>`}
     <div className="pro-l">${PRO_LISTE.map(x => x[0] === '§' ? html`<h4 key=${x[1]} className="pro-sec">${x[1]}</h4>` : html`<div key=${x[1]} className="pro-r"><i><${Icon} n=${x[0]} s=${18} /></i><span><b>${x[1]}</b><small>${x[2]}</small></span></div>`)}</div>
-    <div className="pro-code"><label className="fld" htmlFor="pro-code"><span className="fld-l">Code cadeau</span><input id="pro-code" className="inp" type="text" autoComplete="off" autoCapitalize="characters" maxLength="30" placeholder="VIP-XXXX-XXXX" value=${code} onChange=${e => setCode(e.target.value.toUpperCase())} /></label>
+    <div className="pro-code"><label className="fld" htmlFor="pro-code"><span className="fld-l">Code cadeau</span><input id="pro-code" type="text" autoComplete="off" autoCapitalize="characters" maxLength="30" placeholder="VIP-XXXX-XXXX" aria-invalid=${ko} className=${cx('inp', ko && 'inp-ko')} value=${code} onChange=${e => { setCode(e.target.value.toUpperCase()); setKo(false); }} /></label>
       <button type="button" className="btn" disabled=${busy || !code.trim()} onClick=${activer}>${busy ? 'Vérification…' : 'Activer'}</button></div>
-    ${msg && html`<p className="mut" role="status" style=${{ fontSize: 13 }}>${msg}</p>`}
+    ${msg && (ko ? html`<p className="code-ko" role="alert"><span aria-hidden="true">✕</span>${msg}</p>` : html`<p className="mut" role="status" style=${{ fontSize: 13 }}>${msg}</p>`)}
     <p className="mut" style=${{ fontSize: 12 }}>Le suivi des repas, le scan, les séances, le poids, les photos, les mensurations et l’export de tes données restent gratuits.</p>
   </div>`;
 }
