@@ -182,6 +182,10 @@ const Apex = (() => {
     return (foods || FOODS)[it.a] || null;
   }
   const grams = (it, f) => (f.u ? it.q * f.u[1] : it.q);
+  const LIQ = /^(lait|huile|jus|sauce soja|vinaigre|cr[eè]me liquide|sirop|bouillon|soupe|velout[eé]|smoothie|k[eé]fir|boisson|eau)/i;
+  const liquide = f => !!(f && !f.u && (f.ml || LIQ.test(f.n || '')));
+  /* quantité IA d'un aliment au poids donnée en « nombre » (1 c. à soupe, 2 portions) : remise en grammes */
+  const grammesIA = (f, q, txt) => (f && !f.u && q > 0 && q < 5 ? Math.round(q * (/caf[eé]/i.test(txt || '') ? 5 : /soupe|cuill|c\.? ?[aà] ?s/i.test(txt || '') ? 12 : f.d || 10)) : q);
   /* Aliments perso enregistrés en « portion de 100 g » (ancienne saisie manuelle) : passés en grammes, quantités ×100, mêmes calories.
      Renvoie null si rien à faire, sinon { aliments, jours: { date: repas } }. */
   function migrerPortions(cfg, journal) {
@@ -665,7 +669,7 @@ const Apex = (() => {
 
   return {
     pad, iso, parse, today, addDays, dow, diffDays, range, lundi, uid, num, fx, sg, kgTxt,
-    TYPES, types, SUPPS_DEF, supps, groupes, MIGR, migrList, MAX_SERIES, GROUPES_DEF, focusLabel, DEFAULT_CFG, mergeCfg, migrerPortions, seanceDuJour, sportsDuJour, statutDuJour, cibleDuJour, mifflin, bilanTheorique,
+    TYPES, types, SUPPS_DEF, supps, groupes, MIGR, migrList, MAX_SERIES, GROUPES_DEF, focusLabel, DEFAULT_CFG, mergeCfg, migrerPortions, liquide, grammesIA, seanceDuJour, sportsDuJour, statutDuJour, cibleDuJour, mifflin, bilanTheorique,
     FOODS, CATS, allFoods, foodOf, grams, mac, totMeal, totJour, Z, add,
     MODELES, pas, arrondi, ajuster, planDuJour, swapOptions, boucler, lissage,
     serie, mm7, serieMM7, pente, tendance, verdictRythme, eta, tdee, adherence, navy, lecture,
@@ -2286,7 +2290,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
       for (const it of m.items.slice(0, 12)) { // tolérant : un élément inconnu ou mal chiffré est ignoré, pas tout le menu
         if (Array.isArray(it)) {
           const f = foods[it[0]], q = Number(it[1]); if (!f || !(q > 0) || q > (f.u ? 20 : 1200)) continue;
-          items.push({ a: f.id, q: f.u ? Math.round(q * 2) / 2 : Math.round(q), adj: f.r ? 1 : 0 });
+          items.push({ a: f.id, q: f.u ? Math.round(q * 2) / 2 : Math.round(A.grammesIA(f, q, '')), adj: f.r ? 1 : 0 });
         } else if (it && typeof it === 'object' && it.n) {
           const k = Number(it.k); if (!(k >= 20 && k <= 2500)) continue;
           items.push({ x: { n: String(it.n).slice(0, 60), k: Math.round(k), p: Math.round(+it.p || 0), g: Math.round(+it.g || 0), l: Math.round(+it.l || 0), f: Math.round(+it.f || 0) }, q: 1 });
@@ -2685,7 +2689,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   const repasDepuisFixe = tpl => tpl.map(m => ({ id: m.id, nom: m.nom, h: m.h, ok: false, items: m.items.map(x => ({ id: A.uid(), a: x.a, q: x.q })) })).filter(m => m.items.length);
   /* Repas vides en double d'un repas rempli (« Petit-déj » vide à côté de « Petit-déjeuner ») : à retirer. Même début de nom = même repas. */
   const cleRepas = n => String(n || '').toLowerCase().normalize('NFD').replace(/[^a-z]/g, '').slice(0, 6);
-  const repasDoublons = ms => { const pleins = (ms || []).filter(m => (m.items || []).length).map(m => cleRepas(m.nom)); return (ms || []).filter(m => !(m.items || []).length && !m.ok && pleins.indexOf(cleRepas(m.nom)) >= 0); };
+  const repasDoublons = ms => { const pleins = (ms || []).filter(m => (m.items || []).length).map(m => cleRepas(m.nom)); return (ms || []).filter(m => !(m.items || []).length && !m.ok && !m.extra && pleins.indexOf(cleRepas(m.nom)) >= 0); }; // un repas ajouté à la main (extra) n'est jamais retiré
 
   /* planDuJour : un jour importé (repas « fixe ») garde les quantités écrites, sans recalage. */
   const planAvant = A.planDuJour;
@@ -3205,14 +3209,14 @@ const IA_PORTIONS = 'Compte TOUT ce qui compose le plat tel qu’il est servi : 
 /* Mémoire des estimations nutritionnelles : même texte = même réponse, instantanée et sans quota.
    shortcut: entrées jamais purgées avant 30 jours, à purger si le stockage local sature. */
 /* Gemini saturé : une demande peut traîner plus d'une minute (mesuré : 83 s puis échec) alors qu'un nouvel essai répond en ~4 s.
-   Coupe chaque essai à ms et relance une fois (délai, erreur réseau ou JSON illisible). Le quota atteint n'est jamais relancé. */
+   Coupe chaque essai à ms et relance jusqu'à 2 fois (délai, erreur réseau ou JSON illisible). Le quota atteint n'est jamais relancé. */
 const iaEssais = async (appel, ms, onRetry) => {
   for (let i = 0; ; i++) {
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
     try { return await appel(ctl.signal); }
     catch (e) {
       const lent = ctl.signal.aborted, c = e && e.code;
-      if (i > 0 || !(lent || c === 'upstream_error' || c === 'invalid_json')) throw lent ? { code: 'lent' } : e;
+      if (i > 1 || !(lent || c === 'upstream_error' || c === 'invalid_json')) throw lent ? { code: 'lent' } : e;
       if (onRetry) onRetry();
     } finally { clearTimeout(t); }
   }
@@ -3221,7 +3225,7 @@ const iaMemo = async (fn, prompt, o) => {
   let h = 5381; for (let i = 0; i < prompt.length; i++) h = ((h << 5) + h + prompt.charCodeAt(i)) | 0;
   const K = 'apexhq:ia:' + (h >>> 0).toString(36) + prompt.length;
   try { const c = JSON.parse(localStorage.getItem(K) || 'null'); if (c && Date.now() - c.t < 2592e6) return c.v; } catch (e) { /* mémoire illisible */ }
-  const v = await iaEssais(signal => fn(prompt, Object.assign({}, o, { signal })), 25000, o && o.onRetry);
+  const v = await iaEssais(signal => fn(prompt, Object.assign({}, o, { signal })), 12000, o && o.onRetry); // réponse normale ≈ 3 s : au-delà de 12 s, Gemini est saturé
   if (v && (+v.kcal > 0 || (Array.isArray(v.items) && v.items.length))) try { localStorage.setItem(K, JSON.stringify({ t: Date.now(), v })); } catch (e) { /* stockage plein : pas de mémoire */ }
   return v;
 };
@@ -4206,7 +4210,7 @@ function MensuCard({ date, win, cls }) {
 
 /* ---- 40-ui-repas.js ---- */
 /* Macrolya — onglet 2 : plan repas, swap, recalage, écarts, macros résiduelles, suppléments. */
-const unitOf = f => (f.u ? f.u[0] : f.ml ? 'ml' : 'g');
+const unitOf = f => (f.u ? f.u[0] : Apex.liquide(f) ? 'ml' : 'g');
 const macTxt = m => 'P ' + f0(m.p) + ' · G ' + f0(m.g) + ' · L ' + f0(m.l);
 const norm = s => String(s).toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[̀-ͯ]/g, '');
 const aiErr = e => aiMsg(e);
@@ -4214,7 +4218,8 @@ const nomRepas = () => { const h = new Date().getHours(); return h < 10 ? 'Petit
 const heure = () => { const d = new Date(); return Apex.pad(d.getHours()) + ':' + Apex.pad(d.getMinutes()); };
 
 function Qty({ it, f, onChange, pesee }) {
-  const por = pesee === false && !f.u, base = f.d || 100, r = v => Math.round(v * 100) / 100;
+  const por = false, base = f.d || 100, // toujours à l'unité ou en g / ml, jamais en fraction de portion
+    r = v => Math.round(v * 100) / 100;
   const stp = por ? 0.5 : Apex.pas(f, it.q), shown = por ? r(it.q / base) : it.q, set = v => onChange(por ? r(v * base) : v);
   return html`<div className="qty">
     <button type="button" aria-label=${'Moins de ' + f.n} onClick=${() => set(Math.max(0, r(shown - stp)))}><${Icon} n="minus" s=${16} /></button>
@@ -4289,7 +4294,7 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDe
       const f = Apex.foodOf(it, foods); if (!f) return null; const x = Apex.mac(it, foods);
       return html`<div key=${it.id} className=${cx('it', !(it.q > 0) && 'zero')}>
         ${edit && html`<button type="button" className="it-del" onClick=${() => retirer(it)} aria-label=${'Retirer ' + f.n}><${Icon} n="minus" s=${16} w=${2.6} /></button>`}
-        <button type="button" className="it-n" onClick=${() => (edit ? onSwap(it) : setFd(it))} aria-label=${(edit ? 'Remplacer ' : 'Détail de ') + f.n}><b>${f.n}</b><span>${pesee === false && !f.u ? '≈ ' + f0(it.q) + ' g · ' : ''}${f0(x.k)} kcal</span></button>
+        <button type="button" className="it-n" onClick=${() => (edit ? onSwap(it) : setFd(it))} aria-label=${(edit ? 'Remplacer ' : 'Détail de ') + f.n}><b>${f.n}</b><span>${f0(x.k)} kcal</span></button>
         <${Qty} it=${it} f=${f} pesee=${pesee} onChange=${q => onQty(it, q)} />
       </div>`;
     })}</div>`}
@@ -4375,10 +4380,10 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     setAi(s => Object.assign({}, s, { busy: true, retry: false, err: '', res: null }));
     try {
       const cands = Apex.chercherAliments(foods, txt, 25).map(f => f.id + ' | ' + f.n + ' | ' + (f.u ? 'unité ' + f.u[0] + ', 1 = ' + Math.round(f.k * f.u[1] / 100) + ' kcal' : 'grammes, 100 g = ' + Math.round(f.k) + ' kcal')).join('\n');
-      const r = await iaMemo(sample.json, 'Tu es diététicien. Découpe ce repas en aliments séparés, un par composant (ex. « box crousty, frites de patate douce, chips » = 3 aliments). Sans quantité précisée, prends la portion réellement servie à un adulte. ' + IA_PORTIONS + ' Pour chaque aliment : si un élément de la BASE ci-dessous est le même aliment ou plat ET la même préparation (frit, en frites, cuit, en sauce, cru : un aliment cru ne vaut jamais pour des frites ou une friture), donne son "id" et la quantité "q" dans son unité (nombre d’unités, ou grammes) ; sinon "id": null, "q" en grammes et les valeurs POUR 100 g (table Ciqual, valeurs officielles des enseignes). Réponds uniquement par un objet JSON : {"items": [{"id": "id de la base ou null", "nom": "libellé court", "q": nombre, "kcal100": nombre, "p100": nombre, "g100": nombre, "l100": nombre, "f100": nombre}], "detail": "hypothèses de portions en une ligne"}.\n\nBASE (id | nom | unité) :\n' + (cands || 'aucun élément') + '\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false, maxTokens: 3072, onRetry: () => setAi(s => Object.assign({}, s, { retry: true })) });
+      const r = await iaMemo(sample.json, 'Tu es diététicien. Découpe ce repas en aliments séparés, un par composant (ex. « box crousty, frites de patate douce, chips » = 3 aliments). Sans quantité précisée, prends la portion réellement servie à un adulte. ' + IA_PORTIONS + ' Pour chaque aliment : si un élément de la BASE ci-dessous est le même aliment ou plat ET la même préparation (frit, en frites, cuit, en sauce, cru : un aliment cru ne vaut jamais pour des frites ou une friture), donne son "id" et la quantité "q" dans son unité : nombre d’unités pour un aliment « unité », sinon TOUJOURS en grammes (1 c. à soupe d’huile = 12 g, 1 c. à café = 5 g, 1 verre de lait = 200 g, 1 noix de beurre = 10 g) ; sinon "id": null, "q" en grammes et les valeurs POUR 100 g (table Ciqual, valeurs officielles des enseignes). Réponds uniquement par un objet JSON : {"items": [{"id": "id de la base ou null", "nom": "libellé court", "q": nombre, "kcal100": nombre, "p100": nombre, "g100": nombre, "l100": nombre, "f100": nombre}], "detail": "hypothèses de portions en une ligne"}.\n\nBASE (id | nom | unité) :\n' + (cands || 'aucun élément') + '\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false, maxTokens: 3072, onRetry: () => setAi(s => Object.assign({}, s, { retry: true })) });
       const items = (r && Array.isArray(r.items) ? r.items : []).slice(0, 12).map(it => {
         const q = +it.q, f = it.id && foods[it.id];
-        if (f && q > 0 && q <= (f.u ? 20 : 3000)) return { a: f.id, q: f.u ? Math.round(q * 4) / 4 : Math.round(q) };
+        if (f && q > 0 && q <= (f.u ? 20 : 3000)) return { a: f.id, q: f.u ? Math.round(q * 4) / 4 : Math.round(Apex.grammesIA(f, q, (it.nom || '') + ' ' + txt)) };
         const k = +it.kcal100; if (!(k >= 0 && k <= 950) || !(q > 0 && q <= 3000)) return null;
         return { q: Math.round(q), x: { n: String(it.nom || 'Aliment').slice(0, 60), k, p: +it.p100 || 0, g: +it.g100 || 0, l: +it.l100 || 0, f: +it.f100 || 0, g100: 1 } };
       }).filter(Boolean);
@@ -4563,7 +4568,7 @@ function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib, onImp }) {
   const tuile = (ic, titre, sous, onClick, cls) => html`<button type="button" className=${cx('ta', cls)} onClick=${onClick}><i><${Icon} n=${ic} s=${20} /></i><b>${titre}</b><span>${sous}</span></button>`;
   const options = html`<details className="more"><summary>Options</summary><div className="stack">
     ${peseeSeg}
-    ${!pesee && html`<p className="mut" style=${{ fontSize: 12 }}>Sans pesée, tu comptes en portions (une assiette moyenne).</p>`}
+
     ${mode === 'perso' && html`<div className="row"><${Confirm} label=${'Partir du menu ' + Apex.PROGRAMMES[base].n} sure="Remplacer ma semaine ?" onYes=${() => { setCfg({ repasSemaine: Apex.semaineDepuis(cfg, base) }); toast('Ta semaine est prête : modifie chaque jour'); }} />
 </div>`}
   </div></details>`;
@@ -4621,13 +4626,13 @@ function MenuIASheet({ onClose, jour }) {
         const h = heure(); opts.horaire = Apex.horairesJour(h, repas, seanceO);
         const prompt = Apex.promptMenuJour({ cfg, cible: c, reste, repas, contraintes: txt, heure: h, horaire: opts.horaire, seanceH: seanceO && hS, seance: c.statut === 'salle' ? [muscuJ && 'muscu ' + muscuJ].concat(spJ.map(s => s.n + ' ' + s.duree + ' min ' + s.int)).filter(Boolean).join(' + ') || 'entraînement' : '', recents, refus: refus.current,
           deja: manges.map(m => ({ nom: m.nom, h: m.h, txt: m.items.map(it => nom(it) + qte(it)).join(', ') })) });
-        const demande = p => iaEssais(signal => sample.json(p, { modelTier: 'default', cache: false, maxTokens: 6144, signal }), 50000, () => setRetry(true));
+        const demande = p => iaEssais(signal => sample.json(p, { modelTier: 'default', cache: false, maxTokens: 6144, signal }), 20000, () => setRetry(true)); // menu du jour normal ≈ 3 s
         let v = Apex.menuJourIA(await demande(prompt), cfg, reste, Apex.dow(jour), opts);
         if (!v) { setRetry(true); v = Apex.menuJourIA(await demande(prompt + '\n\nRAPPEL : réponds uniquement avec l’objet JSON demandé, chaque repas avec au moins un aliment de la liste ou un plat chiffré.'), cfg, reste, Apex.dow(jour), opts); }
         if (!v) setErr('La proposition de l’IA était incomplète. Relance, ou reformule ta demande.'); else setRes(v);
       } else {
         const prompt = Apex.promptMenuSemaine({ cfg, repas, contraintes: txt, recents, refus: refus.current });
-        const demande = p => iaEssais(signal => sample.json(p, { modelTier: 'default', cache: false, maxTokens: 8192, signal }), 100000, () => setRetry(true));
+        const demande = p => iaEssais(signal => sample.json(p, { modelTier: 'default', cache: false, maxTokens: 8192, signal }), 45000, () => setRetry(true));
         let v = Apex.validerMenuSemaine(await demande(prompt), cfg, opts);
         if (!v) { setRetry(true); v = Apex.validerMenuSemaine(await demande(prompt + '\n\nRAPPEL : réponds uniquement avec l’objet JSON demandé, les 7 jours remplis.'), cfg, opts); }
         if (!v) setErr('La proposition de l’IA était incomplète. Relance, ou simplifie ta demande.');
@@ -4749,7 +4754,7 @@ function Repas({ date }) {
   };
   const resetTpl = () => { const o = Object.assign({}, cfg.repasModeles || {}); delete o[c.statut]; Store.patch('cfg', null, { repasModeles: Object.keys(o).length ? o : null }); toast('Plan type ' + c.statut + ' rétabli'); };
   const refit = () => { put(fitted); toast('Recalé : ' + f0(fitK) + ' kcal prévus'); };
-  const addMeal = () => { const used = meals.map(m => m.nom), n = nomRepas(), m = { id: Apex.uid(), nom: used.indexOf(n) < 0 ? n : 'Extra', h: heure(), ok: false, items: [] }; put(meals.concat(m)); setSheet({ t: 'add', mid: m.id }); };
+  const addMeal = () => { const used = meals.map(m => m.nom), n = nomRepas(), m = { id: Apex.uid(), nom: used.indexOf(n) < 0 ? n : 'Extra', h: heure(), ok: false, items: [], extra: 1 }; put(meals.concat(m)); setSheet({ t: 'add', mid: m.id }); };
   const addItems = (mid, items) => {
     const its = items.map(i => Object.assign({ id: Apex.uid() }, i)), tgt = mid && meals.find(m => m.id === mid), auto = mode === 'libre' && date <= Apex.today(), compte = tgt ? (!!tgt.ok || auto) : mode === 'libre';
     const add = its.reduce((s, i) => Apex.add(s, Apex.mac(i, foods)), Apex.Z());
