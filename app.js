@@ -405,7 +405,7 @@ const Apex = (() => {
     let delta = Math.round((td.tdee + ecart - moy) / 10) * 10;
     delta = Math.max(-250, Math.min(250, delta, Infinity)); delta = Math.max(delta, bas);
     if (Math.abs(delta) < 75) delta = 0;
-    return { delta, tdee: Math.round(td.tdee), moy: Math.round(moy), nouvelle: Math.round(moy + delta), obj, semaine: lundi(date) };
+    return { delta, tdee: Math.round(td.tdee), moy: Math.round(moy), nouvelle: Math.round(moy + delta), obj, semaine: lundi(date), apport: Math.round(td.intake), jours: td.n, dk: td.dk };
   }
   /* Applique un ajustement : même écart sur jours actifs et de repos, glucides recalculés (protéines et lipides tenus). */
   function appliquerAjustement(cibles, delta) {
@@ -418,10 +418,12 @@ const Apex = (() => {
     const a = mm7(journal, date), b = mm7(journal, addDays(date, -win));
     if (!a || !b || a.n < 3 || b.n < 3) return null;
     let s = 0, n = 0;
-    for (let i = 1; i <= win; i++) { const t = totJour(journal[addDays(date, -i)], foods).reel; if (t) { s += t.k; n++; } }
+    /* seuls les jours complets comptent : un jour où l'on n'a coché qu'une partie des repas (moins de 60 % de la plus petite cible) fausserait l'apport */
+    const mini = 0.6 * Math.min(cfg.cibles.repos.kcal, cfg.cibles.salle.kcal);
+    for (let i = 1; i <= win; i++) { const t = totJour(journal[addDays(date, -i)], foods).reel; if (t && t.k >= mini) { s += t.k; n++; } }
     if (n < win * 0.7) return null;
     const intake = s / n, deficit = -(a.v - b.v) * 7700 / win;
-    return { intake, deficit, tdee: intake + deficit, n };
+    return { intake, deficit, tdee: intake + deficit, n, dk: a.v - b.v, win };
   }
   function adherence(journal, cfg, date, n, seances) {
     const foods = allFoods(cfg), r = { kcal: [0, 0], prot: [0, 0], pas: [0, 0], sommeil: [0, 0], eau: [0, 0], seances: [0, 0] };
@@ -3000,7 +3002,7 @@ const Store = (() => {
   async function connect() {
     const use = n => { try { const c = window.claude; return c && typeof c.use === 'function' ? Promise.resolve(c.use(n)).catch(() => null) : Promise.resolve(null); } catch (e) { return Promise.resolve(null); } };
     const names = Object.keys(caps), got = await Promise.all(names.map(use));
-    names.forEach((n, i) => { caps[n] = got[i] || null; });
+    names.forEach((n, i) => { caps[n] = got[i] || (n === 'dictation' && window.APEX_STANDALONE && typeof Dictee !== 'undefined' ? Dictee : null); }); // app publiée : dictée du téléphone
     nativeSample = caps.sample; caps.sample = pickSample();
     const cu = window.APEX_STANDALONE && typeof Cloud !== 'undefined' ? Cloud.user() : null;
     if (cu) {
@@ -3305,6 +3307,51 @@ const aiMsg = e => {
   if (c === 'cancelled') return '';
   return 'Échec de la demande. Réessaie.';
 };
+
+/* ---------- Dictée (app publiée) ----------
+   Reconnaissance vocale du navigateur quand elle existe (Chrome, Safari : gratuit, instantané) ;
+   sinon enregistrement du micro (30 s max) transcrit par l'IA (compte comme un message). Même interface que la dictée de Claude. */
+const Dictee = (() => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const peut = !!SR || !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  if (!peut) return null;
+  const L = { f: [], p: [], s: [] }, on = (k, cb) => { L[k].push(cb); return () => { L[k] = L[k].filter(x => x !== cb); }; };
+  const emit = (k, e) => L[k].slice().forEach(cb => { try { cb(e); } catch (x) { /* écouteur fautif ignoré */ } });
+  const err = c => Object.assign(new Error(c), { code: c });
+  let etat = 'idle', rec = null, mr = null, flux = null, minuteur = null;
+  const set = s => { etat = s; emit('s', { state: s }); };
+  const b64 = b => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = ko; r.readAsDataURL(b); });
+  async function start() {
+    if (etat !== 'idle') return;
+    if (SR) {
+      rec = new SR(); rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = true;
+      let refus = false;
+      rec.onresult = ev => { let part = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const r = ev.results[i]; if (r.isFinal) emit('f', { text: ' ' + r[0].transcript.trim() }); else part += r[0].transcript; } emit('p', { text: part }); };
+      rec.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') refus = true; };
+      rec.onend = () => { rec = null; set('idle'); if (refus) emit('s', { state: 'idle', refus: true }); };
+      try { rec.start(); set('listening'); } catch (e) { rec = null; throw err('unavailable'); }
+      return;
+    }
+    try { flux = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { throw err('not_granted'); }
+    const parts = []; mr = new MediaRecorder(flux);
+    mr.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
+    mr.onstop = async () => {
+      clearTimeout(minuteur); flux.getTracks().forEach(t => t.stop()); const type = ((mr && mr.mimeType) || 'audio/webm').split(';')[0]; mr = null; set('processing');
+      try {
+        const b = new Blob(parts, { type }), sample = Store.caps().sample;
+        if (sample && b.size > 1000) {
+          const r = await sample('Transcris mot pour mot, en français, ce que dit la personne dans cet enregistrement. Réponds uniquement par le texte transcrit, sans guillemets ni commentaire.', { image: { mime: type, data: await b64(b) }, cache: false, maxTokens: 512, temp: 0 });
+          const t = String((r && r.text) || '').trim(); if (t) emit('f', { text: ' ' + t });
+        }
+      } catch (e) { /* transcription impossible : rien n'est ajouté */ }
+      set('idle');
+    };
+    mr.start(); set('listening'); minuteur = setTimeout(stop, 30000);
+  }
+  async function stop() { if (rec) { try { rec.stop(); } catch (e) { /* déjà arrêtée */ } } else if (mr && mr.state !== 'inactive') mr.stop(); }
+  return { start, stop, active: () => etat !== 'idle', onFinal: cb => on('f', cb), onPartial: cb => on('p', cb), onState: cb => on('s', cb) };
+})();
+if (window.APEX_STANDALONE && Dictee && !Store.caps().dictation) Store.caps().dictation = Dictee;
 
 /* ---- 17-cloud.js ---- */
 /* Macrolya — compte en ligne de l'app autonome : Firebase Authentication (email + mot de passe) et Cloud Firestore, par l'API REST.
@@ -4036,12 +4083,17 @@ function PoidsCard({ date, win }) {
 /* Coach hebdo (Pro) : une fois par semaine, propose de recaler les calories sur la dépense réelle. */
 function CoachHebdo({ date }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(); if (date !== Apex.today()) return null;
-  const a = Apex.ajustementHebdo(S.journal, cfg, date); if (!a || (cfg.ajust && cfg.ajust.semaine === a.semaine)) return null;
-  const decider = ok => { const p = { ajust: { semaine: a.semaine, delta: ok ? a.delta : 0 } }; if (ok && a.delta) p.cibles = Apex.appliquerAjustement(cfg.cibles, a.delta); Store.patch('cfg', null, p); if (ok && a.delta) toast('Calories ajustées : ' + (a.delta > 0 ? '+' : '−') + Math.abs(a.delta) + ' kcal par jour'); };
+  const a = Apex.ajustementHebdo(S.journal, cfg, date), aj = cfg.ajust || {};
+  /* ajustement appliqué cette semaine : on peut l'annuler (retour exact aux cibles d'avant) */
+  if (aj.semaine && aj.delta && !aj.annule && aj.semaine === Apex.lundi(date)) return html`<div className="c12 note"><${Icon} n="check" /><div><span><b>Calories ajustées cette semaine (${aj.delta > 0 ? '+' : '−'}${Math.abs(aj.delta)} kcal/j)</b> d’après ta dépense réelle.</span>
+    <button type="button" className="btn sm ghost" onClick=${() => { Store.patch('cfg', null, { cibles: aj.avant || Apex.appliquerAjustement(cfg.cibles, -aj.delta), ajust: Object.assign({}, aj, { annule: 1 }) }); toast('Ajustement annulé : tes calories d’avant sont revenues'); }}>Annuler l’ajustement</button></div></div>`;
+  if (!a || aj.semaine === a.semaine) return null;
+  const decider = ok => { const p = { ajust: { semaine: a.semaine, delta: ok ? a.delta : 0 } }; if (ok && a.delta) { p.cibles = Apex.appliquerAjustement(cfg.cibles, a.delta); p.ajust.avant = cfg.cibles; } Store.patch('cfg', null, p); if (ok && a.delta) toast('Calories ajustées : ' + (a.delta > 0 ? '+' : '−') + Math.abs(a.delta) + ' kcal par jour'); };
   const vise = { seche: 'perdre ≈ 0,75 % de ton poids par semaine', masse: 'prendre ≈ 0,35 % par semaine', neutre: 'rester stable' }[a.obj];
   const carte = html`<${Card} cls="c12 coach-h" title=${html`Ton coach ajuste tes calories <${ProTag} />`} sub="Bilan de la semaine, d’après ta dépense réelle">
     <div className="ch-n"><div><span>Dépense réelle</span><b>${f0(a.tdee)}<small> kcal</small></b></div><div><span>Ta moyenne</span><b>${f0(a.moy)}<small> kcal</small></b></div>
       <div className=${cx(a.delta && 'ch-new')}><span>${a.delta ? 'Nouvelle' : 'On garde'}</span><b>${f0(a.nouvelle)}<small> kcal</small></b></div></div>
+    <p className="mut" style=${{ fontSize: 12.5, margin: '10px 0 0' }}>Calcul : tu as mangé en moyenne ${f0(a.apport)} kcal sur ${a.jours} jours complets notés, et ta moyenne de poids a ${a.dk < 0 ? 'baissé' : 'pris'} de ${String(Math.abs(Math.round(a.dk * 10) / 10)).replace('.', ',')} kg en 14 jours (1 kg ≈ 7 700 kcal). Fiable seulement si tu notes tout ce que tu manges.</p>
     <p className="sec" style=${{ fontSize: 13, margin: '10px 0' }}>${a.delta ? 'Pour ' + vise + ', ta moyenne passe à ' + f0(a.nouvelle) + ' kcal (' + (a.delta > 0 ? '+' : '−') + Math.abs(a.delta) + ' kcal par jour, sur les glucides ; protéines et lipides ne bougent pas).' : 'Ton rythme colle à ton objectif (' + vise + ') : on ne touche à rien cette semaine.'}</p>
     <div className="row">${a.delta ? html`<button type="button" className="btn pri grow" onClick=${() => decider(true)}>Appliquer</button><button type="button" className="btn ghost" onClick=${() => decider(false)}>Pas cette semaine</button>` : html`<button type="button" className="btn grow" onClick=${() => decider(true)}>Parfait</button>`}</div>
   <//>`;
@@ -4404,6 +4456,16 @@ const roleMacros = x => { const k = x.p * 4 + x.g * 4 + x.l * 9 || 1; return x.p
 const garderAliment = f => { const id = 'u_' + Apex.uid(); Store.patch('cfg', null, { aliments: Object.assign({}, Store.cfg().aliments, { [id]: Object.assign({ id, c: 'perso', etq: 0 }, f) }) }); return id; };
 /* Valeurs pour 100 g et poids d'une portion, estimés par l'IA à partir d'un nom ou d'une description. */
 /* Photo -> JPEG base64 assez léger pour le relais (demande entière ≤ 60 000 caractères) : on réduit jusqu'à ce que ça passe. */
+/* Micro : dicte ton repas, le texte arrive dans la case (setTxt reçoit une fonction t => nouveau texte). */
+function useDictee(setTxt) {
+  const dict = Store.caps().dictation, [rec, setRec] = useState('idle'), [part, setPart] = useState(''), [off, setOff] = useState(false);
+  useEffect(() => { if (!dict) return undefined;
+    const a = dict.onFinal(e => setTxt(t => (t ? t + e.text : String(e.text || '').trim()))), b = dict.onPartial(e => setPart(e.text || '')), c = dict.onState(e => { setRec(e.state); if (e.state === 'idle') setPart(''); if (e.refus) setOff(true); });
+    return () => { a(); b(); c(); if (dict.active()) dict.stop().catch(() => {}); }; }, [dict]);
+  const toggle = () => { if (rec !== 'idle') { dict.stop().catch(() => {}); return; } dict.start().catch(e => { if (e && (e.code === 'not_granted' || e.code === 'unavailable')) { setOff(true); toast('Micro indisponible : autorise-le dans les réglages du téléphone'); } }); };
+  return { dispo: !!dict && !off, rec, part, toggle };
+}
+const MicBtn = ({ d, label }) => (d.dispo ? html`<button type="button" className=${cx('btn ai-gal', d.rec !== 'idle' && 'rec')} aria-pressed=${d.rec !== 'idle'} aria-label=${d.rec !== 'idle' ? 'Arrêter la dictée' : label || 'Dicter'} onClick=${d.toggle}><${Icon} n="mic" s=${18} /></button>` : null);
 async function photoIA(file, max) {
   max = max || 1800000; // ≈ 1,3 Mo : le relais accepte une photo jusqu'à 2,4 millions de caractères
   for (const [mx, q] of [[2048, 0.85], [1600, 0.8], [1280, 0.75], [1024, 0.7], [768, 0.6], [640, 0.5], [512, 0.4]]) {
@@ -4459,6 +4521,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
   const recents = Apex.repasRemettre(Store.get().journal, foods, Apex.today(), 14, 6);
   const [fr, setFr] = useState({ n: '', k: null, p: null, g: null, l: null, qte: 100, ml: false });
   const [ai, setAi] = useState({ txt: '', busy: false, res: null, err: '', keep: true }), [img, setImg] = useState(null);
+  const voix = useDictee(f => setAi(s => Object.assign({}, s, { txt: f(s.txt) }))), recAvant = useRef('idle');
   const sample = Store.caps().sample;
   /* recherche classée : le mot cherché d'abord au début d'un nom, les aliments de base avant les plats (« pomme » → Pomme, pas gnocchi) ; puis le reste des correspondances partielles */
   const list = (() => {
@@ -4499,6 +4562,8 @@ function AddSheet({ foods, title, onAdd, onClose }) {
       setAi(s => Object.assign({}, s, { busy: false, res: { items, detail: String((r && r.detail) || '').slice(0, 260) } }));
     } catch (e) { setAi(s => Object.assign({}, s, { busy: false, err: e && e.code === 'trop_lourd' ? 'Photo illisible : réessaie avec une autre photo.' : e && e.code === 'photo_vide' ? 'Aucun repas reconnu sur la photo. Cadre l’assiette ou le ticket en entier, avec de la lumière.' : aiErr(e) })); }
   };
+  /* fin de dictée : l'estimation part toute seule */
+  useEffect(() => { if (recAvant.current !== 'idle' && voix.rec === 'idle' && ai.txt.trim() && !ai.busy) { setImg(null); estimate(null); } recAvant.current = voix.rec; }, [voix.rec]);
   const choisirPhoto = e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) { setImg(f); estimate(f); } };
   const addAi = () => {
     const its = ai.res.items.map(it => {
@@ -4512,15 +4577,16 @@ function AddSheet({ foods, title, onAdd, onClose }) {
   return html`<${Sheet} title=${title} onClose=${onClose}>
     ${sample && html`<div className="ai-box">
       <label className="fld" htmlFor="ai-txt"><span className="fld-l"><${Icon} n="sparkles" s=${14} /> Décris ou prends en photo, l’IA calcule</span>
-        <textarea id="ai-txt" className="inp" rows="2" placeholder="ex. 2 tranches de pain complet, 1 œuf, du fromage, ou « pizza 4 fromages, 2 parts »" value=${ai.txt} maxLength="600" onChange=${e => setAi(Object.assign({}, ai, { txt: e.target.value }))} aria-label="Décris le repas à estimer"></textarea></label>
+        <textarea id="ai-txt" className="inp" rows="2" placeholder=${voix.rec === 'listening' ? (voix.part || 'Je t’écoute… dis ce que tu as mangé') : voix.rec === 'processing' ? 'Je transcris…' : 'ex. 2 tranches de pain complet, 1 œuf, du fromage, ou « pizza 4 fromages, 2 parts »'} value=${ai.txt} maxLength="600" onChange=${e => setAi(Object.assign({}, ai, { txt: e.target.value }))} aria-label="Décris le repas à estimer"></textarea></label>
       <div className="row ai-act">
         <label className=${cx('btn grow', ai.busy && 'dis')} htmlFor="ai-photo" aria-disabled=${ai.busy} title="Prendre une photo"><${Icon} n="camera" s=${18} />${ai.busy && img ? 'Analyse de la photo…' : (() => { const qq = AI.quota && AI.quota(); return qq && qq.phl && !qq.pro ? 'Photo · ' + Math.max(0, qq.phl - (qq.ph || 0)) + ' / ' + qq.phl : 'Photo'; })()}</label>
         <input id="ai-photo" className="sr" type="file" accept="image/*" capture="environment" disabled=${ai.busy} onChange=${choisirPhoto} />
         <label className=${cx('btn ai-gal', ai.busy && 'dis')} htmlFor="ai-gal" aria-disabled=${ai.busy} aria-label="Choisir une photo dans la galerie" title="Galerie"><${Icon} n="upload" s=${18} /></label>
         <input id="ai-gal" className="sr" type="file" accept="image/*" disabled=${ai.busy} onChange=${choisirPhoto} />
+        <${MicBtn} d=${voix} label="Dicter ton repas" />
         <button type="button" className="btn pri grow" disabled=${ai.busy || !ai.txt.trim()} onClick=${() => { setImg(null); estimate(null); }}><${IAIcon} busy=${ai.busy} />${ai.busy ? (ai.retry ? 'Nouvel essai…' : 'Estimation…') : 'Estimer'}</button>
       </div>
-      <p className="pf-hint" style=${{ margin: 0 }}>Photo de ton assiette, d’un emballage ou de ton ticket (Burger King, McDo…) : l’IA compte tout. 3 photos par jour en gratuit, 30 en Pro. Ajoute un mot dans la case si besoin (« sans sauce », « grande frite »).</p>
+      <p className="pf-hint" style=${{ margin: 0 }}>Photo de ton assiette, d’un emballage ou de ton ticket (Burger King, McDo…), ou 🎤 dis simplement ce que tu as mangé : l’IA compte tout. 3 photos par jour en gratuit, 30 en Pro. Ajoute un mot dans la case si besoin (« sans sauce », « grande frite »).</p>
       ${ai.err && html`<div className="note"><${Icon} n="alert" /><div><span>${ai.err}</span></div></div>`}
       ${ai.res && html`<div className="note acc"><${Icon} n="sparkles" /><div>
         <span><b>${f0(aiTot.k)} kcal</b> · ${macTxt(aiTot)} · ${ai.res.items.length} aliment${ai.res.items.length > 1 ? 's' : ''}</span>
@@ -4670,7 +4736,7 @@ function FrigoSheet({ date, onClose }) {
   const st = useStore(), S = st.get(), cfg = st.cfg(), sample = st.caps().sample, foods = Apex.allFoods(cfg);
   const j = S.journal[date] || {}, c = Apex.cibleDuJour(cfg, j, date), mange = (j.repas || []).filter(m => m.ok).reduce((t, m) => Apex.add(t, Apex.totMeal(m, foods)), Apex.Z()), reste = Apex.resteJour(c, mange);
   const h = new Date().getHours(), [repas, setRepas] = useState(() => (REPAS_H.find(r => h <= r[2]) || REPAS_H[3])[0]);
-  const [txt, setTxt] = useState(() => lsGet('frigo:txt', '')), [busy, setBusy] = useState(false), [err, setErr] = useState(''), [res, setRes] = useState(null), [img, setImg] = useState(null);
+  const [txt, setTxt] = useState(() => lsGet('frigo:txt', '')), voix = useDictee(f => setTxt(f)), [busy, setBusy] = useState(false), [err, setErr] = useState(''), [res, setRes] = useState(null), [img, setImg] = useState(null);
   /* part du reste pour ce repas : tout si c'est le dernier de la journée, sinon une part */
   const parts = { 'Petit-déj': 4, 'Déjeuner': 2.5, 'Collation': 3, 'Dîner': 1 }[repas], vise = { k: Math.max(250, Math.round(Math.min(reste.kcal / parts, c.kcal * 0.45))), p: Math.max(20, Math.round(Math.min(reste.p / parts, c.p * 0.45))) }; // un repas ne dépasse pas 45 % de la journée
   const lancer = async photo => {
@@ -4713,6 +4779,7 @@ function FrigoSheet({ date, onClose }) {
         <input id="frigo-cam" className="sr" type="file" accept="image/*" capture="environment" disabled=${busy} onChange=${e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) { setImg(f); lancer(f); } }} />
         <label className=${cx('btn ai-gal', busy && 'dis')} htmlFor="frigo-gal" aria-label="Choisir une photo dans la galerie"><${Icon} n="upload" s=${18} /></label>
         <input id="frigo-gal" className="sr" type="file" accept="image/*" disabled=${busy} onChange=${e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) { setImg(f); lancer(f); } }} />
+        <${MicBtn} d=${voix} label="Dicter ce que tu as" />
         <button type="button" className="btn pri grow" disabled=${busy || !txt.trim()} onClick=${() => { setImg(null); lancer(null); }}><${IAIcon} busy=${busy && !img} />${busy && !img ? 'L’IA cuisine…' : 'Trouver un repas'}</button>
       </div>
       <p className="pf-hint" style=${{ margin: 0 }}>Écris ce que tu as, ou prends en photo ton frigo, ton placard ou ton congélo : l’IA te propose 2 repas faisables tout de suite.</p>
@@ -5308,7 +5375,7 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
   const basculeTop = () => { let first = true; onSets(sets.map(x => { if (x.w || x.t === 'd') return x; const o = Object.assign({}, x); if (topOn) delete o.t; else { o.t = first ? 'top' : 'bo'; first = false; } return o; })); };
   const maj = (k, patch) => onSets(sets.map((s, n) => (n === k ? Object.assign({}, s, patch) : s)));
   const champ = (k, f, v) => {
-    const s = sets[k]; if (f === 'r' && v > 0 && !Apex.setCoche(s) && repos(s)) chronoApresSerie(repos(s));
+    const s = sets[k]; if (f === 'r' && v > 0 && !Apex.setCoche(s) && repos(s)) chronoApresSerie(repos(s), { exo: e.n, serie: sets.slice(0, k + 1).filter(x => !x.w).length });
     const o = Object.assign({}, s, { [f]: v }); if (f === 'kg' || f === 'r') delete o.ok; // saisir une valeur re-coche la série
     onSets(sets.map((x, n) => (n === k ? o : x)));
   };
@@ -5318,7 +5385,7 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
     const prev = last && last.sets[sets.slice(0, k).filter(x => !x.w).length], o = Object.assign({}, s, { ok: true });
     if (!s.w) { if (!(o.r > 0)) { const r = +ph[k] || +ph[ph.length - 1] || (prev && prev.r) || e.hi; if (r > 0) o.r = Math.round(r); } if (o.kg == null) { const kg = kgInt(k) || (prev && prev.kg > 0 ? prev.kg : obj.kg); if (kg > 0) o.kg = kg; } }
     const nv = sets.map((x, n) => (n === k ? o : x)); onSets(nv);
-    if (repos(s)) chronoApresSerie(repos(s));
+    if (repos(s)) chronoApresSerie(repos(s), { exo: e.n, serie: sets.slice(0, k + 1).filter(x => !x.w).length });
   };
   const terminer = () => { setOuvert(false); onOk(true); if (onSuite) onSuite(i); }; // seul l’utilisateur clôt l’exercice
   const prevDe = k => last && last.sets[sets.slice(0, k).filter(x => !x.w).length];
@@ -5431,7 +5498,7 @@ function Workout({ date }) {
   const r = Apex.resumeSeance(se), sr = wkSeriesDe(se), pc = sr.total ? Math.round(sr.faites / sr.total * 100) : 0, fini = !!se.fin, nOk = list.filter(x => { const n = (x.sets || []).filter(q => !q.w); return n.length > 0 && n.every(q => Apex.setCoche(q)); }).length;
   const swEx = sheet && sheet.t === 'swap' ? list[sheet.i] : null, edEx = sheet && sheet.t === 'edit' ? list[sheet.i] : null;
   const suite = i => { setTimeout(() => { const els = [...document.querySelectorAll('.wo-x')]; const nx = els.slice(i + 1).find(x => !x.classList.contains('fini')); if (nx) nx.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 450); };
-  const terminer = bilan => { CHR.resetRest(); Store.patch('seances', date, { date, fin: true, finAt: new Date().toISOString(), bilan: bilan || null, note: (bilan && bilan.note) || null }); setSheet(null); try { window.dispatchEvent(new CustomEvent('train:done', { detail: { date } })); } catch (e) { /* sans effet */ } };
+  const terminer = bilan => { CHR.resetRest(); SeanceNotif.fin(); Store.patch('seances', date, { date, fin: true, finAt: new Date().toISOString(), bilan: bilan || null, note: (bilan && bilan.note) || null }); setSheet(null); try { window.dispatchEvent(new CustomEvent('train:done', { detail: { date } })); } catch (e) { /* sans effet */ } };
   return html`<div className="wo c7">
     <div className=${cx('wo-top', fini && 'fini')}>
       <div className="wo-th"><div className="wo-tt"><b>${se.type || 'Séance libre'}</b><span>${fini ? 'Terminée' : 'En cours'} · ${dMid(date)}</span></div>
@@ -5447,7 +5514,7 @@ function Workout({ date }) {
     ${!list.length && html`<div className="empty"><span><b>Séance vide.</b> Ajoute un premier exercice.</span></div>`}
     <button type="button" className="btn wide" onClick=${() => setSheet({ t: 'add' })}><${Icon} n="plus" s=${18} />Ajouter un exercice</button>
     ${!fini && html`<div className="row"><button type="button" className="btn grow" onClick=${() => CHR.open()}><${Icon} n="timer" s=${18} />Chrono</button>
-      <${Confirm} label="Annuler la séance" sure="Tout effacer ?" icon="trash" cls="ghost" onYes=${() => { CHR.resetRest(); Store.del('seances', date); }} /></div>`}
+      <${Confirm} label="Annuler la séance" sure="Tout effacer ?" icon="trash" cls="ghost" onYes=${() => { CHR.resetRest(); SeanceNotif.fin(); Store.del('seances', date); }} /></div>`}
     ${fini && html`<div className="row"><${Confirm} label="Supprimer la séance" sure="Supprimer ?" icon="trash" cls="ghost" onYes=${() => Store.del('seances', date)} /></div>`}
     ${sheet && sheet.t === 'add' && html`<${ExoSheet} exos=${exos} title="Ajouter un exercice" onClose=${() => setSheet(null)} onPick=${id => putExos(list.concat({ e: id, sets: [{}, {}, {}] }))} />`}
     ${edEx && html`<${ExoEditSheet} e0=${exos[edEx.e] || { n: edEx.e, m: '', s: [], lo: 8, hi: 12, inc: 2.5 }} x=${Object.assign({}, edEx, { n: (edEx.sets || []).length })} onClose=${() => setSheet(null)}
@@ -5695,8 +5762,30 @@ const CHR = (() => {
   if (typeof window !== 'undefined') setInterval(() => { if (s.endAt && Date.now() >= s.endAt) finish(); else if (running()) subs.forEach(f => f()); }, 250);
   return A;
 })();
-/* Appelé quand une série est notée : lance le repos si l'option est active. */
-const chronoApresSerie = sec => { if (CHR.auto()) CHR.startRest(sec || CHR.s().dur); };
+/* Notifications de séance (app Android / iPhone) : « Séance en cours » avec l'exercice et l'heure de reprise,
+   puis « Repos terminé » à la fin du repos, même téléphone verrouillé ; tout s'efface à la fin de la séance. */
+const SeanceNotif = (() => {
+  let info = null, perm = null;
+  const LN = () => (typeof notifPlugin === 'function' ? notifPlugin() : null);
+  const pret = async () => { const L = LN(); if (!L) return null; if (perm == null) { try { const p = await L.requestPermissions(); perm = !p || !p.display || p.display === 'granted'; } catch (e) { perm = false; } } return perm ? L : null; };
+  const hm = t => { const d = new Date(t); return d.getHours() + ' h ' + String(d.getMinutes()).padStart(2, '0'); };
+  const retirer = async ids => { const L = LN(); if (L) { try { await L.cancel({ notifications: ids.map(id => ({ id })) }); } catch (e) { /* déjà partie */ } } };
+  const repos = async endAt => {
+    if (!endAt) return; const L = await pret(); if (!L) return;
+    const fait = info ? info.exo + ' · série ' + info.serie + ' faite' : 'Série faite', suite = info ? info.exo + ' · série ' + (info.serie + 1) : 'prochaine série';
+    try {
+      await retirer([201]);
+      await L.schedule({ notifications: [
+        { id: 200, title: '🏋️ Séance en cours', body: fait + ' · reprise à ' + hm(endAt), ongoing: true, autoCancel: false, schedule: { at: new Date(Date.now() + 400), allowWhileIdle: true } },
+        { id: 201, title: '⏱ Repos terminé', body: 'À toi : ' + suite, schedule: { at: new Date(endAt), allowWhileIdle: true } }] });
+    } catch (e) { /* notifications indisponibles : le chrono de l'app reste */ }
+  };
+  return { info: x => { info = x; }, repos, stopRepos: () => retirer([201]), fin: () => { info = null; retirer([200, 201]); } };
+})();
+['startRest', 'resumeRest', 'adjust'].forEach(k => { const f = CHR[k]; CHR[k] = (...a) => { f(...a); SeanceNotif.repos(CHR.s().endAt); }; });
+['pauseRest', 'resetRest'].forEach(k => { const f = CHR[k]; CHR[k] = (...a) => { f(...a); SeanceNotif.stopRepos(); }; });
+/* Appelé quand une série est notée : lance le repos si l'option est active (info = exercice et numéro de série pour la notification). */
+const chronoApresSerie = (sec, info) => { if (info) SeanceNotif.info(info); if (CHR.auto()) CHR.startRest(sec || CHR.s().dur); };
 const chrFmt = ms => { const t = Math.max(0, Math.ceil(ms / 1000)), m = Math.floor(t / 60), r = t % 60; return m + ':' + (r < 10 ? '0' : '') + r; };
 const chrFmtW = ms => { const t = Math.floor(ms / 1000), m = Math.floor(t / 60), r = t % 60; return m + ':' + (r < 10 ? '0' : '') + r; };
 function useChrono() { const [, f] = useState(0); useEffect(() => { const cb = () => f(x => x + 1); CHR.subs.add(cb); return () => { CHR.subs.delete(cb); }; }, []); return CHR; }
