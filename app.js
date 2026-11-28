@@ -5928,19 +5928,32 @@ function offProd(p, c) {
   const name = [p.brands ? String(p.brands).split(',')[0].trim() : '', p.product_name || ''].filter(Boolean).join(' ').slice(0, 60) || 'Produit ' + c, dose = Number(p.serving_quantity);
   return { n: name, k: kcal == null ? null : Math.round(kcal), p: r1(g('proteins') || 0), g: r1(g('carbohydrates') || 0), l: r1(g('fat') || 0), f: r1(g('fiber') || 0), dose: dose > 0 && dose <= 200 ? Math.round(dose) : null, code: c };
 }
-/* Recherche par nom dans les produits vendus en France (Open Food Facts) : seulement sur appui, jamais en tapant. */
+/* Recherche par nom dans les produits vendus en France (Open Food Facts) : seulement sur appui, jamais en tapant.
+   Moteur rapide (search.openfoodfacts.org, produits en français, les plus populaires d'abord) puis valeurs de chaque produit ;
+   l'ancienne recherche (≈ 10 / min pour tout le monde, souvent saturée) ne sert plus que de secours. */
+const OFF_CACHE = {};
 async function offSearch(q) {
-  /* Open Food Facts limite les recherches (≈ 10 / min) : un essai sur le site français, puis un second sur le site mondial. */
-  const url = h => 'https://' + h + '.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q.slice(0, 80)) + '&json=1&page_size=24&fields=code,product_name,brands,nutriments,serving_quantity';
-  let j = null;
-  for (const h of ['fr', 'world']) { try { const r = await fetch(url(h)); if (r.ok) { j = await r.json(); break; } } catch (e) { /* hôte suivant */ } await new Promise(res => setTimeout(res, 1200)); }
-  if (!j) throw new Error('http');
-  return ((j && j.products) || []).map(p => offProd(p, p.code)).filter(p => p.k != null && p.k > 0 && p.k <= 900 && p.n.indexOf('Produit ') !== 0 && Math.abs(p.p * 4 + p.g * 4 + p.l * 9 - p.k) <= Math.max(25, p.k * 0.2));
+  const k = norm(q); if (OFF_CACHE[k]) return OFF_CACHE[k];
+  let res = null;
+  try {
+    const r = await fetch('https://search.openfoodfacts.org/search?q=' + encodeURIComponent(q.slice(0, 80) + ' lc:fr') + '&sort_by=-popularity_key&page_size=14&fields=code');
+    if (!r.ok) throw new Error('http');
+    const codes = ((await r.json()).hits || []).map(h => h.code).filter(Boolean);
+    const prods = await Promise.all(codes.map(c => fetch('https://world.openfoodfacts.org/api/v2/product/' + c + '.json?fields=product_name,brands,nutriments,serving_quantity').then(x => (x.ok ? x.json() : null)).catch(() => null)));
+    res = prods.map((j, n) => (j && j.status === 1 && j.product ? offProd(j.product, codes[n]) : null)).filter(Boolean);
+  } catch (e) {
+    const r = await fetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q.slice(0, 80)) + '&json=1&page_size=24&fields=code,product_name,brands,nutriments,serving_quantity');
+    if (!r.ok) throw new Error('http');
+    res = ((await r.json()).products || []).map(p => offProd(p, p.code));
+  }
+  res = res.filter(p => p.k != null && p.k > 0 && p.k <= 900 && p.n.indexOf('Produit ') !== 0 && Math.abs(p.p * 4 + p.g * 4 + p.l * 9 - p.k) <= Math.max(25, p.k * 0.2));
+  if (res.length) OFF_CACHE[k] = res;
+  return res;
 }
 function MarqueSearch({ q, onPick }) {
   const [st, setSt] = useState({ busy: false, res: null, err: '', q: '' });
   if (!CAN_SCAN || norm(q).length < 3) return null;
-  const go = async () => { setSt({ busy: true, res: null, err: '', q }); try { const res = await offSearch(q); setSt({ busy: false, res, err: res.length ? '' : 'Aucun produit trouvé pour « ' + q + ' ».', q }); } catch (e) { setSt({ busy: false, res: null, err: 'Open Food Facts ne répond pas (pas de réseau ou trop de recherches d’affilée). Réessaie dans une minute, ou scanne le code-barres.', q }); } };
+  const go = async () => { setSt({ busy: true, res: null, err: '', q }); try { const res = await offSearch(q); setSt({ busy: false, res, err: res.length ? '' : 'Aucun produit trouvé pour « ' + q + ' ».', q }); } catch (e) { setSt({ busy: false, res: null, err: 'La base des produits de marque ne répond pas (réseau ou base saturée). Réessaie dans quelques secondes, ou scanne le code-barres.', q }); } };
   const res = st.q === q ? st.res : null;
   return html`<div className="stack mq">
     <button type="button" className="btn ghost wide" disabled=${st.busy} onClick=${go}><${Icon} n="send" s=${16} />${st.busy ? 'Recherche…' : 'Chercher « ' + q.slice(0, 24) + ' » dans les produits de marque'}</button>
