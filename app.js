@@ -2265,6 +2265,20 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
   const INSPI = ['méditerranéenne', 'asiatique (wok, riz, sauce soja, gingembre)', 'mexicaine (tacos, chili, burrito bowl)', 'française de bistrot', 'indienne douce (curry, dal, tikka)', 'libanaise (taboulé, houmous, grillades)', 'italienne (pâtes, risotto, piccata)', 'japonaise (poke, donburi, teriyaki)', 'street food healthy (burger, wrap, kebab maison)', 'marocaine (tajine, couscous)', 'grecque (souvlaki, tzatziki, feta)', 'coréenne (bibimbap, bœuf bulgogi)', 'de saison et du terroir', 'tout au four ou à l’air fryer', 'bowls colorés et frais', 'brunch salé et sucré', 'thaïe (curry, salade de bœuf, riz jasmin)', 'espagnole (paella, tortilla, plancha)'];
   const inspiration = () => INSPI[Math.floor(Math.random() * INSPI.length)];
   /* Aliments et plats les plus présents ces derniers jours (mangés ou prévus) et dans la semaine enregistrée : à ne pas resservir. */
+  function repasRemettre(journal, foods, date, n, max) {
+    const out = [], vus = {};
+    for (let i = 0; i <= (n || 14) && out.length < (max || 8); i++) {
+      const d = A.addDays(date, -i), j = journal && journal[d];
+      ((j && j.repas) || []).forEach(m => {
+        if (!m.ok || !(m.items || []).length || out.length >= (max || 8)) return;
+        const items = m.items.map(it => { const o = { q: it.q }; if (it.a) o.a = it.a; if (it.x) o.x = it.x; return o; }).filter(it => it.x || foods[it.a]);
+        const cle = items.map(it => (it.a || it.x.n) + ':' + it.q).sort().join('|'); if (!items.length || vus[cle]) return; vus[cle] = 1;
+        const noms = items.map(it => (it.x ? it.x.n : foods[it.a].n)).slice(0, 3).join(', ');
+        out.push({ nom: m.nom, d, noms, items, k: Math.round(items.reduce((s, it) => s + A.mac(it, foods).k, 0)) });
+      });
+    }
+    return out;
+  }
   function recentsRepas(journal, cfg, date, n) {
     const foods = A.allFoods(cfg), cpt = {};
     const vu = it => { const nom = it.x ? it.x.n : foods[it.a] && foods[it.a].c !== 'leg' && foods[it.a].c !== 'fruit' ? foods[it.a].n : null; if (nom) cpt[nom] = (cpt[nom] || 0) + 1; };
@@ -2561,7 +2575,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Apex;
     } catch (e) { return null; }
   }
 
-  Object.assign(A, { PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine, optimiserJour, promptMenuJour, menuJourIA, resteJour, horairesJour, repartirGlucides, heureSeance, heureSeanceJour, serieJours, jourActif, validerJourIA, recentsRepas, inspiration });
+  Object.assign(A, { repasRemettre, PROGRAMMES, PROGRAMMES_ORDRE: ORDRE, JOURS, SEMAINE_ORDRE: SEMAINE, programmeConseille, programmeJour, semaineApercu, modeleDuJour, planDuJour, semaineDepuis, repasEnModele, alimentsPourIA, promptMenuSemaine, validerMenuSemaine, etalonnerSemaine, optimiserJour, promptMenuJour, menuJourIA, resteJour, horairesJour, repartirGlucides, heureSeance, heureSeanceJour, serieJours, jourActif, validerJourIA, recentsRepas, inspiration });
 })();
 
 /* ---- 13b-import-menu.js ---- */
@@ -4390,7 +4404,8 @@ function FoodLibSheet({ onClose, onAdded }) {
 }
 
 function AddSheet({ foods, title, onAdd, onClose }) {
-  const [q, setQ] = useState(''); const [cat, setCat] = useState(''); const [scan, setScan] = useState(false);
+  const [q, setQ] = useState(''); const [cat, setCat] = useState(''); const [scan, setScan] = useState(false), [parcourir, setParcourir] = useState(false);
+  const recents = Apex.repasRemettre(Store.get().journal, foods, Apex.today(), 14, 6);
   const [fr, setFr] = useState({ n: '', k: null, p: null, g: null, l: null, qte: 100, ml: false });
   const [ai, setAi] = useState({ txt: '', busy: false, res: null, err: '', keep: true }), [img, setImg] = useState(null);
   const sample = Store.caps().sample;
@@ -4433,6 +4448,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
       setAi(s => Object.assign({}, s, { busy: false, res: { items, detail: String((r && r.detail) || '').slice(0, 260) } }));
     } catch (e) { setAi(s => Object.assign({}, s, { busy: false, err: e && e.code === 'trop_lourd' ? 'Photo illisible : réessaie avec une autre photo.' : e && e.code === 'photo_vide' ? 'Aucun repas reconnu sur la photo. Cadre l’assiette ou le ticket en entier, avec de la lumière.' : aiErr(e) })); }
   };
+  const choisirPhoto = e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) { setImg(f); estimate(f); } };
   const addAi = () => {
     const its = ai.res.items.map(it => {
       if (!it.x || !ai.keep) return it;
@@ -4447,8 +4463,10 @@ function AddSheet({ foods, title, onAdd, onClose }) {
       <label className="fld" htmlFor="ai-txt"><span className="fld-l"><${Icon} n="sparkles" s=${14} /> Décris ou prends en photo, l’IA calcule</span>
         <textarea id="ai-txt" className="inp" rows="2" placeholder="ex. 2 tranches de pain complet, 1 œuf, du fromage, ou « pizza 4 fromages, 2 parts »" value=${ai.txt} maxLength="600" onChange=${e => setAi(Object.assign({}, ai, { txt: e.target.value }))} aria-label="Décris le repas à estimer"></textarea></label>
       <div className="row ai-act">
-        <label className=${cx('btn grow', ai.busy && 'dis')} htmlFor="ai-photo" aria-disabled=${ai.busy}><${Icon} n="camera" s=${18} />${ai.busy && img ? 'Analyse de la photo…' : (() => { const qq = AI.quota && AI.quota(); return qq && qq.phl && !qq.pro ? 'Photo · ' + Math.max(0, qq.phl - (qq.ph || 0)) + ' / ' + qq.phl : 'Photo'; })()}</label>
-        <input id="ai-photo" className="sr" type="file" accept="image/*" disabled=${ai.busy} onChange=${e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) { setImg(f); estimate(f); } }} />
+        <label className=${cx('btn grow', ai.busy && 'dis')} htmlFor="ai-photo" aria-disabled=${ai.busy} title="Prendre une photo"><${Icon} n="camera" s=${18} />${ai.busy && img ? 'Analyse de la photo…' : (() => { const qq = AI.quota && AI.quota(); return qq && qq.phl && !qq.pro ? 'Photo · ' + Math.max(0, qq.phl - (qq.ph || 0)) + ' / ' + qq.phl : 'Photo'; })()}</label>
+        <input id="ai-photo" className="sr" type="file" accept="image/*" capture="environment" disabled=${ai.busy} onChange=${choisirPhoto} />
+        <label className=${cx('btn ai-gal', ai.busy && 'dis')} htmlFor="ai-gal" aria-disabled=${ai.busy} aria-label="Choisir une photo dans la galerie" title="Galerie"><${Icon} n="upload" s=${18} /></label>
+        <input id="ai-gal" className="sr" type="file" accept="image/*" disabled=${ai.busy} onChange=${choisirPhoto} />
         <button type="button" className="btn pri grow" disabled=${ai.busy || !ai.txt.trim()} onClick=${() => { setImg(null); estimate(null); }}><${IAIcon} busy=${ai.busy} />${ai.busy ? (ai.retry ? 'Nouvel essai…' : 'Estimation…') : 'Estimer'}</button>
       </div>
       <p className="pf-hint" style=${{ margin: 0 }}>Photo de ton assiette, d’un emballage ou de ton ticket (Burger King, McDo…) : l’IA compte tout. 3 photos par jour en gratuit, 30 en Pro. Ajoute un mot dans la case si besoin (« sans sauce », « grande frite »).</p>
@@ -4465,6 +4483,10 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     <${MarqueSearch} q=${q.trim()} onPick=${p => { const id = ajouterProduit(p); onAdd({ a: id, q: p.dose ? 1 : 100 }); toast('« ' + p.n + ' » ajouté à ta bibliothèque'); onClose(); }} />
     ${CAN_SCAN && html`<button type="button" className="btn" onClick=${() => setScan(true)}><${Icon} n="camera" s=${18} />Scanner un code-barres</button>`}
     ${scan && html`<${ScanSheet} onClose=${() => setScan(false)} onProduct=${p => { const id = ajouterProduit(p); onAdd({ a: id, q: p.dose ? 1 : 100 }); onClose(); }} />`}
+    ${!q && recents.length > 0 && html`<div className="stack" style=${{ gap: 6 }}><span className="fld-l" style=${{ margin: 0 }}>Remettre un repas déjà mangé</span>
+      <div className="lst">${recents.map((r, i) => html`<button key=${i} type="button" onClick=${() => { onAdd(r.items.map(it => Object.assign({}, it))); onClose(); }}>
+        <div><b>${r.nom} · ${r.d === Apex.today() ? 'aujourd’hui' : dMid(r.d)}</b><span>${r.noms}${r.items.length > 3 ? '…' : ''}</span></div><em>${f0(r.k)}<small>kcal</small></em></button>`)}</div></div>`}
+    ${!q && !parcourir ? html`<button type="button" className="btn ghost sm" onClick=${() => setParcourir(true)}>Parcourir la base par catégorie</button>` : html`<${React.Fragment}>
     <div className="chips">
       <button type="button" className="chip" aria-pressed=${cat === ''} onClick=${() => setCat('')}>Tout</button>
       ${Apex.CATS.map(c => html`<button key=${c[0]} type="button" className="chip" aria-pressed=${cat === c[0]} onClick=${() => setCat(c[0])}>${c[1]}</button>`)}
@@ -4474,7 +4496,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
         <div><b>${f.n}</b><span>${fq(f.d || (f.u ? 1 : 100))} ${unitOf(f)} · ${macTxt(x)}${f.etq ? ' · à caler sur l’étiquette' : f.cq ? ' · Ciqual (ANSES)' : f.est ? ' · valeur moyenne' : ''}</span></div><em>${f0(x.k)}<small>kcal</small></em></button>`; })
       : html`<div className="empty" style=${{ padding: 14 }}>Rien dans la base. ${sample ? 'Décris-le plus haut, l’IA estime.' : 'Utilise la saisie manuelle ci-dessous.'}</div>`}
       ${list.length > 120 && html`<p className="mut" style=${{ fontSize: 12, padding: '4px 2px' }}>${list.length - 120} autres résultats : précise ta recherche (ex. « kebab », « mcdo », « tajine »).</p>`}
-    </div>
+    </div><//>`}
     <details className="more"><summary>Saisie manuelle des macros</summary><div className="stack">
       <div className="form"><label className="fld full" htmlFor="fr-n"><span className="fld-l">Nom</span><input id="fr-n" className="inp" type="text" maxLength="60" placeholder="Poke bowl saumon" value=${fr.n} onChange=${e => setFr(Object.assign({}, fr, { n: e.target.value }))} /></label></div>
       <div className="stack"><span className="fld-l">Unité</span><div className="pf-seg" role="radiogroup" aria-label="Unité">${[[false, 'Grammes (g)'], [true, 'Millilitres (ml)']].map(u => html`<button key=${String(u[0])} type="button" role="radio" aria-checked=${!!fr.ml === u[0]} className=${!!fr.ml === u[0] ? 'on' : ''} onClick=${() => setFr(Object.assign({}, fr, { ml: u[0] }))}>${u[1]}</button>`)}</div></div>
