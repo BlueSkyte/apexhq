@@ -4638,15 +4638,13 @@ function PlanCard({ cfg, date, onIA, onIAJour, onLib, onImp }) {
       : nSem > 0 ? html`<div className="sem-ok" style=${{ marginBottom: 12 }}><i><${Icon} n="check" s=${18} /></i><div><b>Ta semaine est prête</b><span>${nSem} / 7 jours enregistrés : chaque jour reprend son menu, tu coches ce que tu manges.</span></div></div>`
       : html`<p className="mut" style=${{ fontSize: 13, margin: '0 0 12px' }}>Prépare tes 7 jours une fois : chaque jour reprend ensuite son menu tout seul, tu n’as plus qu’à cocher.</p>`}
     <div className="tg tg-plan">
-      ${mode === 'libre' ? html`<${React.Fragment}>
-          ${tuile('sparkles', iaJour, iaJourSous, onIAJour, 'pri')}
-          ${tuile('plus', 'Ma bibliothèque', 'Tes aliments et plats perso', onLib)}<//>`
-        : html`<${React.Fragment}>
-          ${tuile('clock', html`${nSem ? 'L’IA refait ma semaine' : 'L’IA fait ma semaine'} <${ProTag} />`, 'Sept jours calés sur tes macros et tes séances', onIA, 'pri')}
-          ${tuile('sparkles', iaJour, iaJourSous, onIAJour)}
+      ${(() => { /* mêmes 5 cases dans les deux modes ; seule la première change (journée ou semaine) */
+        const tJour = tuile('sparkles', iaJour, iaJourSous, onIAJour, mode === 'libre' && 'pri');
+        const tSem = tuile('clock', html`${nSem ? 'L’IA refait ma semaine' : 'L’IA fait ma semaine'} <${ProTag} />`, 'Sept jours calés sur tes macros et tes séances', onIA, mode === 'perso' && 'pri');
+        return html`<${React.Fragment}>${mode === 'libre' ? tJour : tSem}${mode === 'libre' ? tSem : tJour}
           ${tuile('note', nSem ? 'Coller un nouveau menu' : 'Coller mon menu', 'Ta semaine écrite, jour par jour', onImp)}
           ${tuile('utensils', 'Menu tout fait', 'Choisis-en un, puis ajuste', () => setFaits(true))}
-          ${tuile('plus', 'Ma bibliothèque', 'Tes aliments et plats perso', onLib)}<//>`}
+          ${tuile('plus', 'Ma bibliothèque', 'Tes aliments et plats perso', onLib)}<//>`; })()}
     </div>
     <details className="more"><summary>Options</summary><div className="row sb"><span className="fld-l" style=${{ margin: 0 }}>Quantités</span><${Seg} neutral label="Pesée des aliments" value=${pesee} onChange=${v => setCfg({ repasPesee: v })} options=${[[true, 'Je pèse'], [false, 'Sans pesée']]} /></div>
       ${nSem > 0 && html`<div className="chg-dan"><span>Repartir de zéro</span><${Confirm} cls="ghost" icon="trash" label="Vider ma semaine" sure="Effacer ta semaine ? Touche encore" onYes=${() => { setCfg({ repasSemaine: null }); toast('Semaine vidée'); }} /></div>`}</details>
