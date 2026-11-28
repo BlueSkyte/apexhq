@@ -5810,7 +5810,7 @@ function CoachCard({ date }) {
 /* Toile « Ta régularité » : % des jours renseignés où l'objectif est tenu (30 j), 6 axes. */
 const RAD_AX = [['kcal', '🔥', 'Calories'], ['prot', '🥩', 'Protéines'], ['pas', '👟', 'Pas'], ['sommeil', '😴', 'Sommeil'], ['eau', '💧', 'Eau'], ['seances', '🏋️', 'Séances']];
 function RadarCard({ date }) {
-  const st = useStore(), S = st.get(), cfg = st.cfg(), a = Apex.adherence(S.journal, cfg, Apex.addDays(date, 1), 30, S.seances);
+  const st = useStore(), S = st.get(), cfg = st.cfg(), a = Apex.adherence(S.journal, cfg, date, 30, S.seances) /* jours terminés seulement */;
   const ax = RAD_AX.map(([k, ic, n]) => ({ k, ic, n, v: a[k][1] ? a[k][0] / a[k][1] : null })), vus = ax.filter(x => x.v !== null);
   if (vus.length < 3) return html`<${Card} cls="c7" title="Ta régularité" sub="30 derniers jours"><p className="mut">Renseigne au moins 3 jours (repas, pas, sommeil, eau) pour voir ta toile.</p><//>`;
   const score = Math.round(vus.reduce((s, x) => s + x.v, 0) / vus.length * 100), cx = 160, cy = 150, R = 92;
