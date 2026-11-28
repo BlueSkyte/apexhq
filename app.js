@@ -2857,7 +2857,7 @@ const Store = (() => {
     const key = coll === 'cfg' ? 'cfg' : coll + '/' + id;
     const next = Object.assign({}, coll === 'cfg' ? s.cfg : (s[coll][id] || {}));
     const d = dirty[key] && dirty[key].f ? dirty[key] : (dirty[key] = { f: {} });
-    for (const k in fields) { const v = fields[k]; if (v === null || v === undefined) delete next[k]; else next[k] = v; d.f[k] = ++seq; }
+    for (const k in fields) { if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue; const v = fields[k]; if (v === null || v === undefined) delete next[k]; else next[k] = v; d.f[k] = ++seq; }
     s = Object.assign({}, s, coll === 'cfg' ? { cfg: next } : { [coll]: Object.assign({}, s[coll], { [id]: next }) });
     delete fails[key]; save(); emit(); schedule(key);
   }
@@ -7599,7 +7599,7 @@ function SettingsSheet({ onClose }) {
     </div>
     ${dump && html`<div className="stack"><span className="fld-l">Copie ce texte et garde-le dans un fichier .json</span><textarea id="exp-dump" className="inp" readOnly value=${dump} onFocus=${e => e.target.select()} aria-label="Export JSON"></textarea></div>`}
     <label className="btn wide" htmlFor="imp-file"><${Icon} n="upload" s=${18} />Choisir un fichier .json</label>
-    <input id="imp-file" className="sr" type="file" accept="application/json,.json" onChange=${e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return; const r = new FileReader(); r.onload = () => { try { const k = Store.importAll(JSON.parse(String(r.result))); setMsg(k + ' document' + (k > 1 ? 's' : '') + ' importé' + (k > 1 ? 's' : '') + '.'); } catch (er) { setMsg(er instanceof SyntaxError ? 'Fichier illisible : ce n’est pas un export Macrolya.' : er.message); } }; r.onerror = () => setMsg('Lecture du fichier impossible.'); r.readAsText(f); }} />
+    <input id="imp-file" className="sr" type="file" accept="application/json,.json" onChange=${e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return; if (f.size > 30e6) { setMsg('Fichier trop lourd (30 Mo max).'); return; } const r = new FileReader(); r.onload = () => { try { const k = Store.importAll(JSON.parse(String(r.result))); setMsg(k + ' document' + (k > 1 ? 's' : '') + ' importé' + (k > 1 ? 's' : '') + '.'); } catch (er) { setMsg(er instanceof SyntaxError ? 'Fichier illisible : ce n’est pas un export Macrolya.' : er.message); } }; r.onerror = () => setMsg('Lecture du fichier impossible.'); r.readAsText(f); }} />
     <textarea id="imp-txt" className="inp" placeholder="Colle ici le contenu d’un export Macrolya pour l’importer" value=${imp} onChange=${e => setImp(e.target.value)} aria-label="Contenu JSON à importer"></textarea>
     <button type="button" className="btn wide" disabled=${!imp.trim()} onClick=${doImp}><${Icon} n="upload" s=${18} />Importer et fusionner</button>
     ${msg && html`<p className="sec" style=${{ fontSize: 13 }} role="status">${msg}</p>`}
