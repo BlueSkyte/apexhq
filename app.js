@@ -182,7 +182,7 @@ const Apex = (() => {
     return (foods || FOODS)[it.a] || null;
   }
   const grams = (it, f) => (f.u ? it.q * f.u[1] : it.q);
-  const LIQ = /^(lait|huile|jus|sauce soja|vinaigre|cr[eè]me liquide|sirop|bouillon|soupe|velout[eé]|smoothie|k[eé]fir|boisson|eau)/i;
+  const LIQ = /^(lait|huile|jus|sauce soja|vinaigre|cr[eè]me liquide|sirop|bouillon|soupe|velout[eé]|smoothie|k[eé]fir|boisson|eau|coca|pepsi|fanta|sprite|orangina|ice tea|soda|limonade|bi[eè]re|th[eé](?![a-z])|caf[eé](?![a-z])|milkshake)/i;
   const liquide = f => !!(f && !f.u && (f.ml || LIQ.test(f.n || '')));
   /* quantité IA d'un aliment au poids donnée en « nombre » (1 c. à soupe, 2 portions) : remise en grammes */
   const grammesIA = (f, q, txt) => (f && !f.u && q > 0 && q < 5 ? Math.round(q * (/caf[eé]/i.test(txt || '') ? 5 : /soupe|cuill|c\.? ?[aà] ?s/i.test(txt || '') ? 12 : f.d || 10)) : q);
@@ -3078,6 +3078,7 @@ const AI = (() => {
   function anthropic() {
     const sample = async (input, o) => {
       o = o || {}; const msgs = norm(input), tools = (o.tools || []).map(t => ({ name: t.name, description: t.description, input_schema: t.inputSchema || { type: 'object', properties: {} } }));
+      if (o.image) { const m = msgs[msgs.length - 1]; m.content = [{ type: 'image', source: { type: 'base64', media_type: o.image.mime, data: o.image.data } }, { type: 'text', text: String(m.content) }]; }
       let text = '';
       for (let round = 0; round < 6; round++) {
         const body = { model: MODELS[o.modelTier] || MODELS.default, max_tokens: 2048, messages: msgs }; if (tools.length) body.tools = tools;
@@ -3165,6 +3166,7 @@ const AI = (() => {
     const sample = async (input, o) => {
       o = o || {}; const model = await gmodel(), tools = (o.tools || []).map(t => ({ name: t.name, description: t.description, parameters: gschema(t.inputSchema || { type: 'object', properties: {} }) }));
       const contents = norm(input).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: String(m.content) }] }));
+      if (o.image) contents[contents.length - 1].parts.unshift({ inlineData: { mimeType: o.image.mime, data: o.image.data } });
       let text = '';
       for (let round = 0; round < 6; round++) {
         const body = { contents, generationConfig: { temperature: o.temp != null ? o.temp : o._json ? 0.1 : 0.4, maxOutputTokens: o.maxTokens || 2048 } };
@@ -4335,6 +4337,15 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDe
 const roleMacros = x => { const k = x.p * 4 + x.g * 4 + x.l * 9 || 1; return x.p * 4 / k >= 0.45 ? 'P' : x.g * 4 / k >= 0.55 ? 'G' : x.l * 9 / k >= 0.55 ? 'L' : ''; };
 const garderAliment = f => { const id = 'u_' + Apex.uid(); Store.patch('cfg', null, { aliments: Object.assign({}, Store.cfg().aliments, { [id]: Object.assign({ id, c: 'perso', etq: 0 }, f) }) }); return id; };
 /* Valeurs pour 100 g et poids d'une portion, estimés par l'IA à partir d'un nom ou d'une description. */
+/* Photo -> JPEG base64 assez léger pour le relais (demande entière ≤ 60 000 caractères) : on réduit jusqu'à ce que ça passe. */
+async function photoIA(file, max) {
+  max = max || 1800000; // ≈ 1,3 Mo : le relais accepte une photo jusqu'à 2,4 millions de caractères
+  for (const [mx, q] of [[2048, 0.85], [1600, 0.8], [1280, 0.75], [1024, 0.7], [768, 0.6], [640, 0.5], [512, 0.4]]) {
+    const b = await downscale(file, mx, q), d = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = ko; r.readAsDataURL(b); });
+    if (d.length < max) return { mime: 'image/jpeg', data: d };
+  }
+  throw { code: 'trop_lourd' };
+}
 async function estimerAliment(sample, txt) {
   const r = await iaMemo(sample.json, 'Tu es diététicien. Donne les valeurs nutritionnelles moyennes de cet aliment ou de ce plat (table Ciqual ; valeurs officielles pour une enseigne ou un produit de marque ; si c’est un plat préparé, estime d’après sa composition). ' + IA_PORTIONS + ' Réponds uniquement par un objet JSON : {"nom": "libellé court", "kcal": kcal pour 100 g, "p": protéines en g pour 100 g, "g": glucides en g pour 100 g, "l": lipides en g pour 100 g, "f": fibres en g pour 100 g, "portion_g": poids en grammes d’une portion ou d’une pièce usuelle, "unite": "nom de l’unité (portion, tranche, pièce, barre…)"}.\n\nAliment : """' + txt.slice(0, 200) + '"""', { modelTier: 'quick', cache: false });
   const k = Number(r && r.kcal); if (!(k >= 0 && k <= 950)) throw { code: 'invalid_json' };
@@ -4380,7 +4391,7 @@ function FoodLibSheet({ onClose, onAdded }) {
 function AddSheet({ foods, title, onAdd, onClose }) {
   const [q, setQ] = useState(''); const [cat, setCat] = useState(''); const [scan, setScan] = useState(false);
   const [fr, setFr] = useState({ n: '', k: null, p: null, g: null, l: null, qte: 100, ml: false });
-  const [ai, setAi] = useState({ txt: '', busy: false, res: null, err: '', keep: true });
+  const [ai, setAi] = useState({ txt: '', busy: false, res: null, err: '', keep: true }), [img, setImg] = useState(null);
   const sample = Store.caps().sample;
   /* recherche classée : le mot cherché d'abord au début d'un nom, les aliments de base avant les plats (« pomme » → Pomme, pas gnocchi) ; puis le reste des correspondances partielles */
   const list = (() => {
@@ -4397,26 +4408,34 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     onClose();
   };
   /* « Décris ce que tu manges » : un aliment par composant, valeurs de la base quand le plat y est, sinon valeurs pour 100 g en grammes (modifiable). */
-  const estimate = async () => {
-    const txt = ai.txt.trim(); if (!txt || !sample) return;
+  const estimate = async (photo) => {
+    const txt = ai.txt.trim(); if ((!txt && !photo) || !sample) return;
     setAi(s => Object.assign({}, s, { busy: true, retry: false, err: '', res: null }));
     try {
-      const cands = Apex.chercherAliments(foods, txt, 25).map(f => f.id + ' | ' + f.n + ' | ' + (f.u ? 'unité ' + f.u[0] + ', 1 = ' + Math.round(f.k * f.u[1] / 100) + ' kcal' : 'grammes, 100 g = ' + Math.round(f.k) + ' kcal')).join('\n');
-      const r = await iaMemo(sample.json, 'Tu es diététicien. Découpe ce repas en aliments séparés, un par composant (ex. « box crousty, frites de patate douce, chips » = 3 aliments). Sans quantité précisée, prends la portion réellement servie à un adulte. ' + IA_PORTIONS + ' Pour chaque aliment : si un élément de la BASE ci-dessous est le même aliment ou plat ET la même préparation (frit, en frites, cuit, en sauce, cru : un aliment cru ne vaut jamais pour des frites ou une friture), donne son "id" et la quantité "q" dans son unité : nombre d’unités pour un aliment « unité », sinon TOUJOURS en grammes (1 c. à soupe d’huile = 12 g, 1 c. à café = 5 g, 1 verre de lait = 200 g, 1 noix de beurre = 10 g) ; sinon "id": null, "q" en grammes et les valeurs POUR 100 g (table Ciqual, valeurs officielles des enseignes). Réponds uniquement par un objet JSON : {"items": [{"id": "id de la base ou null", "nom": "libellé court", "q": nombre, "kcal100": nombre, "p100": nombre, "g100": nombre, "l100": nombre, "f100": nombre}], "detail": "hypothèses de portions en une ligne"}.\n\nBASE (id | nom | unité) :\n' + (cands || 'aucun élément') + '\n\nRepas : """' + txt.slice(0, 600) + '"""', { modelTier: 'quick', cache: false, maxTokens: 3072, onRetry: () => setAi(s => Object.assign({}, s, { retry: true })) });
+      let image = photo ? await photoIA(photo) : null;
+      const intro = image ? 'Tu es diététicien. Analyse la PHOTO jointe. Si c’est un ticket de caisse, une commande ou un menu de restaurant : un aliment par article réellement commandé (quantités du ticket), avec les valeurs officielles de l’enseigne et ses portions (ex. Burger King, McDonald’s, KFC). Si c’est un emballage : lis le nom et le tableau nutritionnel s’il est visible. Si c’est une assiette : identifie chaque composant visible, estime son poids en te servant de la taille de l’assiette, des couverts et des mains comme repères, et compte l’huile de cuisson et les sauces probables. ' + (txt ? 'Précision de la personne : « ' + txt.slice(0, 300) + ' ». ' : '') + 'Découpe en aliments séparés. '
+        : 'Tu es diététicien. Découpe ce repas en aliments séparés, un par composant (ex. « box crousty, frites de patate douce, chips » = 3 aliments). Sans quantité précisée, prends la portion réellement servie à un adulte. ';
+      const cands = Apex.chercherAliments(foods, txt || 'burger frites poulet riz pâtes salade pizza', 25).map(f => f.id + ' | ' + f.n + ' | ' + (f.u ? 'unité ' + f.u[0] + ', 1 = ' + Math.round(f.k * f.u[1] / 100) + ' kcal' : 'grammes, 100 g = ' + Math.round(f.k) + ' kcal')).join('\n');
+      const prompt = intro + IA_PORTIONS + ' Pour chaque aliment : si un élément de la BASE ci-dessous est le même aliment ou plat ET la même préparation (frit, en frites, cuit, en sauce, cru : un aliment cru ne vaut jamais pour des frites ou une friture), donne son "id" et la quantité "q" dans son unité : nombre d’unités pour un aliment « unité », sinon TOUJOURS en grammes (1 c. à soupe d’huile = 12 g, 1 c. à café = 5 g, 1 verre de lait = 200 g, 1 noix de beurre = 10 g) ; sinon "id": null, "q" en grammes et les valeurs POUR 100 g (table Ciqual, valeurs officielles des enseignes). Réponds uniquement par un objet JSON : {"items": [{"id": "id de la base ou null", "nom": "libellé court", "q": nombre, "kcal100": nombre, "p100": nombre, "g100": nombre, "l100": nombre, "f100": nombre}], "detail": "ce que tu as reconnu et tes hypothèses de portions, en une ligne"}. Si la photo ne montre ni nourriture ni ticket, réponds {"items": [], "detail": "pas de repas reconnu"}.\n\nBASE (id | nom | unité) :\n' + (cands || 'aucun élément') + (image ? '' : '\n\nRepas : """' + txt.slice(0, 600) + '"""');
+      const oIA = { modelTier: 'quick', cache: false, maxTokens: 3072, onRetry: () => setAi(s => Object.assign({}, s, { retry: true })) };
+      const vision = () => iaEssais(signal => sample.json(prompt, Object.assign({}, oIA, { image, signal, think: 'medium' })), 45000, oIA.onRetry);
+      let r;
+      if (!image) r = await iaMemo(sample.json, prompt, oIA);
+      else try { r = await vision(); } catch (e) { if (!/trop long|invalide/i.test((e && e.message) || '') || image.data.length < 50000) throw e; image = await photoIA(photo, 50000); r = await vision(); } // ancien relais : photo réduite
       const items = (r && Array.isArray(r.items) ? r.items : []).slice(0, 12).map(it => {
         const q = +it.q, f = it.id && foods[it.id];
         if (f && q > 0 && q <= (f.u ? 20 : 3000)) return { a: f.id, q: f.u ? Math.round(q * 4) / 4 : Math.round(Apex.grammesIA(f, q, (it.nom || '') + ' ' + txt)) };
         const k = +it.kcal100; if (!(k >= 0 && k <= 950) || !(q > 0 && q <= 3000)) return null;
-        return { q: Math.round(q), x: { n: String(it.nom || 'Aliment').slice(0, 60), k, p: +it.p100 || 0, g: +it.g100 || 0, l: +it.l100 || 0, f: +it.f100 || 0, g100: 1 } };
+        const n = String(it.nom || 'Aliment').slice(0, 60); return { q: Math.round(q), x: { n, k, p: +it.p100 || 0, g: +it.g100 || 0, l: +it.l100 || 0, f: +it.f100 || 0, g100: 1, ml: Apex.liquide({ n }) ? 1 : 0 } };
       }).filter(Boolean);
-      if (!items.length) throw { code: 'invalid_json' };
+      if (!items.length) throw image ? { code: 'photo_vide', message: String((r && r.detail) || '') } : { code: 'invalid_json' };
       setAi(s => Object.assign({}, s, { busy: false, res: { items, detail: String((r && r.detail) || '').slice(0, 260) } }));
-    } catch (e) { setAi(s => Object.assign({}, s, { busy: false, err: aiErr(e) })); }
+    } catch (e) { setAi(s => Object.assign({}, s, { busy: false, err: e && e.code === 'trop_lourd' ? 'Photo illisible : réessaie avec une autre photo.' : e && e.code === 'photo_vide' ? 'Aucun repas reconnu sur la photo. Cadre l’assiette ou le ticket en entier, avec de la lumière.' : aiErr(e) })); }
   };
   const addAi = () => {
     const its = ai.res.items.map(it => {
       if (!it.x || !ai.keep) return it;
-      const x = it.x, id = garderAliment({ n: x.n, r: '', k: Math.round(x.k), p: x.p, g: x.g, l: x.l, f: x.f, d: it.q, u: null }); return { a: id, q: it.q };
+      const x = it.x, id = garderAliment({ n: x.n, r: '', k: Math.round(x.k), p: x.p, g: x.g, l: x.l, f: x.f, d: it.q, u: null, ml: x.ml || 0 }); return { a: id, q: it.q };
     });
     if (ai.keep && its.some((x, i) => ai.res.items[i].x)) toast('Aliments estimés gardés dans ta bibliothèque');
     onAdd(its); onClose();
@@ -4424,9 +4443,14 @@ function AddSheet({ foods, title, onAdd, onClose }) {
   const aiTot = ai.res ? ai.res.items.reduce((t, it) => Apex.add(t, Apex.mac(it, foods)), Apex.Z()) : null;
   return html`<${Sheet} title=${title} onClose=${onClose}>
     ${sample && html`<div className="ai-box">
-      <label className="fld" htmlFor="ai-txt"><span className="fld-l"><${Icon} n="sparkles" s=${14} /> Décris ce que tu manges, l’IA calcule</span>
+      <label className="fld" htmlFor="ai-txt"><span className="fld-l"><${Icon} n="sparkles" s=${14} /> Décris ou prends en photo, l’IA calcule</span>
         <textarea id="ai-txt" className="inp" rows="2" placeholder="ex. 2 tranches de pain complet, 1 œuf, du fromage, ou « pizza 4 fromages, 2 parts »" value=${ai.txt} maxLength="600" onChange=${e => setAi(Object.assign({}, ai, { txt: e.target.value }))} aria-label="Décris le repas à estimer"></textarea></label>
-      <button type="button" className="btn pri wide" disabled=${ai.busy || !ai.txt.trim()} onClick=${estimate}><${IAIcon} busy=${ai.busy} />${ai.busy ? (ai.retry ? 'L’IA est chargée, nouvel essai…' : 'Estimation…') : 'Estimer les macros'}</button>
+      <div className="row ai-act">
+        <label className=${cx('btn grow', ai.busy && 'dis')} htmlFor="ai-photo" aria-disabled=${ai.busy}><${Icon} n="camera" s=${18} />${ai.busy && img ? 'Analyse de la photo…' : (() => { const qq = AI.quota && AI.quota(); return qq && qq.phl && !qq.pro ? 'Photo · ' + Math.max(0, qq.phl - (qq.ph || 0)) + ' / ' + qq.phl : 'Photo'; })()}</label>
+        <input id="ai-photo" className="sr" type="file" accept="image/*" disabled=${ai.busy} onChange=${e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) { setImg(f); estimate(f); } }} />
+        <button type="button" className="btn pri grow" disabled=${ai.busy || !ai.txt.trim()} onClick=${() => { setImg(null); estimate(null); }}><${IAIcon} busy=${ai.busy} />${ai.busy ? (ai.retry ? 'Nouvel essai…' : 'Estimation…') : 'Estimer'}</button>
+      </div>
+      <p className="pf-hint" style=${{ margin: 0 }}>Photo de ton assiette, d’un emballage ou de ton ticket (Burger King, McDo…) : l’IA compte tout. 3 photos par jour en gratuit, 30 en Pro. Ajoute un mot dans la case si besoin (« sans sauce », « grande frite »).</p>
       ${ai.err && html`<div className="note"><${Icon} n="alert" /><div><span>${ai.err}</span></div></div>`}
       ${ai.res && html`<div className="note acc"><${Icon} n="sparkles" /><div>
         <span><b>${f0(aiTot.k)} kcal</b> · ${macTxt(aiTot)} · ${ai.res.items.length} aliment${ai.res.items.length > 1 ? 's' : ''}</span>
@@ -4556,7 +4580,7 @@ function ImportMenuSheet({ onClose }) {
 }
 
 /* Feuille « Changer mon menu » : toutes les façons de modifier la semaine enregistrée, en grandes lignes claires. */
-function ChangerMenuSheet({ nSem, onClose, onIAJour, onIA, onImp, onLib, onVider }) {
+function ChangerMenuSheet({ nSem, onClose, onIAJour, onIA, onImp, onLib, onFaits, onVider }) {
   const go = f => () => { onClose(); f(); };
   const ligne = (ic, titre, sous, onClick, tag) => html`<button type="button" className="chg-r" onClick=${onClick}><i><${Icon} n=${ic} s=${20} /></i><span><b>${titre}${tag || ''}</b><small>${sous}</small></span><${Icon} n="chevR" s=${18} /></button>`;
   return html`<${Sheet} title="Changer mon menu" onClose=${onClose}>
@@ -4565,52 +4589,62 @@ function ChangerMenuSheet({ nSem, onClose, onIAJour, onIA, onImp, onLib, onVider
       ${ligne('sparkles', 'Compléter ma journée avec l’IA', 'Garde les repas déjà mangés, propose le reste selon ce qu’il te manque', go(onIAJour))}
       ${ligne('clock', 'Refaire ma semaine avec l’IA', 'Sept nouveaux jours, selon tes macros et ta demande', go(onIA), html` <${ProTag} />`)}
       ${ligne('note', 'Coller un nouveau menu', 'Remplace les jours que tu colles, garde les autres', go(onImp))}
+      ${onFaits && ligne('utensils', 'Partir d’un menu tout fait', 'Voir les menus et en prendre un', go(onFaits))}
       ${ligne('plus', 'Ma bibliothèque d’aliments', 'Ajoute ou corrige tes aliments et plats perso', go(onLib))}
     </div>
     <div className="chg-dan"><span>Repartir de zéro</span><${Confirm} cls="ghost" icon="trash" label="Vider ma semaine" sure="Effacer ta semaine ? Touche encore" onYes=${() => { onVider(); toast('Semaine vidée'); onClose(); }} /></div>
   <//>`;
 }
 
-function PlanCard({ cfg, onWeek, onIA, onIAJour, onLib, onImp }) {
-  const [chg, setChg] = useState(false);
-  const choisi = !!cfg.repasMode, mode = cfg.repasMode || 'libre', prog = cfg.repasProg || '', conseille = Apex.programmeConseille(cfg), pesee = cfg.repasPesee !== false, setCfg = p => Store.patch('cfg', null, p);
-  const nSem = cfg.repasSemaine ? Object.keys(cfg.repasSemaine).length : 0, base = prog || conseille, sample = Store.caps().sample;
-  const peseeSeg = html`<div className="row sb"><span className="fld-l" style=${{ margin: 0 }}>Quantités</span><${Seg} neutral label="Pesée des aliments" value=${pesee} onChange=${v => setCfg({ repasPesee: v })} options=${[[true, 'Je pèse'], [false, 'Sans pesée']]} /></div>`;
-  if (!choisi) return html`<${Card} title="Tes repas">
-    <div className="choix">
-      <button type="button" className="big" onClick=${onIAJour}><i><${Icon} n="sparkles" s=${22} /></i><b>L’IA fait ma journée</b><span>Selon ce qu’il te reste et ta demande du jour.</span></button>
-      <button type="button" className="big" onClick=${onIA}><i><${Icon} n="clock" s=${22} /></i><b>L’IA fait ma semaine <${ProTag} /></b><span>Selon tes macros et tes contraintes.</span></button>
-      <button type="button" className="big" onClick=${onImp}><i><${Icon} n="note" s=${22} /></i><b>Coller mon menu</b><span>Ta semaine écrite (note, message, IA) : chaque repas de chaque jour.</span></button>
-      <button type="button" className="big" onClick=${() => setCfg({ repasMode: 'libre' })}><i><${Icon} n="plus" s=${22} /></i><b>Je compose moi-même</b><span>Ce que tu manges est déduit de ton quota.</span></button>
-    </div>
-    <div className="row sb"><button type="button" className="btn sm ghost" onClick=${() => setCfg({ repasMode: 'programme' })}>Voir des menus tout faits</button><button type="button" className="btn sm" onClick=${onLib}><${Icon} n="plus" s=${16} />Ma bibliothèque d’aliments</button></div>
+/* Menus tout faits : choisir, voir la semaine, la prendre comme base de « Ma semaine ». */
+function MenusFaitsSheet({ cfg, onClose }) {
+  const conseille = Apex.programmeConseille(cfg), [sel, setSel] = useState(''), nSem = cfg.repasSemaine ? Object.keys(cfg.repasSemaine).length : 0;
+  const prendre = id => { Store.patch('cfg', null, { repasMode: 'perso', repasProg: id, repasSemaine: Apex.semaineDepuis(cfg, id) }); toast('Ta semaine est prête : ajuste chaque jour'); onClose(); };
+  if (sel) { const p = Apex.PROGRAMMES[sel], sem = Apex.semaineApercu(cfg, sel);
+    return html`<${Sheet} title=${p.n} onClose=${() => setSel('')}>
+      <p className="sec" style=${{ fontSize: 13 }}>${p.d} Les quantités se recalent chaque jour sur tes calories et tes protéines.</p>
+      <div className="wk">${sem.map(d => html`<div key=${d.d} className="wk-d"><h3>${d.jour}</h3>${d.repas.map(r => html`<p key=${r.nom}><b>${r.nom}</b><span>${r.noms.join(' · ')}</span></p>`)}</div>`)}</div>
+      ${nSem ? html`<${Confirm} cls="pri wide" label="Prendre ce menu pour ma semaine" sure="Remplacer ta semaine actuelle ?" onYes=${() => prendre(sel)} />` : html`<button type="button" className="btn pri wide" onClick=${() => prendre(sel)}>Prendre ce menu pour ma semaine</button>`}
+    <//>`; }
+  return html`<${Sheet} title="Menus tout faits" onClose=${onClose}>
+    <p className="mut" style=${{ fontSize: 13, marginTop: 0 }}>Un point de départ : tu le prends, puis tu changes ce que tu veux jour par jour.</p>
+    <div className="progs">${Apex.PROGRAMMES_ORDRE.map(id => { const p = Apex.PROGRAMMES[id]; return html`<button key=${id} type="button" className="prog" onClick=${() => setSel(id)}>
+      <span className="prog-h"><i><${Icon} n=${p.ic} s=${18} /></i><b>${p.n}</b>${conseille === id && html`<em>Conseillé</em>`}</span><small>${p.tag}</small></button>`; })}</div>
   <//>`;
-  const MODES = [['perso', 'Ma semaine'], ['libre', 'Libre'], ['programme', 'Menus faits']];
-  const verrou = mode === 'perso' && nSem > 0;
-  const tuile = (ic, titre, sous, onClick, cls) => html`<button type="button" className=${cx('ta', cls)} onClick=${onClick}><i><${Icon} n=${ic} s=${20} /></i><b>${titre}</b><span>${sous}</span></button>`;
-  const options = html`<details className="more"><summary>Options</summary><div className="stack">
-    ${peseeSeg}
+}
 
-    ${mode === 'perso' && html`<div className="row"><${Confirm} label=${'Partir du menu ' + Apex.PROGRAMMES[base].n} sure="Remplacer ma semaine ?" onYes=${() => { setCfg({ repasSemaine: Apex.semaineDepuis(cfg, base) }); toast('Ta semaine est prête : modifie chaque jour'); }} />
-</div>`}
-  </div></details>`;
-  return html`<${Card} title="Mes repas" right=${html`<${Seg} neutral label="Mode des repas" value=${mode} onChange=${v => setCfg({ repasMode: v })} options=${MODES} />`}>
-    ${mode === 'programme' && html`<div className="stack">
-      <div className="progs">${Apex.PROGRAMMES_ORDRE.map(id => { const p = Apex.PROGRAMMES[id]; return html`<button key=${id} type="button" className="prog" aria-pressed=${prog === id} onClick=${() => { setCfg({ repasProg: id }); toast('Programme « ' + p.n + ' » choisi'); }}>
-        <span className="prog-h"><i><${Icon} n=${p.ic} s=${18} /></i><b>${p.n}</b>${conseille === id && html`<em>Conseillé</em>`}</span><small>${p.tag}</small></button>`; })}</div>
-      <div className="row sb"><span className="mut" style=${{ fontSize: 12 }}>${prog ? 'Actif : ' + Apex.PROGRAMMES[prog].n : 'Choisis un menu'}</span><button type="button" className="btn sm" onClick=${() => onWeek(base)}><${Icon} n="clock" s=${16} />Voir la semaine</button></div></div>`}
-    ${verrou && html`<div className="sem-ok"><i><${Icon} n="check" s=${18} /></i><div><b>Ma semaine est enregistrée</b><span>${nSem} / 7 jours · tes repas et tes quantités sont gardés.</span></div></div>`}
-    <div className="tg">
-      ${tuile('sparkles', verrou ? 'Compléter ma journée' : 'Ma journée avec l’IA', 'Garde ce que tu as mangé, l’IA propose le reste', onIAJour, 'pri')}
-      ${verrou ? tuile('sliders', 'Changer mon menu', 'Nouvelle semaine, menu collé, bibliothèque', () => setChg(true))
-        : html`<${React.Fragment}>
-          ${mode !== 'programme' && tuile('clock', html`Ma semaine avec l’IA <${ProTag} />`, 'Sept jours calés sur tes macros', onIA)}
-          ${tuile('note', 'Coller mon menu', 'Ta semaine écrite, jour par jour', onImp)}
-          ${tuile('plus', 'Ma bibliothèque', 'Tes aliments et plats perso', onLib)}
-        <//>`}
-    </div>
-    ${options}
-    ${chg && html`<${ChangerMenuSheet} nSem=${nSem} onClose=${() => setChg(false)} onIAJour=${onIAJour} onIA=${onIA} onImp=${onImp} onLib=${onLib} onVider=${() => setCfg({ repasSemaine: null })} />`}
+/* Deux façons de manger : « Ma journée » (on ajoute au fil de la journée) et « Ma semaine » (7 jours prévus d'avance). */
+function PlanCard({ cfg, onIA, onIAJour, onLib, onImp }) {
+  const [chg, setChg] = useState(false), [faits, setFaits] = useState(false);
+  const mode = cfg.repasMode === 'perso' || cfg.repasMode === 'programme' ? 'perso' : 'libre', pesee = cfg.repasPesee !== false, setCfg = p => Store.patch('cfg', null, p);
+  const nSem = cfg.repasSemaine ? Object.keys(cfg.repasSemaine).length : 0, base = cfg.repasProg || Apex.programmeConseille(cfg);
+  /* ancien mode « Menus faits » : devient une fois pour toutes « Ma semaine » à partir du menu choisi */
+  useEffect(() => { if (cfg.repasMode === 'programme') setCfg({ repasMode: 'perso', repasSemaine: cfg.repasSemaine || Apex.semaineDepuis(cfg, base) }); }, [cfg.repasMode]);
+  const tuile = (ic, titre, sous, onClick, cls) => html`<button type="button" className=${cx('ta', cls)} onClick=${onClick}><i><${Icon} n=${ic} s=${20} /></i><b>${titre}</b><span>${sous}</span></button>`;
+  const MODES = [['libre', 'Ma journée'], ['perso', 'Ma semaine']];
+  return html`<${Card} title="Mes repas" right=${html`<${Seg} neutral label="Façon de noter mes repas" value=${mode} onChange=${v => setCfg({ repasMode: v })} options=${MODES} />`}>
+    ${mode === 'libre' ? html`<div className="stack" style=${{ gap: 12 }}>
+      <p className="mut" style=${{ fontSize: 13, margin: 0 }}>Rien de prévu d’avance : ajoute ce que tu manges quand tu le manges, en texte, en photo (assiette, ticket) ou au code-barres. Le reste du jour se recalcule tout seul.</p>
+      <div className="tg">
+        ${tuile('sparkles', 'L’IA compose ma journée', 'Garde ce que tu as mangé, propose le reste', onIAJour, 'pri')}
+        ${tuile('plus', 'Ma bibliothèque', 'Tes aliments et plats perso', onLib)}
+      </div></div>`
+    : html`<div className="stack" style=${{ gap: 12 }}>
+      ${nSem > 0 ? html`<div className="sem-ok"><i><${Icon} n="check" s=${18} /></i><div><b>Ta semaine est prête</b><span>${nSem} / 7 jours enregistrés : chaque jour reprend son menu, tu coches ce que tu manges.</span></div></div>`
+        : html`<p className="mut" style=${{ fontSize: 13, margin: 0 }}>Prépare tes 7 jours une fois : chaque jour reprend ensuite son menu tout seul, tu n’as plus qu’à cocher.</p>`}
+      <div className="tg">
+        ${nSem > 0 ? html`<${React.Fragment}>
+            ${tuile('sparkles', 'Compléter ma journée', 'Garde ce que tu as mangé, l’IA propose le reste', onIAJour, 'pri')}
+            ${tuile('sliders', 'Changer ma semaine', 'IA, menu collé, menu tout fait', () => setChg(true))}<//>`
+          : html`<${React.Fragment}>
+            ${tuile('clock', html`L’IA fait ma semaine <${ProTag} />`, 'Sept jours calés sur tes macros', onIA, 'pri')}
+            ${tuile('note', 'Coller mon menu', 'Ta semaine écrite, jour par jour', onImp)}
+            ${tuile('utensils', 'Menu tout fait', 'Choisis-en un, puis ajuste', () => setFaits(true))}
+            ${tuile('plus', 'Ma bibliothèque', 'Tes aliments et plats perso', onLib)}<//>`}
+      </div></div>`}
+    <details className="more"><summary>Options</summary><div className="row sb"><span className="fld-l" style=${{ margin: 0 }}>Quantités</span><${Seg} neutral label="Pesée des aliments" value=${pesee} onChange=${v => setCfg({ repasPesee: v })} options=${[[true, 'Je pèse'], [false, 'Sans pesée']]} /></div></details>
+    ${chg && html`<${ChangerMenuSheet} nSem=${nSem} onClose=${() => setChg(false)} onIAJour=${onIAJour} onIA=${onIA} onImp=${onImp} onLib=${onLib} onFaits=${() => setFaits(true)} onVider=${() => setCfg({ repasSemaine: null })} />`}
+    ${faits && html`<${MenusFaitsSheet} cfg=${cfg} onClose=${() => setFaits(false)} />`}
   <//>`;
 }
 
@@ -5052,12 +5086,15 @@ function HistoCard() {
   const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg);
   const ids = Object.keys(exos).filter(id => Apex.histoExo(S.seances, id).length > 0); const [sel, setSel] = useState('');
   const id = sel && ids.indexOf(sel) >= 0 ? sel : (((Object.keys(Apex.groupes(cfg))[0] && Apex.liftCle(S.seances, Object.keys(Apex.groupes(cfg))[0], cfg)) || {}).id || ids[0] || '');
-  const h = id ? Apex.histoExo(S.seances, id) : [];
-  const table = h.length ? { cols: ['Date', 'Séries (kg × rép.)', 'e1RM (kg)', 'Tonnage (kg)'], rows: h.slice().reverse().slice(0, 12).map(x => [dMid(x.date), setsTxt(x.sets), f1(x.e1), f0(x.vol)]) } : null;
-  return html`<${ChartCard} cls="c12" title="Historique des charges" sub="e1RM = charge × (1 + (rép. + RIR) / 30)" table=${table}>
+  const h = id ? Apex.histoExo(S.seances, id) : [], pts = h.filter(x => x.e1 > 0), der = pts[pts.length - 1], pre = pts[0], gain = der && pts.length > 1 ? der.e1 - pre.e1 : null;
+  const table = h.length ? { cols: ['Date', 'Séries (kg × rép.)', 'Force estimée (kg)'], rows: h.slice().reverse().slice(0, 12).map(x => [dMid(x.date), setsTxt(x.sets), f0(x.e1)]) } : null;
+  return html`<${ChartCard} cls="c12" title="Ta force, exercice par exercice" sub="Force estimée : la charge que tu pourrais soulever une seule fois, calculée à partir de tes séries." table=${table}>
     ${ids.length > 0 && html`<select id="hx-sel" className="inp" aria-label="Exercice" value=${id} onChange=${e => setSel(e.target.value)}>${ids.map(k => html`<option key=${k} value=${k}>${exos[k].n}</option>`)}</select>`}
-    <${LineChart} h=${200} unit=" kg" label="e1RM par séance" series=${[{ name: 'e1RM', c: 'var(--acc-hi)', type: 'line', area: true, end: true, pts: h.filter(x => x.e1 > 0).map(x => ({ d: x.date, v: x.e1 })) }]}
-      empty=${html`<span><b>Aucune charge notée.</b> Démarre la séance du jour et saisis kg × répétitions × RPE : l’objectif de la séance suivante se calcule tout seul.</span>`} />
+    ${der && html`<div className="fx-t"><div><b>${f0(der.e1)} kg</b><small>force estimée</small></div>
+      <div><b className=${cx(gain > 0.4 && 'up', gain < -0.4 && 'down')}>${gain === null ? '–' : (gain > 0 ? '+' : '') + f0(gain) + ' kg'}</b><small>${gain === null ? 'une seule séance' : 'depuis le ' + dTiny(pre.date)}</small></div>
+      <div><b>${pts.length}</b><small>séance${pts.length > 1 ? 's' : ''}</small></div></div>`}
+    <${LineChart} h=${180} unit=" kg" label="Force estimée par séance" series=${[{ name: 'Force estimée', c: 'var(--acc-hi)', type: 'line', area: true, end: true, pts: pts.map(x => ({ d: x.date, v: x.e1 })) }]}
+      empty=${html`<span><b>Aucune charge notée.</b> Démarre la séance du jour et saisis kg × répétitions : ta courbe de force se dessine toute seule.</span>`} />
   <//>`;
 }
 
@@ -5661,29 +5698,16 @@ function ApportCard({ date, win }) {
   <//>`;
 }
 
-function AdherenceCard({ date }) {
-  const st = useStore(), S = st.get(), cfg = st.cfg(); const [n, setN] = useState(7);
-  const a = Apex.adherence(S.journal, cfg, date, n), row = (lab, x, c) => html`<${Meter} label=${lab} v=${x[0]} max=${x[1] || n} c=${c} unit=${'j' + (x[1] ? ' · ' + Math.round(x[0] / x[1] * 100) + ' %' : '')} />`;
-  return html`<${Card} cls="c5" title=${html`Adhérence <${ProTag} />`} sub="Jours conformes sur jours renseignés" right=${html`<${Seg} neutral label="Fenêtre d’adhérence" value=${n} onChange=${setN} options=${[[7, '7 j'], [28, '28 j']]} />`}>
-    <div className="stack" style=${{ gap: 14 }}>
-      ${row('Calories à ±5 %', a.kcal, 'var(--acc-hi)')}
-      ${row('Protéines ≥ ' + cfg.cibles.planchers.p + ' g', a.prot, 'var(--p)')}
-      ${row('Pas ≥ ' + f0(cfg.cibles.pasMin), a.pas, 'var(--g)')}
-      ${row('Sommeil ≥ ' + cfg.cibles.sommeil + ' h', a.sommeil, 'var(--s1)')}
-    </div>
-  <//>`;
-}
 
 function ForceCard({ date, win }) {
-  const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), from = win ? Apex.addDays(date, -win) : '';
-  const GR = Apex.groupes(cfg), COLS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'], series = [], rows = [], legend = [];
-  Object.keys(GR).slice(0, 4).forEach((k, i) => { const lk = Apex.liftCle(S.seances, k, cfg); if (!lk) return; const h = lk.h.filter(x => x.e1 > 0 && x.date >= from); if (!h.length) return; const b = h[0].e1, nm = GR[k].n, col = COLS[i], lab = nm + ' · ' + (exos[lk.id] ? exos[lk.id].n : lk.id);
-    series.push({ name: lab, c: col, type: 'line', pts: h.map(x => ({ d: x.date, v: x.e1 / b * 100 })) }); legend.push([lab, col]);
-    const l = h[h.length - 1], m = Apex.mm7(S.journal, l.date); rows.push([nm, exos[lk.id] ? exos[lk.id].n : lk.id, f1(b), f1(l.e1), sgn((l.e1 / b - 1) * 100) + ' %', m ? f2(l.e1 / m.v) : '–']); });
-  return html`<${ChartCard} cls="c7" title=${html`Progression de force <${ProTag} />`} sub="e1RM en base 100 à la 1re séance de la période" legend=${legend.length ? legend : null}
-    table=${rows.length ? { cols: ['Piste', 'Mouvement', 'e1RM départ', 'e1RM actuel', 'Évolution', 'e1RM / poids'], rows } : null}>
-    <${LineChart} h=${250} fmt=${f0} from=${from || null} label="Progression de force en base 100" series=${series} refs=${series.length ? [{ v: 100, label: '100' }] : []}
-      empty=${html`<span><b>Pas encore de séance notée.</b> En sèche, tenir sa force = garder son muscle. Chaque piste suit le mouvement clé d’un point faible.</span>`} />
+  const st = useStore(), S = st.get(), cfg = st.cfg(), exos = Apex.allExos(cfg), from = win ? Apex.addDays(date, -win) : '', GR = Apex.groupes(cfg), rows = [];
+  Object.keys(GR).slice(0, 4).forEach(k => { const lk = Apex.liftCle(S.seances, k, cfg); if (!lk) return; const h = lk.h.filter(x => x.e1 > 0 && x.date >= from); if (!h.length) return;
+    const b = h[0].e1, l = h[h.length - 1].e1; rows.push({ g: GR[k].n, ex: exos[lk.id] ? exos[lk.id].n : lk.id, kg: l, d: h.length > 1 ? (l / b - 1) * 100 : null }); });
+  return html`<${Card} cls="c5" title=${html`Tes mouvements clés <${ProTag} />`} sub="Évolution de ta force sur la période, un mouvement par point faible">
+    ${rows.length ? html`<div className="fk-l">${rows.map(r => html`<div key=${r.g} className="fk"><div><b>${r.g}</b><small>${r.ex} · ${f0(r.kg)} kg</small></div>
+      <span className=${cx('fk-v', r.d > 0.5 && 'up', r.d < -0.5 && 'down')}>${r.d === null ? 'nouveau' : (r.d > 0 ? '+' : '') + f0(r.d) + ' %'}</span></div>`)}</div>
+      <p className="mut" style=${{ fontSize: 12.5, marginTop: 8 }}>En sèche, rester stable = garder son muscle. En prise de masse, vise une hausse régulière.</p>`
+    : html`<p className="mut">Pas encore de séance notée sur tes points faibles.</p>`}
   <//>`;
 }
 
@@ -5825,9 +5849,10 @@ function RadarCard({ date }) {
         <text x=${q[0]} y=${q[1] + 13} textAnchor="middle" className="rad-v">${x.v === null ? '–' : Math.round(x.v * 100) + ' %'}</text></g>`; })}
       <g className="rad-g"><polygon points=${poly(x => Math.max(0.04, x.v || 0))} fill="url(#radG)" stroke="var(--acc)" strokeWidth="2.2" strokeLinejoin="round" />
         ${ax.map((x, i) => { const p = pt(i, Math.max(0.04, x.v || 0)); return html`<circle key=${x.k} cx=${p[0]} cy=${p[1]} r="3.5" fill="var(--acc)" />`; })}</g>
-      <text x=${cx} y=${cy + 6} textAnchor="middle" className="rad-s">${score}</text>
+      <text x=${cx} y=${cy + 4} textAnchor="middle" className="rad-s">${score}</text><text x=${cx} y=${cy + 20} textAnchor="middle" className="rad-u">sur 100</text>
     </svg>
-    <p className="mut rad-t">Score ${score} / 100. ${faible.v < 0.7 ? 'Point à travailler : ' + faible.ic + ' ' + faible.n.toLowerCase() + ' (' + Math.round(faible.v * 100) + ' % des jours).' : 'Belle régularité partout, continue.'}</p>
+    <p className="mut rad-t">Chaque pointe = la part des jours où tu as tenu ton objectif (au bord = 100 %, tous les jours). Au centre, ta note : la moyenne des pointes.</p>
+    <p className="rad-t">${faible.v < 0.7 ? 'Point à travailler : ' + faible.ic + ' ' + faible.n.toLowerCase() + ' (' + Math.round(faible.v * 100) + ' % des jours).' : 'Belle régularité partout, continue.'}</p>
   <//>`;
 }
 /* Chemin des paliers de l'objectif de poids : départ, 25, 50, 75 %, 🏆 */
@@ -5838,7 +5863,7 @@ function PaliersCard() {
     <div className="trail" role="img" aria-label=${Math.round(p.pct) + ' % de l’objectif atteint'}>
       <div className="tr-bar"></div><div className="tr-fill" style=${{ width: p.pct + '%' }}></div>
       ${[0, 25, 50, 75, 100].map(k => { const ok = p.pct >= k, cur = !ok && (k === 25 ? 0 : k - 25) <= p.pct; return html`<div key=${k} className=${cx('tr-n', ok && 'ok', cur && 'cur')} style=${{ left: k + '%' }}>
-        <i>${k === 0 ? '•' : k === 100 ? '🏆' : ok ? '✓' : k}</i><small>${k === 0 ? 'départ' : k === 100 ? at(100) + ' kg' : k + ' %'}</small></div>`; })}
+        <i>${k === 0 ? '🚩' : k === 100 ? '🏆' : ok ? '✓' : k}</i><small>${k === 0 ? v1(p.dep) + ' kg' : k === 100 ? at(100) + ' kg' : k + ' %'}</small></div>`; })}
     </div>
     <p className="mut" style=${{ fontSize: 13, marginTop: 6 }}>${p.pct >= 100 ? 'Objectif atteint, bravo.' : 'Prochain palier : ' + at([25, 50, 75, 100].find(k => k > p.pct)) + ' kg (moyenne 7 jours ' + v1(p.cur) + ' kg).'}</p>
   <//>`;
@@ -5850,22 +5875,22 @@ function Analytics({ date }) {
     <div className="view-h"><h1>Analyse</h1>
       <${Seg} neutral label="Période des graphiques" value=${win} onChange=${setWin} options=${[[30, '30 j'], [90, '90 j'], [0, 'Tout']]} /></div>
     <div className="grid">
-      <div className="c12 an-sec"><span className="eyebrow">Ta régularité</span></div>
-      <${RadarCard} date=${date} />
-      <${PaliersCard} />
-      <div className="c12 an-sec"><span className="eyebrow">Suivi du physique</span></div>
-      <${PhotosCard} date=${date} />
-      <div className="c5 stack" style=${{ alignContent: 'start', gap: 14 }}><${MensuCard} date=${date} win=${win} /></div>
-      <div className="c12 an-sec"><span className="eyebrow">Poids et calories</span></div>
+      <div className="c12 an-sec"><span className="eyebrow">Ton objectif</span></div>
       <${SecheCard} date=${date} />
+      <${PaliersCard} />
+      <${RadarCard} date=${date} />
+      <div className="c12 an-sec"><span className="eyebrow">Poids et calories</span></div>
       <${PoidsCard} date=${date} win=${win} />
       <${ApportCard} date=${date} win=${win} />
+      <div className="c12 an-sec"><span className="eyebrow">Muscu</span></div>
       <${HistoCard} />
+      <div className="c12 an-sec"><span className="eyebrow">Photos et mensurations</span></div>
+      <${PhotosCard} date=${date} />
+      <div className="c5 stack" style=${{ alignContent: 'start', gap: 14 }}><${MensuCard} date=${date} win=${win} /></div>
       <div className="c12 an-sec"><span className="eyebrow">Analyse avancée</span><${ProTag} />${!PRO.actif && html`<small className="pro-off">offert pendant le lancement</small>`}</div>
       <${ProZone} titre="Analyse avancée et bilan du coach">
         <${ProjectionCard} date=${date} win=${win} />
         <${ForceCard} date=${date} win=${win} />
-        <${AdherenceCard} date=${date} />
         <${VolumeCard} date=${date} />
         <${CoachCard} date=${date} />
       <//>
@@ -7216,6 +7241,7 @@ const PRO = { actif: false, prix: 'environ 3,99 € par mois' };
 const PRO_LISTE = [
   ['§', 'Ton coach IA, sans compter'],
   ['sparkles', '150 messages IA par jour', 'Au lieu de 10 en gratuit : pose toutes tes questions, autant de fois que tu veux'],
+  ['camera', '30 photos de repas par jour', 'Au lieu de 3 en gratuit : assiette, emballage ou ticket, l’IA compte les calories à ta place'],
   ['sparkles', 'Analyses de coach complètes', 'Des réponses détaillées et chiffrées avec tes vraies données, pas des résumés de 3 lignes'],
   ['chart', 'Bilan coach approfondi sur 14 jours', 'Verdict, poids et rythme, nutrition, entraînement, récupération, ajustements justifiés et plan des 7 prochains jours'],
   ['bolt', 'Debrief du matin détaillé', 'Ce que disent ton poids, ton sommeil et ta forme, et quoi manger et soulever aujourd’hui'],
