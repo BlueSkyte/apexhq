@@ -6984,7 +6984,8 @@ function FoodsEditor() {
    - Vérification de version à chaque ouverture : l'app se met à jour seule, sans désinstaller. */
 const PUBLIC_URL = window.APEX_URL || 'https://blueskyte.github.io/apexhq/';
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const isInstalled = () => { try { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } };
+/* installée = écran d'accueil (PWA) ou app Android / iPhone (Capacitor, qui affiche le site dans l'app) */
+const isInstalled = () => { try { const c = window.Capacitor; return !!(c && c.isNativePlatform && c.isNativePlatform()) || window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } };
 
 /* Compare la version publiée à celle qui tourne ; recharge si elle a changé (une seule fois par version). */
 async function checkUpdate(manual) {
@@ -7290,7 +7291,7 @@ function ProLock({ titre }) {
 /* Zone Pro : rend son contenu si l'utilisateur y a droit, sinon un seul encart verrouillé. */
 function ProZone({ titre, children }) { return estPro() ? children : html`<${ProLock} titre=${titre} />`; }
 function ProBody() {
-  const [q, setQ] = useState(() => AI.quota()), [code, setCode] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false);
+  const [q, setQ] = useState(() => AI.quota()), [code, setCode] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [fete, setFete] = useState(null);
   useEffect(() => { const f = e => setQ(e.detail); window.addEventListener('ia:quota', f); AI.relais('statut').then(x => { if (x) setQ(x); }).catch(() => {}); return () => window.removeEventListener('ia:quota', f); }, []);
   const vip = q && q.pro, aVie = !!vip && vip >= '2999';
   const activer = async () => {
@@ -7299,10 +7300,12 @@ function ProBody() {
       const r = await AI.relais('code', { code: code.trim() }); if (r) setQ(r); setCode('');
       if (r && r.pro) Store.patch('cfg', null, { pro: { fin: r.pro, vip: 1 } });
       setMsg(r && r.pro >= '2999' ? 'Code activé : Pro à vie 🎉' : 'Code activé : Pro jusqu’au ' + dMid(r && r.pro) + ' 🎉');
+      if (r && r.pro) setFete(r.pro);
     } catch (e) { setMsg(aiMsg(e) || 'Code refusé.'); }
     setBusy(false);
   };
   return html`<div className="stack">
+    ${fete && html`<${VipFete} fin=${fete} onClose=${() => setFete(null)} />`}
     <div className="pro-hero"><${ProTag} /><b>${vip ? 'Macrolya Pro · VIP' : 'Macrolya Pro'}</b><span>${vip ? (aVie ? 'Actif à vie. Merci 🙏' : 'Actif jusqu’au ' + dMid(vip) + '.') : PRO.actif ? (estPro() ? 'Ton abonnement est actif.' : 'Débloque les outils avancés pour ' + PRO.prix + '.') : 'Fonctions Pro offertes pendant le lancement. L’IA : 10 messages par jour en gratuit, 150 en Pro.'}</span></div>
     ${q && q.l > 0 && html`<div className="pro-q"><span>IA aujourd’hui</span><b>${q.u} / ${q.l}</b><i style=${{ width: Math.min(100, Math.round(q.u / q.l * 100)) + '%' }}></i></div>`}
     <div className="pro-l">${PRO_LISTE.map(x => x[0] === '§' ? html`<h4 key=${x[1]} className="pro-sec">${x[1]}</h4>` : html`<div key=${x[1]} className="pro-r"><i><${Icon} n=${x[0]} s=${18} /></i><span><b>${x[1]}</b><small>${x[2]}</small></span></div>`)}</div>
@@ -7573,6 +7576,16 @@ function PalierFete({ onObjectif }) {
       <h2>${p.palier === 50 ? 'La moitié du chemin !' : p.palier === 75 ? 'Plus que la dernière ligne droite.' : 'Premier palier passé.'}</h2>
       <p className="mut">${v1(kg)} kg ${perte ? 'en moins' : 'en plus'} depuis le départ. Encore ${v1(reste)} kg pour atteindre ${v1(p.cib)} kg.</p>
       <button type="button" className="btn pri wide" onClick=${fermer}>Continuer</button></div></div>`;
+}
+
+/* Fête du code VIP : badge doré, confettis, avantages débloqués. */
+function VipFete({ fin, onClose }) {
+  const vie = fin >= '2999';
+  return html`<div className="fete vip-f" role="dialog" aria-modal="true" aria-label="Code VIP activé" onClick=${e => { if (e.target === e.currentTarget) onClose(); }}><${Confettis} /><div className="fin-rays" aria-hidden="true"></div>
+    <div className="fete-c"><div className="vip-b" aria-hidden="true"><span>VIP</span></div><span className="eyebrow">Code activé</span>
+      <h2>Bienvenue dans Macrolya Pro !</h2><p className="mut">${vie ? 'Pro à vie. Merci de faire partie des premiers 🙏' : 'Pro jusqu’au ' + dMid(fin) + '.'}</p>
+      <ul className="vip-l">${['150 messages IA par jour', '30 photos de repas par jour', 'Ta semaine de repas par l’IA', 'Analyses avancées et bilan coach'].map((t, i) => html`<li key=${t} style=${{ animationDelay: (0.5 + i * 0.12) + 's' }}><i>✓</i>${t}</li>`)}</ul>
+      <button type="button" className="btn pri wide" onClick=${onClose}>C’est parti</button></div></div>`;
 }
 
 /* ---- 70-ui-app.js ---- */
