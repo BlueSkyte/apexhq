@@ -4536,9 +4536,10 @@ function MealWeekSheet({ cfg, progId, onClose }) {
   <//>`;
 }
 
+const EX_JOUR = 'Petit-déjeuner : 50 g flocons d’avoine, 30 g whey, 1 banane\nDéjeuner : 150 g filet de poulet cru, 100 g riz basmati cru, 200 g brocolis\nCollation : 150 g skyr, 1 kiwi\nDîner : 130 g saumon, 200 g pommes de terre, salade';
 /* Coller un menu écrit : chaque jour, chaque repas, chaque aliment avec la quantité écrite. L'IA reconnaît les aliments inconnus. */
 const EX_MENU = 'LUNDI (séance)\nPetit-déjeuner : 50 g flocons d’avoine, 30 g whey, 1 banane (120 g)\nDéjeuner : 150 g filet de poulet cru, 100 g riz basmati cru, 200 g brocolis\nCollation 16h30 : 150 g skyr, 1 kiwi\nDîner : 130 g saumon, 200 g pommes de terre, salade\n\nMARDI (repos)\n…';
-function ImportMenuSheet({ onClose }) {
+function ImportMenuSheet({ onClose, jour }) {
   const st = useStore(), sample = st.caps().sample;
   const [txt, setTxt] = useState(() => lsGet('import:menu', '')); const [busy, setBusy] = useState(''); const [err, setErr] = useState(''); const [res, setRes] = useState(null); const [rempl, setRempl] = useState(true);
   const ctl = useRef(null); useEffect(() => () => { if (ctl.current) ctl.current.abort(); }, []);
@@ -4566,6 +4567,13 @@ function ImportMenuSheet({ onClose }) {
     const recap = Object.keys(noms).map(k => ({ nom: noms[k].nom, f: corr[k] || null, neuf: !!(corr[k] && neufs[corr[k].id]) }));
     setBusy(''); setRes(Object.assign({ menu, neufs, recap, foods2, iaErr, sansIA: !sample && liste.length > 0 }, b));
   };
+  /* menu du jour : remplace les repas pas encore mangés de ce jour, garde ceux déjà cochés ; la semaine enregistrée ne change pas */
+  const enregistrerJour = () => {
+    const cfg = Store.cfg(), j = Store.get().journal[jour] || {}, tpl = res.semaine[Apex.dow(jour)] || res.semaine[ordre[0]];
+    Store.patch('cfg', null, { aliments: Object.assign({}, cfg.aliments, res.neufs) });
+    Store.patch('journal', jour, { date: jour, repas: (j.repas || []).filter(m => m.ok).concat(Apex.repasDepuisFixe(tpl)), man: null });
+    toast('Menu du jour ajouté'); onClose();
+  };
   const enregistrer = () => {
     const cfg = Store.cfg(), S = Store.get(), today = Apex.today(); let nJ = 0;
     Store.patch('cfg', null, { repasMode: 'perso', repasSemaine: Object.assign({}, cfg.repasSemaine || {}, res.semaine), aliments: Object.assign({}, cfg.aliments, res.neufs) });
@@ -4579,25 +4587,26 @@ function ImportMenuSheet({ onClose }) {
     const nS = Object.keys(res.semaine).length;
     toast('Menu enregistré pour ' + nS + ' jour' + (nS > 1 ? 's' : '') + (nJ ? ', ' + nJ + ' jour' + (nJ > 1 ? 's' : '') + ' de cette semaine remplis' : '')); onClose();
   };
-  const ordre = [1, 2, 3, 4, 5, 6, 0].filter(d => res && res.semaine[d]);
+  const ordre0 = [1, 2, 3, 4, 5, 6, 0].filter(d => res && res.semaine[d]), ordre = jour && ordre0.length ? [ordre0.indexOf(Apex.dow(jour)) >= 0 ? Apex.dow(jour) : ordre0[0]] : ordre0;
   const remplace = ordre.filter(d => (Store.cfg().repasSemaine || {})[d]).length;
-  return html`<${Sheet} title="Coller mon menu" onClose=${onClose}>
+  return html`<${Sheet} title=${jour ? 'Coller mon menu du jour' : 'Coller mon menu'} onClose=${onClose}>
     ${!res && html`<${React.Fragment}>
-      <p className="mut" style=${{ fontSize: 13 }}>Colle ton menu de la semaine tel quel : un jour par ligne, puis un repas par ligne avec les aliments et les quantités. Tes quantités sont gardées exactement.</p>
-      <textarea id="imp-menu" className="inp im-txt" rows="12" placeholder=${EX_MENU} value=${txt} onChange=${e => setTxt(e.target.value)} aria-label="Menu de la semaine à importer"></textarea>
+      <p className="mut" style=${{ fontSize: 13 }}>${jour ? 'Colle ton menu de la journée : un repas par ligne avec les aliments et les quantités. Tes quantités sont gardées exactement, les repas déjà mangés aussi.' : 'Colle ton menu de la semaine tel quel : un jour par ligne, puis un repas par ligne avec les aliments et les quantités. Tes quantités sont gardées exactement.'}</p>
+      <textarea id="imp-menu" className="inp im-txt" rows="12" placeholder=${jour ? EX_JOUR : EX_MENU} value=${txt} onChange=${e => setTxt(e.target.value)} aria-label="Menu de la semaine à importer"></textarea>
       ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
       ${!sample && html`<div className="note"><${Icon} n="info" /><div><span>Active l’IA (Paramètres › Intelligence artificielle) pour reconnaître les produits de marque et les aliments absents de la base.</span></div></div>`}
       <button type="button" className="btn pri wide" disabled=${!!busy || !txt.trim()} onClick=${analyser}><${Icon} n="sparkles" s=${18} />${busy || 'Lire mon menu'}</button>
     <//>`}
     ${res && html`<${React.Fragment}>
-      <div className="im-jours">${ordre.map(d => { const t = res.totaux[d], s = res.menu.jours[d].statut; return html`<details key=${d} className="im-j"><summary><b>${Apex.JOURS[d]}</b>${s && html`<em>${s === 'repos' ? 'repos' : 'salle'}</em>`}<span>${res.semaine[d].length} repas · ${f0(t.k)} kcal · P ${f0(t.p)} · G ${f0(t.g)} · L ${f0(t.l)}</span></summary>
+      <div className="im-jours">${ordre.map(d => { const t = res.totaux[d], s = res.menu.jours[d].statut; return html`<details key=${d} className="im-j"><summary><b>${jour ? 'Ton menu' : Apex.JOURS[d]}</b>${s && html`<em>${s === 'repos' ? 'repos' : 'salle'}</em>`}<span>${res.semaine[d].length} repas · ${f0(t.k)} kcal · P ${f0(t.p)} · G ${f0(t.g)} · L ${f0(t.l)}</span></summary>
         ${res.semaine[d].map(m => html`<div key=${m.id} className="im-m"><b>${m.nom}${m.h ? ' · ' + m.h : ''}</b><span>${m.items.map(it => { const fd = res.foods2[it.a]; return fd ? (fd.u ? fd.n + ' ×' + fq(it.q) : qteTxt(it, fd) + ' ' + fd.n) : ''; }).join(', ')}</span></div>`)}</details>`; })}</div>
       <details className="im-rec"><summary>Aliments reconnus (${res.recap.filter(x => x.f).length} / ${res.recap.length})</summary>
         ${res.recap.map(x => html`<div key=${x.nom} className=${cx('im-r', !x.f && 'ko')}><span>${x.nom}</span><b>${x.f ? x.f.n : 'non reconnu'}</b>${x.neuf && html`<em>nouveau · ${f0(x.f.k)} kcal/100 g</em>`}</div>`)}</details>
       ${res.manquants.length > 0 && html`<div className="note"><${Icon} n="alert" /><div><span>${res.manquants.length} aliment${res.manquants.length > 1 ? 's' : ''} non reconnu${res.manquants.length > 1 ? 's' : ''}, ignoré${res.manquants.length > 1 ? 's' : ''} : ${res.manquants.slice(0, 6).join(' ; ')}${res.manquants.length > 6 ? '…' : ''}. ${res.iaErr ? 'IA : ' + res.iaErr : res.sansIA ? 'Active l’IA pour les reconnaître.' : 'Ajoute-les ensuite dans le repas.'}</span></div></div>`}
+      ${jour ? html`<div className="row"><button type="button" className="btn ghost" onClick=${() => setRes(null)}>Modifier le texte</button><button type="button" className="btn pri grow" disabled=${!ordre.length} onClick=${enregistrerJour}><${Icon} n="check" s=${18} />Mettre ce menu ${jour === Apex.today() ? 'aujourd’hui' : 'ce jour-là'}</button></div>` : html`<${React.Fragment}>
       <label className="chk-l" htmlFor="im-rempl"><input id="im-rempl" type="checkbox" checked=${rempl} onChange=${e => setRempl(e.target.checked)} /><span>Remplir aussi les 7 prochains jours <small>(sauf les jours où un repas est déjà coché)</small></span></label>
       <p className="mut" style=${{ fontSize: 12 }}>Enregistré comme « Ma semaine » : chaque jour, « Charger mon menu » reprend ces repas avec tes quantités. Les jours absents du menu ne changent pas.</p>
-      <div className="row"><button type="button" className="btn ghost" onClick=${() => setRes(null)}>Modifier le texte</button>${remplace ? html`<${Confirm} cls="pri grow" icon="check" label="Remplacer ma semaine" sure=${'Remplacer ' + remplace + ' jour' + (remplace > 1 ? 's' : '') + ' enregistré' + (remplace > 1 ? 's' : '') + ' ? Touche encore'} onYes=${enregistrer} />` : html`<button type="button" className="btn pri grow" disabled=${!ordre.length} onClick=${enregistrer}><${Icon} n="check" s=${18} />Enregistrer ma semaine</button>`}</div>
+      <div className="row"><button type="button" className="btn ghost" onClick=${() => setRes(null)}>Modifier le texte</button>${remplace ? html`<${Confirm} cls="pri grow" icon="check" label="Remplacer ma semaine" sure=${'Remplacer ' + remplace + ' jour' + (remplace > 1 ? 's' : '') + ' enregistré' + (remplace > 1 ? 's' : '') + ' ? Touche encore'} onYes=${enregistrer} />` : html`<button type="button" className="btn pri grow" disabled=${!ordre.length} onClick=${enregistrer}><${Icon} n="check" s=${18} />Enregistrer ma semaine</button>`}</div><//>`}
     <//>`}
   <//>`;
 }
@@ -4605,17 +4614,28 @@ function ImportMenuSheet({ onClose }) {
 /* Feuille « Changer mon menu » : toutes les façons de modifier la semaine enregistrée, en grandes lignes claires. */
 
 /* Menus tout faits : choisir, voir la semaine, la prendre comme base de « Ma semaine ». */
-function MenusFaitsSheet({ cfg, onClose }) {
+function MenusFaitsSheet({ cfg, onClose, jour }) {
   const conseille = Apex.programmeConseille(cfg), [sel, setSel] = useState(''), nSem = cfg.repasSemaine ? Object.keys(cfg.repasSemaine).length : 0;
   const prendre = id => { Store.patch('cfg', null, { repasMode: 'perso', repasProg: id, repasSemaine: Apex.semaineDepuis(cfg, id) }); toast('Ta semaine est prête : ajuste chaque jour'); onClose(); };
+  const prendreJour = id => {
+    const j = Store.get().journal[jour] || {}, c = Apex.cibleDuJour(cfg, j, jour), plan = Apex.planDuJour(Object.assign({}, cfg, { repasMode: 'programme', repasProg: id }), c.statut, c, jour);
+    Store.patch('journal', jour, { date: jour, repas: (j.repas || []).filter(m => m.ok).concat(plan.filter(m => !(j.repas || []).some(x => x.ok && norm(x.nom) === norm(m.nom))).map(m => Object.assign({}, m, { id: Apex.uid(), ok: false }))), man: null }); // un repas déjà mangé n'est pas reproposé
+    toast('Menu du jour prêt : ajuste ce que tu veux'); onClose();
+  };
+  if (sel && jour) { const p = Apex.PROGRAMMES[sel], rep = Apex.programmeJour(cfg, sel, Apex.dow(jour)) || [], foods = Apex.allFoods(cfg);
+    return html`<${Sheet} title=${p.n + ' · ' + (jour === Apex.today() ? 'aujourd’hui' : dMid(jour))} onClose=${() => setSel('')}>
+      <p className="sec" style=${{ fontSize: 13 }}>${p.d} Les quantités sont calées sur tes calories et tes protéines du jour.</p>
+      <div className="wk"><div className="wk-d">${rep.map(r => html`<p key=${r.nom}><b>${r.nom}</b><span>${r.items.map(i => (foods[i.a] ? foods[i.a].n : i.a)).join(' · ')}</span></p>`)}</div></div>
+      <button type="button" className="btn pri wide" onClick=${() => prendreJour(sel)}>Prendre ce menu ${jour === Apex.today() ? 'aujourd’hui' : 'ce jour-là'}</button>
+    <//>`; }
   if (sel) { const p = Apex.PROGRAMMES[sel], sem = Apex.semaineApercu(cfg, sel);
     return html`<${Sheet} title=${p.n} onClose=${() => setSel('')}>
       <p className="sec" style=${{ fontSize: 13 }}>${p.d} Les quantités se recalent chaque jour sur tes calories et tes protéines.</p>
       <div className="wk">${sem.map(d => html`<div key=${d.d} className="wk-d"><h3>${d.jour}</h3>${d.repas.map(r => html`<p key=${r.nom}><b>${r.nom}</b><span>${r.noms.join(' · ')}</span></p>`)}</div>`)}</div>
       ${nSem ? html`<${Confirm} cls="pri wide" label="Prendre ce menu pour ma semaine" sure="Remplacer ta semaine actuelle ?" onYes=${() => prendre(sel)} />` : html`<button type="button" className="btn pri wide" onClick=${() => prendre(sel)}>Prendre ce menu pour ma semaine</button>`}
     <//>`; }
-  return html`<${Sheet} title="Menus tout faits" onClose=${onClose}>
-    <p className="mut" style=${{ fontSize: 13, marginTop: 0 }}>Un point de départ : tu le prends, puis tu changes ce que tu veux jour par jour.</p>
+  return html`<${Sheet} title=${jour ? 'Menu tout fait du jour' : 'Menus tout faits'} onClose=${onClose}>
+    <p className="mut" style=${{ fontSize: 13, marginTop: 0 }}>${jour ? 'Choisis un style de journée : les repas pas encore mangés sont remplacés, tu ajustes ensuite ce que tu veux.' : 'Un point de départ : tu le prends, puis tu changes ce que tu veux jour par jour.'}</p>
     <div className="progs">${Apex.PROGRAMMES_ORDRE.map(id => { const p = Apex.PROGRAMMES[id]; return html`<button key=${id} type="button" className="prog" onClick=${() => setSel(id)}>
       <span className="prog-h"><i><${Icon} n=${p.ic} s=${18} /></i><b>${p.n}</b>${conseille === id && html`<em>Conseillé</em>`}</span><small>${p.tag}</small></button>`; })}</div>
   <//>`;
@@ -4641,14 +4661,18 @@ function PlanCard({ cfg, date, onIA, onIAJour, onLib, onImp }) {
       ${(() => { /* mêmes 5 cases dans les deux modes ; seule la première change (journée ou semaine) */
         const tJour = tuile('sparkles', iaJour, iaJourSous, onIAJour, mode === 'libre' && 'pri');
         const tSem = tuile('clock', html`${nSem ? 'L’IA refait ma semaine' : 'L’IA fait ma semaine'} <${ProTag} />`, 'Sept jours calés sur tes macros et tes séances', onIA, mode === 'perso' && 'pri');
-        return html`<${React.Fragment}>${mode === 'libre' ? tJour : tSem}${mode === 'libre' ? tSem : tJour}
-          ${tuile('note', nSem ? 'Coller un nouveau menu' : 'Coller mon menu', 'Ta semaine écrite, jour par jour', onImp)}
+        if (mode === 'libre') return html`<${React.Fragment}>${tJour}
+          ${tuile('note', 'Coller mon menu du jour', 'Ta journée écrite, repas par repas', () => onImp(true))}
+          ${tuile('utensils', 'Menu tout fait du jour', 'Un style de journée, calé sur tes macros', () => setFaits('jour'))}
+          ${tuile('plus', 'Ma bibliothèque', 'Tes aliments et plats perso', onLib)}<//>`;
+        return html`<${React.Fragment}>${tSem}${tJour}
+          ${tuile('note', nSem ? 'Coller un nouveau menu' : 'Coller mon menu', 'Ta semaine écrite, jour par jour', () => onImp(false))}
           ${tuile('utensils', 'Menu tout fait', 'Choisis-en un, puis ajuste', () => setFaits(true))}
           ${tuile('plus', 'Ma bibliothèque', 'Tes aliments et plats perso', onLib)}<//>`; })()}
     </div>
     <details className="more"><summary>Options</summary><div className="row sb"><span className="fld-l" style=${{ margin: 0 }}>Quantités</span><${Seg} neutral label="Pesée des aliments" value=${pesee} onChange=${v => setCfg({ repasPesee: v })} options=${[[true, 'Je pèse'], [false, 'Sans pesée']]} /></div>
       ${nSem > 0 && html`<div className="chg-dan"><span>Repartir de zéro</span><${Confirm} cls="ghost" icon="trash" label="Vider ma semaine" sure="Effacer ta semaine ? Touche encore" onYes=${() => { setCfg({ repasSemaine: null }); toast('Semaine vidée'); }} /></div>`}</details>
-    ${faits && html`<${MenusFaitsSheet} cfg=${cfg} onClose=${() => setFaits(false)} />`}
+    ${faits && html`<${MenusFaitsSheet} cfg=${cfg} jour=${faits === 'jour' ? date : null} onClose=${() => setFaits(false)} />`}
   <//>`;
 }
 
@@ -4858,7 +4882,7 @@ function Repas({ date }) {
           ${man && html`<div className="note"><${Icon} n="info" /><div><span>Ce bilan vient du check-in. Les repas cochés ne comptent pas tant qu’il est actif.</span>
             <${Confirm} label="Revenir au planner" sure="Effacer le bilan saisi ?" onYes=${() => Store.patch('journal', date, { date, man: null })} /></div></div>`}
         <//>
-        <${PlanCard} cfg=${cfg} date=${date} onWeek=${setWk} onIA=${() => (estPro() ? setIa(true) : ouvrirPro())} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} onImp=${() => setImp(true)} />
+        <${PlanCard} cfg=${cfg} date=${date} onWeek=${setWk} onIA=${() => (estPro() ? setIa(true) : ouvrirPro())} onIAJour=${() => setIaJ(true)} onLib=${() => setLib(true)} onImp=${j => setImp(j ? 'jour' : true)} />
         <${Card} title="Repas" right=${html`<button type="button" className="btn sm" onClick=${addMeal}><${Icon} n="plus" s=${16} />Ajouter</button>`}>
           ${!man && vide && html`<div className="rp-nb"><span>Repas par jour</span><div className="chips">${[2, 3, 4, 5, 6].map(n => html`<button key=${n} type="button" className="chip" aria-pressed=${repasNb(cfg) === n} onClick=${() => setNb(n)}>${n}</button>`)}</div></div>`}
           ${vide && mode !== 'libre' && !man && html`<div className="note acc"><${Icon} n="utensils" /><div><span>${mode === 'perso' && !semOk ? 'Remplis tes repas, ou charge le menu de base puis enregistre-le pour les ' + jourNom + 's.' : 'Remplis tes repas toi-même, ou charge le menu du ' + jourNom + ' calé sur ' + f0(c.kcal) + ' kcal.'}</span><button type="button" className="btn sm pri" onClick=${gen}><${Icon} n="utensils" s=${16} />${mode === 'perso' && semOk ? 'Charger mon menu du ' + jourNom : 'Charger le menu du ' + jourNom}</button></div></div>`}
@@ -4886,7 +4910,7 @@ function Repas({ date }) {
     </div>
     ${ia && html`<${MenuIASheet} onClose=${() => setIa(false)} />`}
     ${iaJ && html`<${MenuIASheet} jour=${date} onClose=${() => setIaJ(false)} />`}
-    ${imp && html`<${ImportMenuSheet} onClose=${() => setImp(false)} />`}
+    ${imp && html`<${ImportMenuSheet} jour=${imp === 'jour' ? date : null} onClose=${() => setImp(false)} />`}
     ${lib && html`<${FoodLibSheet} onClose=${() => setLib(false)} />`}
     ${wk && html`<${MealWeekSheet} cfg=${cfg} progId=${wk} onClose=${() => setWk('')} />`}
     ${sheet && sheet.t === 'add' && sh && html`<${AddSheet} foods=${foods} title=${'Ajouter · ' + sh.nom} onClose=${() => setSheet(null)} onAdd=${it => addItems(sh.id, [].concat(it))} />`}
@@ -7273,8 +7297,7 @@ const PRO_LISTE = [
   ['utensils', 'Estimations IA illimitées au quotidien', 'Décris ton plat, l’IA le découpe aliment par aliment avec les vraies portions'],
   ['§', 'Analyse avancée de ta progression'],
   ['target', 'Date d’arrivée à ton objectif', 'Projection de ton poids au rythme actuel, mise à jour chaque jour'],
-  ['trend', 'Progression de force', 'Ton e1RM exercice par exercice, pour voir ce qui avance et ce qui stagne'],
-  ['check', 'Adhérence à tes cibles', 'Calories, protéines, pas et sommeil : jours tenus sur jours renseignés'],
+  ['trend', 'Tes mouvements clés', 'L’évolution de ta force sur chaque point faible : ce qui avance et ce qui stagne'],
   ['dumbbell', 'Volume par muscle', 'Séries par semaine face à la cible, points faibles en priorité'],
   ['§', 'Et aussi'],
   ['download', 'Bilan PDF de 30 jours', 'Un rapport propre à garder, à montrer à ton coach ou à ton diététicien'],
@@ -7289,7 +7312,13 @@ function ProLock({ titre }) {
     <button type="button" className="btn pri" onClick=${ouvrirPro}>Découvrir Pro</button></section>`;
 }
 /* Zone Pro : rend son contenu si l'utilisateur y a droit, sinon un seul encart verrouillé. */
-function ProZone({ titre, children }) { return estPro() ? children : html`<${ProLock} titre=${titre} />`; }
+/* Zone Pro : le vrai contenu, flouté et inerte, avec un cadenas par-dessus (on voit ce qu'on débloque). */
+function ProZone({ titre, children }) {
+  if (estPro()) return children;
+  return html`<div className="c12 pro-flou"><div className="grid pro-flou-in" aria-hidden="true" inert="">${children}</div>
+    <div className="pro-flou-v"><i><${Icon} n="lock" s=${22} /></i><b>${titre || 'Fonction Macrolya Pro'}</b><span>Débloque-la avec Macrolya Pro ou un code cadeau.</span>
+      <button type="button" className="btn pri" onClick=${ouvrirPro}><${Icon} n="lock" s=${16} />Débloquer</button></div></div>`;
+}
 function ProBody() {
   const [q, setQ] = useState(() => AI.quota()), [code, setCode] = useState(''), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [fete, setFete] = useState(null), [ko, setKo] = useState(false);
   useEffect(() => { const f = e => setQ(e.detail); window.addEventListener('ia:quota', f); AI.relais('statut').then(x => { if (x) setQ(x); }).catch(() => {}); return () => window.removeEventListener('ia:quota', f); }, []);
