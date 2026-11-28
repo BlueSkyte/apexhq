@@ -402,16 +402,26 @@ const Apex = (() => {
     const intake = s / n, deficit = -(a.v - b.v) * 7700 / win;
     return { intake, deficit, tdee: intake + deficit, n };
   }
-  function adherence(journal, cfg, date, n) {
-    const foods = allFoods(cfg), r = { kcal: [0, 0], prot: [0, 0], pas: [0, 0], sommeil: [0, 0] };
+  function adherence(journal, cfg, date, n, seances) {
+    const foods = allFoods(cfg), r = { kcal: [0, 0], prot: [0, 0], pas: [0, 0], sommeil: [0, 0], eau: [0, 0], seances: [0, 0] };
     for (let i = 1; i <= (n || 7); i++) {
       const d = addDays(date, -i), j = journal[d]; if (!j) continue;
       const t = totJour(j, foods).reel, c = cibleDuJour(cfg, j, d);
       if (t) { r.kcal[1]++; if (Math.abs(t.k - c.kcal) <= c.kcal * 0.05) r.kcal[0]++; r.prot[1]++; if (t.p >= cfg.cibles.planchers.p) r.prot[0]++; }
       if (num(j.pas)) { r.pas[1]++; if (j.pas >= cfg.cibles.pasMin) r.pas[0]++; }
       if (num(j.sommeil)) { r.sommeil[1]++; if (j.sommeil >= cfg.cibles.sommeil) r.sommeil[0]++; }
+      if (num(j.eau) && j.eau > 0) { r.eau[1]++; if (j.eau >= (cfg.cibles.eau || 2)) r.eau[0]++; }
     }
+    /* séances : jours de muscu prévus (planning) sur la période, et combien ont été faits (tous les jours, même sans journal) */
+    if (seances) for (let i = 1; i <= (n || 7); i++) { const d = addDays(date, -i); if (seanceDuJour(cfg, journal[d], d)) { r.seances[1]++; if (seances[d] && (seances[d].exos || []).some(x => (x.sets || []).some(setFait))) r.seances[0]++; } }
     return r;
+  }
+  /* Paliers de l'objectif de poids (25, 50, 75, 100 %), d'après la moyenne 7 jours de la dernière pesée. null si pas d'objectif de poids. */
+  function paliers(cfg, journal) {
+    const p = (cfg && cfg.profil) || {}, dep = p.poidsDepart, cib = p.poidsCible; if (!num(dep) || !num(cib) || Math.abs(dep - cib) < 0.5) return null;
+    const s = serie(journal, 'poids'); if (!s.length) return { pct: 0, palier: 0, dep, cib, cur: dep, cle: (p.dateDepart || '') + ':' + cib };
+    const last = s[s.length - 1], m = mm7(journal, last.d), cur = m ? m.v : last.v, pct = Math.max(0, Math.min(100, (dep - cur) / (dep - cib) * 100));
+    return { pct, palier: [100, 75, 50, 25].find(x => pct >= x) || 0, dep, cib, cur, cle: (p.dateDepart || '') + ':' + cib };
   }
   function navy(taille, cou, hauteur) {
     if (!num(taille) || !num(cou) || !num(hauteur) || taille - cou <= 0) return null;
@@ -669,7 +679,7 @@ const Apex = (() => {
 
   return {
     pad, iso, parse, today, addDays, dow, diffDays, range, lundi, uid, num, fx, sg, kgTxt,
-    TYPES, types, SUPPS_DEF, supps, groupes, MIGR, migrList, MAX_SERIES, GROUPES_DEF, focusLabel, DEFAULT_CFG, mergeCfg, migrerPortions, liquide, grammesIA, seanceDuJour, sportsDuJour, statutDuJour, cibleDuJour, mifflin, bilanTheorique,
+    TYPES, types, SUPPS_DEF, supps, groupes, MIGR, migrList, MAX_SERIES, GROUPES_DEF, focusLabel, DEFAULT_CFG, mergeCfg, migrerPortions, paliers, liquide, grammesIA, seanceDuJour, sportsDuJour, statutDuJour, cibleDuJour, mifflin, bilanTheorique,
     FOODS, CATS, allFoods, foodOf, grams, mac, totMeal, totJour, Z, add,
     MODELES, pas, arrondi, ajuster, planDuJour, swapOptions, boucler, lissage,
     serie, mm7, serieMM7, pente, tendance, verdictRythme, eta, tdee, adherence, navy, lecture,
@@ -3701,6 +3711,18 @@ function Sheet({ title, onClose, children }) {
 const Toast = (() => { let list = [], id = 0; const subs = new Set(); const emit = () => subs.forEach(f => f());
   return { push(msg) { const t = { id: ++id, msg }; list = list.concat(t).slice(-3); emit(); setTimeout(() => { list = list.filter(x => x !== t); emit(); }, 2600); }, sub: f => { subs.add(f); return () => subs.delete(f); }, get: () => list }; })();
 const toast = m => Toast.push(m);
+const MOINS_ANIM = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
+/* Bannière de record : DOM direct, disparaît seule (3,5 s). */
+const banniere = (titre, txt) => { try { const d = document.createElement('div'); d.className = 'rec-ban'; d.setAttribute('role', 'status'); const el = (t, x) => { const e = document.createElement(t); e.textContent = x; return e; }, i = el('span', '🏆'), w = document.createElement('div'); i.setAttribute('aria-hidden', 'true'); w.append(el('b', titre), el('small', txt)); d.append(i, w); document.body.appendChild(d); setTimeout(() => d.remove(), 3500); } catch (e) { toast(titre + ' ' + txt); } };
+/* Chiffre qui défile de l'ancienne valeur à la nouvelle (≈ 0,6 s). */
+function CountUp({ v }) {
+  const n = Math.round(+v || 0), [x, setX] = useState(n), prev = useRef(n);
+  useEffect(() => { const a = prev.current; prev.current = n; if (a === n || MOINS_ANIM()) { setX(n); return undefined; } const t0 = performance.now(); let id;
+    const f = t => { const k = Math.min(1, (t - t0) / 600), e = 1 - Math.pow(1 - k, 3); setX(Math.round(a + (n - a) * e)); if (k < 1) id = requestAnimationFrame(f); }; id = requestAnimationFrame(f); return () => cancelAnimationFrame(id); }, [n]);
+  return f0(x);
+}
+/* Icône des boutons IA : barres qui ondulent pendant que l'IA réfléchit. */
+const IAIcon = ({ busy }) => (busy ? html`<i className="ia-wave" aria-hidden="true"><b></b><b></b><b></b><b></b></i>` : html`<${Icon} n="sparkles" s=${18} />`);
 function Toasts() { const l = useSyncExternalStore(Toast.sub, Toast.get); return html`<div className="toasts" role="status" aria-live="polite">${l.map(t => html`<div key=${t.id} className="toast">${t.msg}</div>`)}</div>`; }
 /* Bouton à confirmation en deux temps (confirm() est inerte dans la visionneuse). */
 function Confirm({ label, sure, onYes, cls, icon, aria }) {
@@ -3889,7 +3911,7 @@ function Hero({ date, go }) {
     </div>
     <div className="hero-main">
       <div className="hero-l"><div className="hero-n">${f0(c.kcal)}<small>kcal</small></div><div className="hero-s">objectif du jour${reel.k > 0 ? ' · ' + f0(reel.k) + ' mangées' : ''}</div></div>
-      <${Ring} v=${reel.k} v2=${0} max=${c.kcal} size=${118} sw=${10}><b style=${{ fontSize: 24 }}>${trop ? '+' + f0(reel.k - c.kcal) : f0(c.kcal - reel.k)}</b><span>${trop ? 'en trop' : 'restantes'}</span><//>
+      <${Ring} v=${reel.k} v2=${0} max=${c.kcal} size=${118} sw=${10}><b style=${{ fontSize: 24 }}>${trop ? '+' : ''}<${CountUp} v=${Math.abs(c.kcal - reel.k)} /></b><span>${trop ? 'en trop' : 'restantes'}</span><//>
     </div>
     <div className="hj">
       <div className="hj-m">${M.map(m => html`<div key=${m[0]} className="hj-r"><div className="hj-l"><span>${m[0]}</span><b>${f0(m[1])}<small> / ${f0(m[2])} g</small></b></div>
@@ -4283,7 +4305,7 @@ function MealCard({ m, foods, pesee, onToggle, onQty, onSwap, onAdd, onDel, onDe
   const fdIt = fd && m.items.find(i => i.id === fd.id);
   return html`<article className=${cx('meal', m.ok && 'ok', edit && 'edit')}>
     <div className="meal-h">
-      <button type="button" className="chk" aria-pressed=${!!m.ok} aria-label=${(m.ok ? 'Marquer non mangé : ' : 'Marquer mangé : ') + m.nom} onClick=${onToggle}><${Icon} n="check" s=${18} w=${2.5} /></button>
+      <button type="button" className="chk" aria-pressed=${!!m.ok} aria-label=${(m.ok ? 'Marquer non mangé : ' : 'Marquer mangé : ') + m.nom} onClick=${e => { const b = e.currentTarget; if (!m.ok) { b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop'); } onToggle(); }}><${Icon} n="check" s=${18} w=${2.5} /></button>
       <button type="button" className="meal-t meal-open" onClick=${() => setDet(true)} aria-label=${'Détail du repas ' + m.nom}><b>${m.nom}${m.items.length > 0 && html`<${Icon} n="chevR" s=${14} />`}</b><span>${m.h || ''}${m.ok ? ' · mangé' : ''}${m.items.length ? ' · détail' : ''}</span></button>
       ${m.items.length > 0 && html`<button type="button" className="meal-k meal-open" onClick=${() => setDet(true)} tabIndex="-1" aria-hidden="true"><b>${f0(t.k)}</b><span>kcal · ${macTxt(t)}</span></button>`}
       ${m.items.length > 0 && html`<button type="button" className="ib meal-fold" aria-expanded=${!plie} aria-label=${(plie ? 'Déplier ' : 'Replier ') + m.nom} onClick=${plier}><${Icon} n=${plie ? 'down' : 'up'} s=${18} /></button>`}
@@ -4333,7 +4355,7 @@ function FoodLibSheet({ onClose, onAdded }) {
   return html`<${Sheet} title="Ma bibliothèque d’aliments" onClose=${onClose}>
     <p className="sec" style=${{ fontSize: 13 }}>Ajoute un aliment ou un plat : ${sample ? 'l’IA estime ses macros. ' : ''}Il est proposé dans la recherche et l’IA l’utilise en priorité dans tes menus.</p>
     <label className="fld" htmlFor="fl-n"><span className="fld-l">Aliment ou plat</span><input id="fl-n" className="inp" type="text" maxLength="200" placeholder="ex. Skyr vanille Danone, poulet tikka maison, barre Barebells caramel" value=${txt} onChange=${e => setTxt(e.target.value)} onKeyDown=${e => { if (e.key === 'Enter') est(); }} /></label>
-    <div className="row">${sample && html`<button type="button" className="btn pri grow" disabled=${busy || !txt.trim()} onClick=${est}><${Icon} n="sparkles" s=${18} />${busy ? 'L’IA estime…' : 'Estimer avec l’IA'}</button>`}
+    <div className="row">${sample && html`<button type="button" className="btn pri grow" disabled=${busy || !txt.trim()} onClick=${est}><${IAIcon} busy=${busy} />${busy ? 'L’IA estime…' : 'Estimer avec l’IA'}</button>`}
       <button type="button" className="btn" onClick=${manuel}>Saisir à la main</button></div>
     ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
     ${x && html`<div className="note acc"><${Icon} n="sparkles" /><div>
@@ -4404,7 +4426,7 @@ function AddSheet({ foods, title, onAdd, onClose }) {
     ${sample && html`<div className="ai-box">
       <label className="fld" htmlFor="ai-txt"><span className="fld-l"><${Icon} n="sparkles" s=${14} /> Décris ce que tu manges, l’IA calcule</span>
         <textarea id="ai-txt" className="inp" rows="2" placeholder="ex. 2 tranches de pain complet, 1 œuf, du fromage, ou « pizza 4 fromages, 2 parts »" value=${ai.txt} maxLength="600" onChange=${e => setAi(Object.assign({}, ai, { txt: e.target.value }))} aria-label="Décris le repas à estimer"></textarea></label>
-      <button type="button" className="btn pri wide" disabled=${ai.busy || !ai.txt.trim()} onClick=${estimate}><${Icon} n="sparkles" s=${18} />${ai.busy ? (ai.retry ? 'L’IA est chargée, nouvel essai…' : 'Estimation…') : 'Estimer les macros'}</button>
+      <button type="button" className="btn pri wide" disabled=${ai.busy || !ai.txt.trim()} onClick=${estimate}><${IAIcon} busy=${ai.busy} />${ai.busy ? (ai.retry ? 'L’IA est chargée, nouvel essai…' : 'Estimation…') : 'Estimer les macros'}</button>
       ${ai.err && html`<div className="note"><${Icon} n="alert" /><div><span>${ai.err}</span></div></div>`}
       ${ai.res && html`<div className="note acc"><${Icon} n="sparkles" /><div>
         <span><b>${f0(aiTot.k)} kcal</b> · ${macTxt(aiTot)} · ${ai.res.items.length} aliment${ai.res.items.length > 1 ? 's' : ''}</span>
@@ -4667,7 +4689,7 @@ function MenuIASheet({ onClose, jour }) {
         <textarea id="menu-txt" className="inp" maxLength="700" rows="3" placeholder=${day ? 'ex. resto japonais ce soir, je veux un burger ce midi, que des plats froids, pas le temps de cuisiner…' : 'ex. cantine le midi, séance à 18 h, vendredi soir resto, cuisine du monde, petit budget…'} value=${txt} onChange=${e => setTxt(e.target.value)}></textarea></label>
       <div className="chips">${IDEES.map(p => html`<button key=${p} type="button" className="chip" onClick=${() => ajoute(p)}>${p}</button>`)}</div>
       ${err && html`<div className="note"><${Icon} n="alert" /><div><span>${err}</span></div></div>`}
-      <button type="button" className="btn pri wide" disabled=${busy} onClick=${() => run(false)}><${Icon} n="sparkles" s=${18} />${busy ? (retry ? 'L’IA est chargée, nouvel essai…' : day ? 'L’IA compose ta journée…' : 'L’IA compose ta semaine (≈ 30 s)…') : day ? 'Composer ma journée' : 'Générer ma semaine'}</button>
+      <button type="button" className="btn pri wide" disabled=${busy} onClick=${() => run(false)}><${IAIcon} busy=${busy} />${busy ? (retry ? 'L’IA est chargée, nouvel essai…' : day ? 'L’IA compose ta journée…' : 'L’IA compose ta semaine (≈ 30 s)…') : day ? 'Composer ma journée' : 'Générer ma semaine'}</button>
       <p className="mut" style=${{ fontSize: 12 }}>${day ? 'Une demande d’IA. Les repas déjà cochés restent ; les autres sont remplacés.' : 'Une demande d’IA. Remplace « Ma semaine » ; tes journées saisies ne changent pas.'} Menus variés : l’IA évite tes plats des derniers jours.</p>
     <//>` : day ? html`<${React.Fragment}>
       <div className="row sb"><${Pill} st="good">Journée prête<//><span className="mut" style=${{ fontSize: 12 }}>${t ? '≈ ' + f0(t.k) + ' kcal · P ' + f0(t.p) + ' · G ' + f0(t.g) + ' · L ' + f0(t.l) : ''}${reste.kcal > 0 ? ' / ' + f0(reste.kcal) + ' restants' : ''}</span></div>
@@ -4774,7 +4796,7 @@ function Repas({ date }) {
       <div className="c7 stack" style=${{ gap: 14, alignContent: 'start' }}>
         <${Card} title="Bilan du jour" sub=${man ? 'Bilan saisi à la main' : null} right=${man ? html`<${Pill} st=${Math.abs(ecart) <= c.kcal * 0.05 ? 'good' : Math.abs(ecart) <= 300 ? 'warn' : 'crit'}>Réel ${sgn(ecart, f0)} kcal<//>` : plan.k > 0 && html`<${Pill} st=${ecartMange > 40 ? 'warn' : 'good'}>Prévu ${f0(plan.k)} kcal<//>`}>
           <div className="sum">
-            <${Ring} v=${cons.k} v2=${0} max=${c.kcal}><b>${f0(cons.k)}</b><span>/ ${f0(c.kcal)} kcal${c.kcal ? ' · ' + Math.round(cons.k / c.kcal * 100) + ' %' : ''}</span>${cons.k > c.kcal && html`<span className="ring-x">+${f0(cons.k - c.kcal)} kcal</span>`}<//>
+            <${Ring} v=${cons.k} v2=${0} max=${c.kcal}><b><${CountUp} v=${cons.k} /></b><span>/ ${f0(c.kcal)} kcal${c.kcal ? ' · ' + Math.round(cons.k / c.kcal * 100) + ' %' : ''}</span>${cons.k > c.kcal && html`<span className="ring-x">+${f0(cons.k - c.kcal)} kcal</span>`}<//>
             <div className="sum-r">
               ${(() => { const E = echelleMacros(c.p, c.g, c.l, cons.p, cons.g, cons.l, man ? 0 : plan.p, man ? 0 : plan.g, man ? 0 : plan.l); return html`<${React.Fragment}>
               <${Meter} label="Protéines" v=${cons.p} v2=${man ? 0 : plan.p} max=${c.p} c="var(--p)" echelle=${E} />
@@ -5092,6 +5114,7 @@ function WkExo({ ex, i, exos, seances, date, onSets, onPatch, onEdit, onOk, onSu
   const rest = Apex.restDe(e0, ex), sets = ex.sets || [], normales = sets.filter(s => !s.w), faites = sets.filter(Apex.setFait);
   const [ouvert, setOuvert] = useState(() => !ex.ok), [note, setNote] = useState(!!ex.note);
   const best = h.reduce((b, x) => Math.max(b, x.e1), 0), cur = sets.reduce((b, s) => Math.max(b, Apex.e1rm(s)), 0), record = cur > best + 0.05 && best > 0;
+  const recVu = useRef(record); useEffect(() => { if (record && !recVu.current) banniere('Nouveau record !', e.n + ' · e1RM ' + f1(cur) + ' kg'); recVu.current = record; }, [record]);
   let num = 0; const toutCoche = normales.length > 0 && normales.every(s => Apex.setCoche(s)), nCoche = normales.filter(s => Apex.setCoche(s)).length, replie = !ouvert; // on replie ou rouvre librement, fini ou pas (seul « Terminer » clôt l’exercice)
   const arr = v => Math.round(v / (e.inc || 2.5)) * (e.inc || 2.5);
   const kgInt = k => { const s = sets[k]; if (s.t === 'bo') { const t = sets.find(x => x.t === 'top'); return t && t.kg > 0 ? arr(t.kg * 0.85) : null; } if (s.t === 'd') { const p = sets[k - 1]; return p && p.kg > 0 ? arr(p.kg * 0.75) : null; } return null; };
@@ -5784,12 +5807,52 @@ function CoachCard({ date }) {
   <//>`;
 }
 
+/* Toile « Ta régularité » : % des jours renseignés où l'objectif est tenu (30 j), 6 axes. */
+const RAD_AX = [['kcal', '🔥', 'Calories'], ['prot', '🥩', 'Protéines'], ['pas', '👟', 'Pas'], ['sommeil', '😴', 'Sommeil'], ['eau', '💧', 'Eau'], ['seances', '🏋️', 'Séances']];
+function RadarCard({ date }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), a = Apex.adherence(S.journal, cfg, Apex.addDays(date, 1), 30, S.seances);
+  const ax = RAD_AX.map(([k, ic, n]) => ({ k, ic, n, v: a[k][1] ? a[k][0] / a[k][1] : null })), vus = ax.filter(x => x.v !== null);
+  if (vus.length < 3) return html`<${Card} cls="c7" title="Ta régularité" sub="30 derniers jours"><p className="mut">Renseigne au moins 3 jours (repas, pas, sommeil, eau) pour voir ta toile.</p><//>`;
+  const score = Math.round(vus.reduce((s, x) => s + x.v, 0) / vus.length * 100), cx = 160, cy = 150, R = 92;
+  const pt = (i, v) => { const t = -Math.PI / 2 + i * Math.PI / 3; return [cx + Math.cos(t) * R * v, cy + Math.sin(t) * R * v]; }, poly = f => ax.map((x, i) => pt(i, f(x)).map(n => n.toFixed(1)).join(',')).join(' ');
+  const faible = vus.slice().sort((p, q) => p.v - q.v)[0];
+  return html`<${Card} cls="c7" title="Ta régularité" sub="Jours où l’objectif est tenu, 30 derniers jours">
+    <svg className="radar" viewBox="0 0 320 300" role="img" aria-label=${'Régularité ' + score + ' % : ' + vus.map(x => x.n + ' ' + Math.round(x.v * 100) + ' %').join(', ')}>
+      <defs><radialGradient id="radG"><stop offset="0" stop-color="#ffd27a" stop-opacity=".65" /><stop offset="1" stop-color="var(--acc)" stop-opacity=".25" /></radialGradient></defs>
+      ${[0.25, 0.5, 0.75, 1].map(k => html`<polygon key=${k} points=${poly(() => k)} fill="none" stroke="currentColor" strokeOpacity=${k === 1 ? 0.2 : 0.09} />`)}
+      ${ax.map((x, i) => { const p = pt(i, 1), q = pt(i, 1.22); return html`<g key=${x.k}><line x1=${cx} y1=${cy} x2=${p[0]} y2=${p[1]} stroke="currentColor" strokeOpacity=".09" />
+        <text x=${q[0]} y=${q[1] - 2} textAnchor="middle" className="rad-l">${x.ic} ${x.n}</text>
+        <text x=${q[0]} y=${q[1] + 13} textAnchor="middle" className="rad-v">${x.v === null ? '–' : Math.round(x.v * 100) + ' %'}</text></g>`; })}
+      <g className="rad-g"><polygon points=${poly(x => Math.max(0.04, x.v || 0))} fill="url(#radG)" stroke="var(--acc)" strokeWidth="2.2" strokeLinejoin="round" />
+        ${ax.map((x, i) => { const p = pt(i, Math.max(0.04, x.v || 0)); return html`<circle key=${x.k} cx=${p[0]} cy=${p[1]} r="3.5" fill="var(--acc)" />`; })}</g>
+      <text x=${cx} y=${cy + 6} textAnchor="middle" className="rad-s">${score}</text>
+    </svg>
+    <p className="mut rad-t">Score ${score} / 100. ${faible.v < 0.7 ? 'Point à travailler : ' + faible.ic + ' ' + faible.n.toLowerCase() + ' (' + Math.round(faible.v * 100) + ' % des jours).' : 'Belle régularité partout, continue.'}</p>
+  <//>`;
+}
+/* Chemin des paliers de l'objectif de poids : départ, 25, 50, 75 %, 🏆 */
+function PaliersCard() {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), p = Apex.paliers(cfg, S.journal); if (!p) return null;
+  const v1 = x => String(Math.round(x * 10) / 10).replace('.', ','), at = k => v1(p.dep + (p.cib - p.dep) * k / 100);
+  return html`<${Card} cls="c5" title="Tes paliers" sub=${v1(p.dep) + ' kg → ' + v1(p.cib) + ' kg · ' + Math.round(p.pct) + ' % du chemin'}>
+    <div className="trail" role="img" aria-label=${Math.round(p.pct) + ' % de l’objectif atteint'}>
+      <div className="tr-bar"></div><div className="tr-fill" style=${{ width: p.pct + '%' }}></div>
+      ${[0, 25, 50, 75, 100].map(k => { const ok = p.pct >= k, cur = !ok && (k === 25 ? 0 : k - 25) <= p.pct; return html`<div key=${k} className=${cx('tr-n', ok && 'ok', cur && 'cur')} style=${{ left: k + '%' }}>
+        <i>${k === 0 ? '•' : k === 100 ? '🏆' : ok ? '✓' : k}</i><small>${k === 0 ? 'départ' : k === 100 ? at(100) + ' kg' : k + ' %'}</small></div>`; })}
+    </div>
+    <p className="mut" style=${{ fontSize: 13, marginTop: 6 }}>${p.pct >= 100 ? 'Objectif atteint, bravo.' : 'Prochain palier : ' + at([25, 50, 75, 100].find(k => k > p.pct)) + ' kg (moyenne 7 jours ' + v1(p.cur) + ' kg).'}</p>
+  <//>`;
+}
+
 function Analytics({ date }) {
   const [win, setWin] = useState(90);
   return html`<div>
     <div className="view-h"><h1>Analyse</h1>
       <${Seg} neutral label="Période des graphiques" value=${win} onChange=${setWin} options=${[[30, '30 j'], [90, '90 j'], [0, 'Tout']]} /></div>
     <div className="grid">
+      <div className="c12 an-sec"><span className="eyebrow">Ta régularité</span></div>
+      <${RadarCard} date=${date} />
+      <${PaliersCard} />
       <div className="c12 an-sec"><span className="eyebrow">Suivi du physique</span></div>
       <${PhotosCard} date=${date} />
       <div className="c5 stack" style=${{ alignContent: 'start', gap: 14 }}><${MensuCard} date=${date} win=${win} /></div>
@@ -7438,6 +7501,32 @@ function ScienceBody() {
   </div>`;
 }
 
+/* Fête des paliers : une seule fois par palier (25, 50, 75 %) et par objectif ; écran plein à 100 %. Retenu dans cfg.paliers[clé]. */
+const CONF_C = ['#ffd27a', '#ff8a57', '#c4a5ff', '#38bdf8', '#4ade80'];
+const Confettis = () => html`<div className="conf-w" aria-hidden="true">${Array.from({ length: 26 }, (_, i) => html`<i key=${i} style=${{ left: (i * 37 % 100) + '%', background: CONF_C[i % 5], animationDelay: (i * 0.11 % 1.4).toFixed(2) + 's', animationDuration: (2.2 + i % 4 * 0.3) + 's' }}></i>`)}</div>`;
+function PalierFete({ onObjectif }) {
+  const st = useStore(), S = st.get(), cfg = st.cfg(), p = Apex.paliers(cfg, S.journal), vu = ((cfg.paliers || {})[p ? p.cle : ''] || 0);
+  const [open, setOpen] = useState(false), nouveau = !!(p && p.palier > vu);
+  useEffect(() => { if (!nouveau) return undefined; const t = setInterval(() => { if (!document.querySelector('[role="dialog"]')) { clearInterval(t); setOpen(true); } }, 1500); return () => clearInterval(t); }, [nouveau]);
+  if (!open || !p) return null;
+  const fermer = () => { Store.patch('cfg', null, { paliers: Object.assign({}, cfg.paliers, { [p.cle]: p.palier }) }); setOpen(false); };
+  const v1 = x => String(Math.round(x * 10) / 10).replace('.', ','), kg = Math.abs(p.dep - p.cur), perte = p.cib < p.dep;
+  if (p.palier >= 100) {
+    const d0 = cfg.profil.dateDepart || (Apex.serie(S.journal, 'poids')[0] || {}).d, sem = d0 ? Math.max(1, Math.round((Date.parse(Apex.today()) - Date.parse(d0)) / 6048e5)) : null, ser = Apex.serieJours(S.journal, cfg.ouverts, Apex.today());
+    return html`<div className="fete fin" role="dialog" aria-modal="true" aria-label="Objectif atteint"><${Confettis} /><div className="fin-rays" aria-hidden="true"></div>
+      <div className="fin-c"><div className="trophy" aria-hidden="true">🏆</div><span className="eyebrow">Objectif atteint</span><h2>${v1(p.cib)} kg, c’est fait.</h2>
+        <div className="fin-st"><div><b>${v1(kg)}</b><small>kg ${perte ? 'perdus' : 'pris'}</small></div>${sem && html`<div><b>${sem}</b><small>semaine${sem > 1 ? 's' : ''}</small></div>`}<div><b>${ser}</b><small>jour${ser > 1 ? 's' : ''} de série</small></div></div>
+        <button type="button" className="btn pri wide" onClick=${() => { fermer(); onObjectif && onObjectif(); }}>Choisir mon prochain objectif</button>
+        <button type="button" className="btn ghost wide" onClick=${fermer}>Plus tard</button></div></div>`;
+  }
+  const reste = Math.abs(p.cur - p.cib);
+  return html`<div className="fete" role="dialog" aria-modal="true" aria-label=${'Palier ' + p.palier + ' % franchi'} onClick=${e => { if (e.target === e.currentTarget) fermer(); }}><${Confettis} />
+    <div className="fete-c"><div className="medal"><b>${p.palier} %</b></div><span className="eyebrow">Palier franchi</span>
+      <h2>${p.palier === 50 ? 'La moitié du chemin !' : p.palier === 75 ? 'Plus que la dernière ligne droite.' : 'Premier palier passé.'}</h2>
+      <p className="mut">${v1(kg)} kg ${perte ? 'en moins' : 'en plus'} depuis le départ. Encore ${v1(reste)} kg pour atteindre ${v1(p.cib)} kg.</p>
+      <button type="button" className="btn pri wide" onClick=${fermer}>Continuer</button></div></div>`;
+}
+
 /* ---- 70-ui-app.js ---- */
 /* Macrolya — coque : en-tête (jour + statut), onglets, réglages et données, démarrage. */
 const STANDALONE = !!window.APEX_STANDALONE;
@@ -7536,9 +7625,9 @@ function ProfilBody({ cfg, journal, setP, cib, onRedo }) {
   </div>`;
 }
 
-function SettingsSheet({ onClose }) {
+function SettingsSheet({ onClose, sec0 }) {
   const st = useStore(), cfg = st.cfg(), sy = st.sync(), foods = Apex.allFoods(cfg);
-  const [sec, setSec] = useState(null); const [imp, setImp] = useState(''); const [msg, setMsg] = useState(''); const [dump, setDump] = useState('');
+  const [sec, setSec] = useState(sec0 || null); const [imp, setImp] = useState(''); const [msg, setMsg] = useState(''); const [dump, setDump] = useState('');
   const setP = k => v => { if (v != null) Store.patch('cfg', null, { profil: Object.assign({}, cfg.profil, { [k]: v }) }); };
   const setC = (s, k) => v => { if (v == null) return; const o = Object.assign({}, cfg.cibles[s], { [k]: v }); o.g = Math.max(0, Math.round((o.kcal - o.p * 4 - o.l * 9) / 4)); Store.patch('cfg', null, { cibles: Object.assign({}, cfg.cibles, { [s]: o }) }); };
   const setFood = (id, k) => v => { if (v == null) return; const f = Object.assign({}, foods[id]); if (k === 'dose') f.u = [f.u[0].replace(/[\d.,]+ ?g/, fq(v) + ' g'), v]; else f[k] = v; f.etq = 0; Store.patch('cfg', null, { aliments: Object.assign({}, cfg.aliments, { [id]: f }) }); };
@@ -7677,7 +7766,8 @@ function App() {
     <main className="wrap"><${RappelBanner} go=${go} /><${AvisDemande} /><${InstallBanner} /><${IABanner} /><${Boundary} key=${tab}><${View} date=${tab === 'coach' ? today : date} setDate=${setDate} go=${go} /><//></main>
     <div className="dock"><${SessionPill} tab=${tab} go=${go} /><${Chrono} /></div>
     <nav className="tabs" aria-label="Sections" style=${{ gridTemplateColumns: 'repeat(' + tabs.length + ', 1fr)' }}>${tabs.map(t => html`<button key=${t[0]} type="button" aria-current=${nav === t[0] ? 'page' : undefined} onClick=${() => go(t[0])}><${Icon} n=${t[2]} s=${22} />${t[1]}</button>`)}</nav>
-    ${open && html`<${SettingsSheet} onClose=${() => setOpen(false)} />`}
+    ${open && html`<${SettingsSheet} sec0=${typeof open === 'string' ? open : null} onClose=${() => setOpen(false)} />`}
+    <${PalierFete} onObjectif=${() => setOpen('profil')} />
     ${wiz && html`<${Wizard} redo=${cfg.onboarded === false} onClose=${() => {}} />`}
     ${fetching && html`<div className="boot-wait" role="status"><i></i>Récupération de tes données…</div>`}
     ${needAuth && html`<${AuthScreen} start="up" requis=${true} onSkip=${DEV_LOCAL ? () => { lsSet('compte:skip', '1'); setSkip(true); } : null} />`}
